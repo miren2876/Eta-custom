@@ -83,11 +83,22 @@ internal object AgentRuntimeWire {
     /** service -> client：返回是否成功重新订阅指定 run。 */
     const val MSG_ATTACH_RUN_RESPONSE = 12
 
+    /**
+     * client -> service：向正在执行的 chat run 追加一条用户补充指令（中途插话）。
+     * 数据体携带 run_id 与 supplement 文本；不取消当前模型请求或工具批次，
+     * 补充指令在当前 turn 完成后进入下一轮。
+     */
+    const val MSG_SUPPLEMENT = 13
+
+    /** service -> client：补充指令是否被当前 run 接受。 */
+    const val MSG_SUPPLEMENT_RESPONSE = 14
+
     private const val MODULE_PACKAGE = "io.github.mangi.eta"
     private const val SERVICE_CLASS = "io.github.mangi.eta.agent.runtime.AgentRuntimeService"
 
     private const val KEY_TYPE = "type"
     private const val KEY_RUN_ID = "run_id"
+    private const val KEY_SUPPLEMENT_TEXT = "supplement_text"
     private const val KEY_PROMPT = "prompt"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
     private const val KEY_MODEL_SESSION_ID = "model_session_id"
@@ -594,6 +605,23 @@ internal object AgentRuntimeWire {
     fun ackBundle(runId: String): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
     }
+
+    /** 中途插话消息的数据体：run 标识 + 用户补充文本。 */
+    fun supplementBundle(runId: String, text: String): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runId)
+        putString(KEY_SUPPLEMENT_TEXT, text)
+    }
+
+    fun supplementTextFromBundle(bundle: Bundle): String =
+        bundle.getString(KEY_SUPPLEMENT_TEXT).orEmpty()
+
+    fun supplementResponseBundle(runId: String, accepted: Boolean): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runId)
+        putBoolean(KEY_OK, accepted)
+    }
+
+    fun supplementAcceptedFromBundle(bundle: Bundle): Boolean =
+        bundle.getBoolean(KEY_OK, false)
 
     fun attachRunResponseBundle(runId: String, attached: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)

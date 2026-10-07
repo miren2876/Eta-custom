@@ -211,6 +211,35 @@ internal class AgentRuntimeClient(
         }
     }
 
+    /**
+     * 向正在执行的 chat run 追加一条用户补充指令（中途插话）。
+     *
+     * 返回 true 表示 Runtime 已接受并把它排入下一个 turn；false 表示目标 run
+     * 不在执行、不是 chat 操作或服务不可用，调用方应回退为普通发送。
+     */
+    fun interjectRun(runId: String, text: String): Boolean {
+        if (runId.isBlank() || text.isBlank()) return false
+        val responseLatch = CountDownLatch(1)
+        val acceptedRef = AtomicReference(false)
+        val clientMessenger = Messenger(
+            InterjectionHandler { accepted ->
+                acceptedRef.set(accepted)
+                responseLatch.countDown()
+            }
+        )
+        return withRuntimeMessenger(false) { serviceMessenger ->
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_SUPPLEMENT)
+            msg.replyTo = clientMessenger
+            msg.data = AgentRuntimeWire.supplementBundle(runId, text)
+            serviceMessenger.send(msg)
+            if (!responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                false
+            } else {
+                acceptedRef.get()
+            }
+        }
+    }
+
     /** 历史一次性交给 onReplay；未指定时沿用 onEvent。后续新增事件始终交给 onEvent。 */
     fun attachRun(
         runId: String,
@@ -325,6 +354,16 @@ internal class AgentRuntimeClient(
         override fun handleMessage(msg: Message) {
             if (msg.what == AgentRuntimeWire.MSG_QUERY_ACTIVE_RUN_RESPONSE) {
                 onResponse(AgentRuntimeWire.runIdFromBundle(msg.data ?: return))
+            }
+        }
+    }
+
+    private class InterjectionHandler(
+        private val onResponse: (Boolean) -> Unit,
+    ) : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(msg: Message) {
+            if (msg.what == AgentRuntimeWire.MSG_SUPPLEMENT_RESPONSE) {
+                onResponse(AgentRuntimeWire.supplementAcceptedFromBundle(msg.data ?: return))
             }
         }
     }

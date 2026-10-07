@@ -80,16 +80,52 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val resultIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "agent-result-io") }
     private val serviceMessenger = Messenger(IncomingHandler())
 
-    @Volatile
-    private var activeSession: AgentRuntimeSession? = null
+    /**
+     * 活跃会话集合。
+     *
+     * 默认（替换）模式下最多只有一个；排队模式下有等待队列；并发模式可同时存在多个。
+     */
+    private val sessionsLock = Any()
+    private val sessions = LinkedHashSet<AgentRuntimeSession>()
+
+    /** 最新开始的活跃会话；状态、通知与续跑等单值场景使用它。 */
+    private val activeSession: AgentRuntimeSession?
+        get() = synchronized(sessionsLock) { sessions.lastOrNull() }
+
+    /** 正在准备（读取图片、解析配置）的请求；替换模式下会被新请求替换。 */
+    private val pendingLock = Any()
+    private val pendingRequests = LinkedHashSet<PendingStartRequest>()
+
+    /** 排队模式下等待开跑的请求。 */
+    private val runQueue = ArrayDeque<QueuedRun>()
     private var startRequestGeneration = 0L
-    private var pendingStartRequest: PendingStartRequest? = null
 
     private data class PendingStartRequest(
         val generation: Long,
         val incoming: AgentRuntimeWire.IncomingRunRequest,
         val replyTo: Messenger?,
     )
+
+    private data class QueuedRun(
+        val request: AgentRuntimeWire.RunRequest,
+        val replyTo: Messenger?,
+    )
+
+    private fun activeSessionCount(): Int = synchronized(sessionsLock) { sessions.size }
+
+    private fun addActiveSession(session: AgentRuntimeSession) {
+        synchronized(sessionsLock) { sessions += session }
+    }
+
+    private fun removeActiveSession(session: AgentRuntimeSession) {
+        synchronized(sessionsLock) { sessions -= session }
+    }
+
+    private fun isActiveSession(session: AgentRuntimeSession): Boolean =
+        synchronized(sessionsLock) { session in sessions }
+
+    private fun sessionByRunId(runId: String): AgentRuntimeSession? =
+        synchronized(sessionsLock) { sessions.firstOrNull { it.runId == runId } }
 
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
@@ -155,7 +191,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onDestroy() {
         startRequestGeneration++
-        pendingStartRequest?.let { pending ->
+        val pendingSnapshot = synchronized(pendingLock) {
+            pendingRequests.toList().also { pendingRequests.clear() }
+        }
+        pendingSnapshot.forEach { pending ->
             pending.incoming.close()
             sendRequestIngestedTo(pending.replyTo, pending.incoming.request.runId)
             sendResultTo(
@@ -168,9 +207,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 ),
             )
         }
-        pendingStartRequest = null
-        activeSession?.cancel("Agent Runtime 服务已停止")
-        activeSession = null
+        synchronized(sessionsLock) { sessions.toList() }.forEach { session ->
+            session.cancel("Agent Runtime 服务已停止")
+        }
+        synchronized(sessionsLock) { sessions.clear() }
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         unregisterResultCardBack()
@@ -257,6 +297,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         replyTo = msg.replyTo,
                     )
                 }
+
+                AgentRuntimeWire.MSG_SUPPLEMENT -> {
+                    val data = msg.data ?: return
+                    val runId = AgentRuntimeWire.runIdFromBundle(data)
+                    val text = AgentRuntimeWire.supplementTextFromBundle(data)
+                    val accepted = requestMidRunInterjection(runId, text)
+                    sendSupplementResponse(msg.replyTo, runId, accepted)
+                }
             }
         }
     }
@@ -265,8 +313,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         incoming: AgentRuntimeWire.IncomingRunRequest,
         replyTo: Messenger?,
     ) {
-        val generation = ++startRequestGeneration
-        pendingStartRequest?.let { previous ->
+        startRequestGeneration++
+        val mode = Prefs.MultiRunMode.current()
+        val replaced = if (mode == Prefs.MultiRunMode.REPLACE) {
+            // 原版行为：新请求替换尚未开始准备的请求；排队/并发模式下保留它们。
+            synchronized(pendingLock) { pendingRequests.toList().also { pendingRequests.clear() } }
+        } else {
+            emptyList()
+        }
+        replaced.forEach { previous ->
             previous.incoming.close()
             sendRequestIngestedTo(previous.replyTo, previous.incoming.request.runId)
             sendResultTo(
@@ -279,8 +334,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 ),
             )
         }
-        val pending = PendingStartRequest(generation, incoming, replyTo)
-        pendingStartRequest = pending
+        val pending = PendingStartRequest(startRequestGeneration, incoming, replyTo)
+        synchronized(pendingLock) { pendingRequests += pending }
         thread(name = "agent-runtime-image-ingest") {
             val prepared = runCatching {
                 val request = AgentRuntimeImageTransfer.materialize(incoming)
@@ -294,8 +349,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 }
             }
             mainHandler.post {
-                if (generation != startRequestGeneration || pendingStartRequest !== pending) return@post
-                pendingStartRequest = null
+                if (!synchronized(pendingLock) { pendingRequests.remove(pending) }) return@post
                 sendRequestIngestedTo(replyTo, incoming.request.runId)
                 prepared.fold(
                     onSuccess = { request ->
@@ -329,11 +383,47 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
+    /** 取出排队中的下一个请求并开始执行；由会话结束时调用。 */
+    private fun drainRunQueue() {
+        if (Prefs.MultiRunMode.current() != Prefs.MultiRunMode.QUEUE) return
+        val next = synchronized(runQueue) { runQueue.removeFirstOrNull() } ?: return
+        mainHandler.post { startRun(next.request, next.replyTo) }
+    }
+
+    /** 取消排队中的请求；返回是否命中。 */
+    private fun cancelQueuedRun(runId: String): Boolean {
+        val removed = synchronized(runQueue) {
+            runQueue.filter { it.request.runId == runId }.also { matches ->
+                if (matches.isNotEmpty()) runQueue.removeAll(matches)
+            }
+        }
+        if (removed.isEmpty()) return false
+        removed.forEach { queued ->
+            sendRequestIngestedTo(queued.replyTo, runId)
+            sendResultTo(
+                queued.replyTo,
+                AgentRuntimeWire.RunResult(runId = runId, ok = false, content = "", error = "已停止"),
+            )
+        }
+        return true
+    }
+
     private fun startRun(
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
     ) {
-        activeSession?.controller?.cancel()
+        when (Prefs.MultiRunMode.current()) {
+            // 原版行为：新任务终止正在跑的任务。
+            Prefs.MultiRunMode.REPLACE -> activeSession?.controller?.cancel()
+            // 排队：当前还有任务在跑时先入队，等它结束后自动开始。
+            Prefs.MultiRunMode.QUEUE -> if (activeSessionCount() > 0) {
+                synchronized(runQueue) { runQueue += QueuedRun(request, replyTo) }
+                AndroidAgentLogger.info("Agent runtime queued run: runId=${request.runId}")
+                return
+            }
+            // 并发：保留已有任务，各自独立执行。
+            Prefs.MultiRunMode.CONCURRENT -> Unit
+        }
         val session = AgentRuntimeSession(
             runId = request.runId,
             operation = request.operation,
@@ -352,7 +442,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )) {}
             return
         }
-        activeSession = session
+        addActiveSession(session)
         lastCompletedRunContext = null
         runCatching {
             startService(Intent(this, AgentRuntimeService::class.java).setAction(ACTION_KEEP_ALIVE))
@@ -424,7 +514,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         event: AgentEvent,
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
-        if (activeSession !== session) return
+        if (!isActiveSession(session)) return
         val revealsForegroundOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
         val requiresEntrySurfaceDismissal =
             AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
@@ -434,7 +524,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             true
         }
         mainHandler.post {
-            if (activeSession !== session) return@post
+            if (!isActiveSession(session)) return@post
             if (
                 AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
@@ -485,9 +575,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         completedContext: CompletedRunContext? = null,
     ) {
         mainHandler.post {
-            if (activeSession !== session) return@post
+            if (!isActiveSession(session)) return@post
             lastCompletedRunContext = completedContext
-            activeSession = null
+            removeActiveSession(session)
+            drainRunQueue()
             runCatching {
                 if (result.ok) {
                     enterFinalState(
@@ -627,10 +718,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun attachRun(runId: String, replyTo: Messenger?) {
-        val session = activeSession
+        val session = sessionByRunId(runId)
         val attached = replyTo != null &&
             runId.isNotBlank() &&
-            session?.runId == runId &&
+            session != null &&
             session.attach(
                 eventSink = { event -> sendEventTo(replyTo, event) },
                 resultSink = { result -> sendResultTo(replyTo, result) },
@@ -706,7 +797,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             replyTo,
             AgentRuntimeWire.RunResult(runId = "", ok = false, content = "", error = message),
         )
-        if (activeSession != null) return
+        if (activeSessionCount() > 0) return
         enterFinalState(
             AgentOverlayState(
                 phase = AgentOverlayPhase.FAILED,
@@ -727,9 +818,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun cancelRun(runId: String) {
         if (runId.isBlank()) return
-        pendingStartRequest?.takeIf { pending -> pending.incoming.request.runId == runId }?.let { pending ->
-            startRequestGeneration++
-            pendingStartRequest = null
+        val pending = synchronized(pendingLock) {
+            pendingRequests.firstOrNull { it.incoming.request.runId == runId }?.also { pendingRequests -= it }
+        }
+        if (pending != null) {
             pending.incoming.close()
             sendRequestIngestedTo(pending.replyTo, runId)
             sendResultTo(
@@ -743,11 +835,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
             return
         }
-        val session = activeSession ?: return
-        if (runId != session.runId) {
-            AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
-            return
-        }
+        if (cancelQueuedRun(runId)) return
+        val session = sessionByRunId(runId) ?: return
         if (!session.isTerminal) {
             session.controller.cancel()
             state.value = state.value.copy(status = AgentOverlayStatus.Stopping)
@@ -768,6 +857,39 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             phase = AgentOverlayPhase.RUNNING,
             status = AgentOverlayStatus.Continuing,
         )
+    }
+
+    /**
+     * 处理来自聊天页的"中途插话"：仅当目标 run 仍在执行且为 chat 操作时，
+     * 把文本作为补充指令排入下一个 turn；返回是否被接受。
+     *
+     * 与 [requestSupplement] 的区别：这里不接管浮窗输入态，也不在 run 已结束时
+     * 回退成新的续跑请求——run 不在执行中就返回 false，由调用方决定后续处理。
+     */
+    private fun requestMidRunInterjection(runId: String, text: String): Boolean {
+        val supplementText = text.trim()
+        if (supplementText.isBlank()) return false
+        val session = sessionByRunId(runId) ?: return false
+        val event = session.steer(supplementText) {
+            recordSupplementEvent(supplementText)
+        } ?: return false
+        AndroidAgentLogger.info(
+            "Agent runtime mid-run interjection received: index=${event.index}, chars=${event.text.length}"
+        )
+        state.value = state.value.applyEvent(event)
+        return true
+    }
+
+    private fun sendSupplementResponse(replyTo: Messenger?, runId: String, accepted: Boolean) {
+        runCatching {
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_SUPPLEMENT_RESPONSE)
+            msg.data = AgentRuntimeWire.supplementResponseBundle(runId, accepted)
+            replyTo?.send(msg)
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_supplement_response_failed") {
+                "Agent runtime supplement response failed: type=${throwable.safeLogType()}"
+            }
+        }
     }
 
     private fun requestSupplement(text: String) {

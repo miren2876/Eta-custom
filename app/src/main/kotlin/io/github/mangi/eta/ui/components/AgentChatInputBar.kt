@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.ui.voice.SpeechDictationButton
 import io.github.mangi.eta.ui.voice.SpeechInputFeedback
 import io.github.mangi.eta.ui.voice.rememberSpeechInput
@@ -166,6 +167,14 @@ internal fun AgentChatInputBar(
             keyboard?.show()
         }
         wasEditingMessage = isEditingMessage
+    }
+
+    // 外部恢复的草稿（例如插话被拒后回填）需要显式同步到本地输入框；
+    // 普通输入仍只保留在本地，不逐字回写业务状态。
+    LaunchedEffect(input) {
+        if (input.isNotBlank() && textFieldState.text.isBlank() && !isEditingMessage) {
+            textFieldState.setTextAndPlaceCursorAtEnd(input)
+        }
     }
 
     LaunchedEffect(isStreaming, isCompacting) {
@@ -346,19 +355,24 @@ internal fun AgentChatInputBar(
                             onModelSelected = onModelSelected,
                         )
 
+                        // 运行中只要有可插话的纯文本，按钮就回到发送，让用户能把话插进正在跑的这一轮；
+                        // 没有可发送内容时才显示停止。
+                        // 关闭中途插话时保持原版行为：运行中按钮仍是停止，不给出会丢消息的发送入口。
+                        val canInterject = Prefs.isEnabled(Prefs.Keys.AGENT_MID_RUN_INTERJECTION) &&
+                            textFieldState.text.isNotBlank() &&
+                            pendingImages.isEmpty() &&
+                            pendingFileReferences.isEmpty()
+                        val showStopButton = isStreaming && !canInterject
+                        val submitInput = {
+                            if (canSend) {
+                                dictation.cancel()
+                                val submittedText = textFieldState.text.toString()
+                                textFieldState.clearText()
+                                onSubmit(submittedText)
+                            }
+                        }
                         IconButton(
-                            onClick = if (isStreaming) {
-                                onStop
-                            } else {
-                                {
-                                    if (canSend) {
-                                        dictation.cancel()
-                                        val submittedText = textFieldState.text.toString()
-                                        textFieldState.clearText()
-                                        onSubmit(submittedText)
-                                    }
-                                }
-                            },
+                            onClick = if (showStopButton) onStop else submitInput,
                             enabled = isStreaming || canSend,
                             minWidth = ChatInputActionSize,
                             minHeight = ChatInputActionSize,
@@ -366,7 +380,7 @@ internal fun AgentChatInputBar(
                             // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
                             val sendButtonColor by animateColorAsState(
                                 targetValue = when {
-                                    isStreaming -> MiuixTheme.colorScheme.onSurface
+                                    showStopButton -> MiuixTheme.colorScheme.onSurface
                                     canSend -> MiuixTheme.colorScheme.primary
                                     else -> MiuixTheme.colorScheme.surfaceContainerHigh
                                 },
@@ -381,7 +395,7 @@ internal fun AgentChatInputBar(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 AnimatedContent(
-                                    targetState = isStreaming,
+                                    targetState = showStopButton,
                                     transitionSpec = {
                                         (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
                                             .togetherWith(
@@ -390,23 +404,23 @@ internal fun AgentChatInputBar(
                                             )
                                     },
                                     label = "send_stop_icon",
-                                ) { streaming ->
+                                ) { stopping ->
                                     Icon(
-                                        imageVector = if (streaming) {
+                                        imageVector = if (stopping) {
                                             Icons.Rounded.Stop
                                         } else {
                                             Icons.Rounded.ArrowUpward
                                         },
                                         contentDescription = when {
-                                            streaming -> stringResource(R.string.chat_stop)
+                                            stopping -> stringResource(R.string.chat_stop)
                                             isEditingMessage && preserveFollowingMessages -> "保存消息"
                                             else -> stringResource(R.string.chat_send)
                                         },
                                         modifier = Modifier.size(
-                                            if (streaming) StopIconSize else SendIconSize
+                                            if (stopping) StopIconSize else SendIconSize
                                         ),
                                         tint = when {
-                                            streaming -> MiuixTheme.colorScheme.surface
+                                            stopping -> MiuixTheme.colorScheme.surface
                                             canSend -> MiuixTheme.colorScheme.onPrimary
                                             else -> MiuixTheme.colorScheme.onSurfaceVariantActions
                                         },

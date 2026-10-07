@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.terminal.LinuxRunMonitor
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -60,6 +61,10 @@ internal class AgentExecutionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopTasks()
+        } else if (intent?.action == LinuxRunMonitor.ACTION_EXIT_LINUX) {
+            // 结束 Linux 环境里的全部进程；没有其他前台任务时顺带收回本服务。
+            LinuxRunMonitor.exit()
+            if (!foregroundActive) stopSelf(startId)
         } else {
             ensureForeground()
             refreshNotification()
@@ -116,7 +121,9 @@ internal class AgentExecutionService : Service() {
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+        // 门槛取 Baklava(Android 16, 36.0)：ColorOS 16/17 的流体云直接对接原生 Live Updates API，
+        // 36.0 设备同样支持提升（上游原先要求 QPR1，会把 36.0 的设备整体排除）。
+        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(status.shortText())

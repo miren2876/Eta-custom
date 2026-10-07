@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.ImportContacts
@@ -246,6 +247,22 @@ private fun SettingsPageContent(
     val powerAssistantItems = powerAssistantTargets.map { target ->
         DropdownItem(text = target.displayName(context))
     }
+    val multiRunModes = Prefs.MultiRunMode.entries
+    var multiRunModeIndex by remember(agentPrefs) {
+        mutableStateOf(
+            multiRunModes.indexOfFirst {
+                it.key == agentPrefs?.getString(
+                    Prefs.Keys.AGENT_MULTI_RUN_MODE,
+                    Prefs.MultiRunMode.REPLACE.key,
+                )
+            }.coerceAtLeast(0),
+        )
+    }
+    val multiRunItems = listOf(
+        DropdownItem(text = stringResource(R.string.settings_multi_run_replace)),
+        DropdownItem(text = stringResource(R.string.settings_multi_run_queue)),
+        DropdownItem(text = stringResource(R.string.settings_multi_run_concurrent)),
+    )
 
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_set_up_7debf9),
@@ -342,6 +359,57 @@ private fun SettingsPageContent(
                 }
             }
 
+            // ── 对话 ───────────────────────────────────────────────────
+            item(key = "section_conversation") {
+                EtaPreferenceGroupTitle(stringResource(R.string.settings_conversation))
+                EtaPreferenceGroup {
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_mid_run_interjection),
+                        summary = stringResource(R.string.settings_mid_run_interjection_summary),
+                        key = Prefs.Keys.AGENT_MID_RUN_INTERJECTION,
+                        icon = Icons.Rounded.Forum,
+                        iconTint = EtaPreferenceColors.Blue,
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_multi_run_mode),
+                        summary = stringResource(R.string.settings_multi_run_mode_summary),
+                        items = multiRunItems,
+                        selectedIndex = multiRunModeIndex,
+                        onSelectedIndexChange = { index ->
+                            val mode = multiRunModes.getOrNull(index)
+                                ?: return@EtaDropdownPreference
+                            val targetPrefs = agentPrefs
+                            if (
+                                targetPrefs == null ||
+                                putStringSync(
+                                    prefs = targetPrefs,
+                                    key = Prefs.Keys.AGENT_MULTI_RUN_MODE,
+                                    value = mode.key,
+                                )
+                            ) {
+                                multiRunModeIndex = index
+                            } else {
+                                Toast.makeText(
+                                    context.applicationContext,
+                                    context.getString(R.string.settings_write_failed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.Layers,
+                                tint = EtaPreferenceColors.Green,
+                            )
+                        },
+                    )
+                }
+            }
+
             // ── 工具 ───────────────────────────────────────────────────
             item(key = "section_tools") {
                 EtaPreferenceGroupTitle(stringResource(R.string.ui_tool_a72ef1))
@@ -412,6 +480,17 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.LinuxEnvironment) },
+                    )
+
+                    EtaPreferenceDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_linux_run_notification),
+                        summary = stringResource(R.string.settings_linux_run_notification_summary),
+                        key = Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION,
+                        icon = Icons.Rounded.Terminal,
+                        iconTint = EtaPreferenceColors.Blue,
                     )
                 }
             }
