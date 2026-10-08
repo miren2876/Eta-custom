@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +84,8 @@ class MainActivity : ComponentActivity() {
                     )
                     io.github.mangi.eta.agent.display.VirtualScreenAppConflictDialog()
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        // imePadding：输入法弹出时整卡上移，不被键盘挡住
+                        modifier = Modifier.fillMaxSize().imePadding(),
                         contentAlignment = Alignment.BottomCenter,
                     ) {
                         io.github.mangi.eta.ui.components.AgentUserPromptCard(
