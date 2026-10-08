@@ -38,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
-import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.MiuixBackButton
@@ -274,7 +273,7 @@ private fun AgentTopBar(
                         modifier = Modifier
                             .clip(RoundedCornerShape(TopBarTitleCornerRadius))
                             .combinedClickable(
-                                onClick = { AndroidAgentLogger.info("Chat top bar title tap") },
+                                onClick = {},
                                 onDoubleClick = { currentOnTitleDoubleTap() },
                             ),
                     )

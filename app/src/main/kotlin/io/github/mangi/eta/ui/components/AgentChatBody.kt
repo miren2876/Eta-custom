@@ -215,21 +215,11 @@ internal fun AgentChatBody(
         }
     }
 
-    // 顶栏标题双击：回到第一条消息，并解除跟底，避免紧接着又被拉回尾部。
-    // 请求计数由外层持有，这里只处理「本次组合之后新增的请求」。
-    var handledScrollToTopRequest by remember { mutableIntStateOf(scrollToTopRequest) }
-    LaunchedEffect(scrollToTopRequest) {
-        if (scrollToTopRequest == handledScrollToTopRequest) return@LaunchedEffect
-        handledScrollToTopRequest = scrollToTopRequest
-        AndroidAgentLogger.info("Chat scroll to top (request=$scrollToTopRequest)")
-        keepBottomAnchored = false
-        scrollState.animateScrollToItem(0)
-    }
-
     SpeechPlaybackHost {
         AgentChatScaffold(
             visibleMessages = visibleMessages,
             hasMessages = visibleMessages.isNotEmpty(),
+            scrollToTopRequest = scrollToTopRequest,
             scrollState = scrollState,
             input = input,
             modelPickerState = modelPickerState,
@@ -282,6 +272,7 @@ internal fun AgentChatBody(
 private fun AgentChatScaffold(
     visibleMessages: List<AgentChatMessageUi>,
     hasMessages: Boolean,
+    scrollToTopRequest: Int,
     scrollState: LazyListState,
     input: String,
     modelPickerState: AgentModelPickerUiState,
@@ -381,6 +372,7 @@ private fun AgentChatScaffold(
             AgentConversationMessages(
                 visibleMessages = visibleMessages,
                 scrollState = scrollState,
+                scrollToTopRequest = scrollToTopRequest,
                 isStreaming = isStreaming,
                 bottomInset = bottomPadding,
                 keepBottomAnchored = keepBottomAnchored,
@@ -408,6 +400,7 @@ private fun AgentChatScaffold(
 internal fun AgentConversationMessages(
     visibleMessages: List<AgentChatMessageUi>,
     scrollState: LazyListState,
+    scrollToTopRequest: Int = 0,
     isStreaming: Boolean,
     bottomInset: Dp,
     keepBottomAnchored: Boolean,
@@ -452,11 +445,31 @@ internal fun AgentConversationMessages(
     val densityScale = LocalDensity.current.density
     val coroutineScope = rememberCoroutineScope()
 
+    // 顶栏标题双击：回到第一条消息。请求计数由外层持有，这里只处理「本次组合之后新增的请求」。
+    var handledScrollToTopRequest by remember { mutableIntStateOf(scrollToTopRequest) }
+    // 回顶期间必须压住「贴底锚点」：此刻列表还在底部，锚点一旦重新评估就会立刻恢复跟底，
+    // 把回顶动画直接拽回尾部——表现为双击没反应，只有先上滑过（锚点已关）才生效。
+    var suppressBottomAnchor by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollToTopRequest) {
+        if (scrollToTopRequest == handledScrollToTopRequest) return@LaunchedEffect
+        handledScrollToTopRequest = scrollToTopRequest
+        AndroidAgentLogger.info("Chat scroll to top (request=$scrollToTopRequest)")
+        suppressBottomAnchor = true
+        onBottomAnchorChanged(false)
+        try {
+            scrollState.animateScrollToItem(0)
+        } finally {
+            suppressBottomAnchor = false
+        }
+    }
+
     LaunchedEffect(
         isUserDragging,
         isAtBottom,
         keepBottomAnchored,
+        suppressBottomAnchor,
     ) {
+        if (suppressBottomAnchor) return@LaunchedEffect
         val next = resolveKeepBottomAnchored(
             current = keepBottomAnchored,
             isUserDragging = isUserDragging,
