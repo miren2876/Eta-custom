@@ -5,6 +5,9 @@ import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 
 /** 声明模型可见的工具及其 JSON Schema；不包含任何执行逻辑。 */
 internal object AgentToolCatalog {
+    /** 上一次发布的工具名快照；仅用于变化时记录一行诊断日志。 */
+    private var lastPublishedNames: String? = null
+
     fun build(
         terminalTools: Boolean,
         browserTools: Boolean,
@@ -46,4 +49,20 @@ internal object AgentToolCatalog {
                 AgentFileToolCatalog.appendTo(tools)
             }
         })
+            .let { published ->
+                // 只在工具集合变化时记一行，便于排查「开关开了但工具没发布」这类问题。
+                val names = buildString {
+                    for (index in 0 until published.length()) {
+                        published.optJSONObject(index)?.optJSONObject("function")?.optString("name")
+                            ?.takeIf { it.isNotBlank() }?.let { append(it).append(',') }
+                    }
+                }
+                if (names != lastPublishedNames) {
+                    lastPublishedNames = names
+                    io.github.mangi.eta.core.AndroidAgentLogger.info(
+                        "Agent tool catalog: total=${published.length()} names=$names",
+                    )
+                }
+                published
+            }
 }
