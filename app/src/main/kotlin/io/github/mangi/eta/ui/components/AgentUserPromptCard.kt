@@ -143,7 +143,7 @@ private fun PromptCard(request: AgentUserPromptRequest, modifier: Modifier) {
 
         Text(
             text = question.question,
-            style = MiuixTheme.textStyles.title2,
+            style = MiuixTheme.textStyles.title3,
             color = MiuixTheme.colorScheme.onSurface,
         )
 
