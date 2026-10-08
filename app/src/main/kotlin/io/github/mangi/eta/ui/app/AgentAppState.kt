@@ -137,9 +137,9 @@ internal class AgentAppState(
         private set
 
     /** 侧栏文件夹定义与组织状态；写回 conversations.folder_id / is_pinned 与 conversation_folders。 */
-    private var conversationFolders: List<ConversationFolderUi> = emptyList()
-    private var conversationFolderIds: Map<String, String> = emptyMap()
-    private var conversationPinned: Set<String> = emptySet()
+    private var conversationFolders: List<ConversationFolderUi> = initialConversations.folders
+    private var conversationFolderIds: Map<String, String> = initialConversations.folderIds
+    private var conversationPinned: Set<String> = initialConversations.pinnedIds
     private var selectedFolderId: String? = null
 
     /** 在文件夹里点「新建对话」时，会话 id 直到首条消息才产生，先记住要落进哪个文件夹。 */
