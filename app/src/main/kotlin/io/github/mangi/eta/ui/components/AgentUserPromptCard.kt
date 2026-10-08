@@ -109,7 +109,6 @@ private fun PromptCard(request: AgentUserPromptRequest, modifier: Modifier) {
             .clip(shape)
             .background(MiuixTheme.colorScheme.surface)
             .border(0.5.dp, MiuixTheme.colorScheme.outline, shape)
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -156,13 +155,21 @@ private fun PromptCard(request: AgentUserPromptRequest, modifier: Modifier) {
                     color = MiuixTheme.colorScheme.primary,
                 )
             }
-            question.options.forEachIndexed { index, option ->
-                OptionRow(
-                    index = index,
-                    option = option,
-                    selected = option.id in selected,
-                    onClick = { toggle(option.id) },
-                )
+            Column(
+                // 只让选项区域滚动：题干、输入框和底部按钮保持固定
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                question.options.forEachIndexed { index, option ->
+                    OptionRow(
+                        index = index,
+                        option = option,
+                        selected = option.id in selected,
+                        onClick = { toggle(option.id) },
+                    )
+                }
             }
             if (question.allowCustom) {
                 CustomAnswerField(
