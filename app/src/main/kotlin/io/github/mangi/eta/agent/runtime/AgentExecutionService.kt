@@ -140,31 +140,8 @@ internal class AgentExecutionService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-        val prompt = activePrompt
-        val promptQuestion = prompt?.questions?.firstOrNull()
-        if (prompt == null || promptQuestion == null) {
-            builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
-        } else {
-            // 推荐项排前面，最多三个动作；展开卡片里点一下即作答，解锁后才生效。
-            promptQuestion.options.sortedByDescending { it.recommended }.take(3)
-                .forEachIndexed { index, option ->
-                    val answer = Intent(this, io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver::class.java)
-                        .setAction(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.ACTION_ANSWER)
-                        .putExtra(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.EXTRA_TOKEN, prompt.token)
-                        .putExtra(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.EXTRA_QUESTION, promptQuestion.id)
-                        .putExtra(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.EXTRA_OPTION, option.id)
-                    builder.addAction(
-                        Notification.Action.Builder(
-                            null,
-                            option.title.take(24),
-                            PendingIntent.getBroadcast(
-                                this, 200 + index, answer,
-                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                            ),
-                        ).setAuthenticationRequired(true).build(),
-                    )
-                }
-        }
+        // 提问挂起时不在系统里放选项按钮：展开卡片只显示题干，点正文回到 App 用卡片作答。
+        builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         // 门槛取 Baklava(Android 16, 36.0)：ColorOS 16/17 的流体云直接对接原生 Live Updates API，
         // 36.0 设备同样支持提升（上游原先要求 QPR1，会把 36.0 的设备整体排除）。

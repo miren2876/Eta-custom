@@ -38,6 +38,12 @@ internal object AgentHapticFeedback {
             primitiveScale = 0.62f,
             fallbackEffectId = VibrationEffect.EFFECT_CLICK,
         ),
+        /** 提问挂起、等用户作答时的提醒。 */
+        PROMPT(
+            primitiveId = VibrationEffect.Composition.PRIMITIVE_CLICK,
+            primitiveScale = 0.8f,
+            fallbackEffectId = VibrationEffect.EFFECT_CLICK,
+        ),
     }
 
     fun perform(context: Context, type: Type) {

@@ -90,7 +90,6 @@
             </intent-filter>
         </activity>
         <receiver android:name=".agent.display.MainScreenFallbackReceiver" android:exported="false" />
-        <receiver android:name=".agent.prompt.AgentUserPromptReceiver" android:exported="false" />
         <activity android:name=".agent.display.VirtualScreenViewerActivity" android:exported="false"
             android:label="@string/virtual_screen_title" android:theme="@style/Theme.Eta"
             android:windowSoftInputMode="adjustResize" />

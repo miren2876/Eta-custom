@@ -391,18 +391,6 @@ private fun SettingsPageContent(
                     )
 
                     EtaPreferenceDivider()
-                    EtaArrowPreference(
-                        title = stringResource(R.string.settings_ask_user_preview),
-                        summary = stringResource(R.string.settings_ask_user_preview_summary),
-                        startAction = {
-                            EtaPreferenceIcon(icon = Icons.Rounded.Forum, tint = EtaPreferenceColors.Blue)
-                        },
-                        onClick = {
-                            io.github.mangi.eta.agent.prompt.AgentUserPrompt.previewDemo(context)
-                        },
-                    )
-
-                    EtaPreferenceDivider()
                     EtaDropdownPreference(
                         title = stringResource(R.string.settings_multi_run_mode),
                         summary = stringResource(R.string.settings_multi_run_mode_summary),

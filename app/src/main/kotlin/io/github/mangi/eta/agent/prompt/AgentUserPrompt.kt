@@ -96,6 +96,11 @@ internal object AgentUserPrompt {
         pending[token] = entry
         prompts.update { it + request }
         io.github.mangi.eta.agent.runtime.AgentExecutionService.refreshRunNotification()
+        // 提醒一次；系统触感开关关闭时不震。
+        io.github.mangi.eta.agent.overlay.AgentHapticFeedback.perform(
+            context.applicationContext,
+            io.github.mangi.eta.agent.overlay.AgentHapticFeedback.Type.PROMPT,
+        )
         val startedAt = android.os.SystemClock.elapsedRealtime()
         try {
             while (true) {
@@ -121,23 +126,6 @@ internal object AgentUserPrompt {
     /** 用户提交或跳过：同一 token 只有第一次生效。 */
     fun resolve(token: String, answers: List<AgentUserPromptAnswer>) {
         pending[token]?.answer?.compareAndSet(null, answers)
-    }
-
-    /**
-     * 通知/流体云动作直接作答：只回答被点击的题目，其余按跳过处理。
-     * 返回 false 表示这条提问已经失效（被取消或已作答）。
-     */
-    fun answerFromNotification(token: String, questionId: String, optionId: String): Boolean {
-        val request = prompts.value.firstOrNull { it.token == token } ?: return false
-        val answers = request.questions.map { question ->
-            if (question.id == questionId) {
-                AgentUserPromptAnswer(question.id, listOf(optionId), "", skipped = false)
-            } else {
-                AgentUserPromptAnswer(question.id, emptyList(), "", skipped = true)
-            }
-        }
-        resolve(token, answers)
-        return true
     }
 
     fun cancelOwner(owner: String) {
