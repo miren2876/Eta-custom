@@ -88,7 +88,7 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 import top.yukonga.miuix.kmp.window.WindowListPopup
 
 private object ConversationPanelMetrics {
-    val PaneHorizontalPadding = 16.dp
+    val PaneHorizontalPadding = 22.dp
     val TopInset = 6.dp
     val AfterActionBar = 10.dp
     val BottomInset = 2.dp
