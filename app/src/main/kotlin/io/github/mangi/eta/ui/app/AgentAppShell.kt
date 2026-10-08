@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -256,6 +257,9 @@ private fun AgentTopBar(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
+                        // 顶栏自己吃掉了状态栏内边距；这一层必须同样让开，否则标题会落进状态栏那一行，
+                        // 点击也会被系统状态栏截走（双击因此完全收不到）。
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                         .height(TopBarTitleHeight)
                         .fillMaxWidth(TopBarTitleMaxWidthFraction)
                         .padding(horizontal = TopBarTitleHorizontalPadding),
@@ -292,7 +296,7 @@ private val TopBarMenuIconSize = 20.dp
 
 /** 顶栏标题自绘槽位：只覆盖中段，左右两侧的按钮不受影响。 */
 private const val TopBarTitleMaxWidthFraction = 0.66f
-private val TopBarTitleHeight = 56.dp
+private val TopBarTitleHeight = 50.dp
 private val TopBarTitleHorizontalPadding = 12.dp
 private val TopBarTitleCornerRadius = 10.dp
 
