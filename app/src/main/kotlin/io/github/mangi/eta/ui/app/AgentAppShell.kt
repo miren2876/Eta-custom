@@ -3,6 +3,8 @@ package io.github.mangi.eta.ui.app
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +30,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
@@ -226,16 +230,12 @@ private fun AgentTopBar(
         }
     }
 
+    // 双击回调每次重组都是新实例，若直接拿它当 pointerInput 的 key，手势识别器会不断重启，
+    // 两次点击之间状态被清掉就永远识别不出双击；这里用 rememberUpdatedState 固定 key。
+    val currentOnTitleDoubleTap by rememberUpdatedState(onConversationTitleDoubleTap)
     if (isHome) {
         // 首页聊天舞台保持紧凑；二级内容页统一使用可折叠大标题。
-        // 标题支持双击回到第一条消息：SmallTopAppBar 的标题是字符串槽位挂不了手势，
-        // 这里在顶栏上叠一层双击识别，左右两侧的图标按钮会先消费自己的点击。
-        Box(
-            modifier = Modifier.pointerInput(homeConversationTitle, onConversationTitleDoubleTap) {
-                if (homeConversationTitle.isBlank()) return@pointerInput
-                detectTapGestures(onDoubleTap = { onConversationTitleDoubleTap() })
-            },
-        ) {
+        Box {
             SmallTopAppBar(
                 title = homeConversationTitle,
                 color = color,
@@ -243,6 +243,19 @@ private fun AgentTopBar(
                 navigationIcon = navigationIcon,
                 actions = actions,
             )
+            if (homeConversationTitle.isNotBlank()) {
+                // SmallTopAppBar 的标题是居中的字符串槽位，挂不了手势；
+                // 在标题所在的中段叠一层透明双击区，左右两侧的图标按钮不在这个范围内。
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(TopBarTitleDoubleTapWidthFraction)
+                        .height(TopBarTitleDoubleTapHeight)
+                        .pointerInput(homeConversationTitle) {
+                            detectTapGestures(onDoubleTap = { currentOnTitleDoubleTap() })
+                        },
+                )
+            }
         }
     } else {
         AdaptiveTopAppBar(
@@ -256,6 +269,10 @@ private fun AgentTopBar(
 }
 
 private val TopBarMenuIconSize = 20.dp
+
+/** 顶栏标题双击区：只覆盖居中的标题，宽度占比与高度都不碰左右两侧的按钮。 */
+private const val TopBarTitleDoubleTapWidthFraction = 0.62f
+private val TopBarTitleDoubleTapHeight = 48.dp
 
 /**
  * 首页顶栏溢出菜单。WindowListPopup 以父布局为锚点，因此与触发按钮包在同一个 Box 中，

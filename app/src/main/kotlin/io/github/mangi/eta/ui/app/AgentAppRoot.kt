@@ -279,7 +279,10 @@ fun AgentAppRoot(
             conversationPaneState = paneUiState,
             isConversationPaneOpen = conversationPaneOpen,
             homeConversationTitle = conversationPaneTitle,
-            onConversationTitleDoubleTap = { chatScrollToTopRequest += 1 },
+            onConversationTitleDoubleTap = {
+                AndroidAgentLogger.info("Chat top bar title double tap")
+                chatScrollToTopRequest += 1
+            },
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },

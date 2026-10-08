@@ -76,6 +76,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
@@ -220,6 +221,7 @@ internal fun AgentChatBody(
     LaunchedEffect(scrollToTopRequest) {
         if (scrollToTopRequest == handledScrollToTopRequest) return@LaunchedEffect
         handledScrollToTopRequest = scrollToTopRequest
+        AndroidAgentLogger.info("Chat scroll to top (request=$scrollToTopRequest)")
         keepBottomAnchored = false
         scrollState.animateScrollToItem(0)
     }
