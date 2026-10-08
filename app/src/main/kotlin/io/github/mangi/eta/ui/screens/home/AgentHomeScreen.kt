@@ -22,6 +22,7 @@ internal fun AgentHomeScreen(
     conversationKey: String?,
     onAction: (AgentHomeAction) -> Unit,
     isDrawerOpen: Boolean = false,
+    scrollToTopRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     key(chatConversationCompositionKey(conversationKey)) {
@@ -37,6 +38,7 @@ internal fun AgentHomeScreen(
             pendingFileReferences = state.pendingFileReferences,
             messageEdit = state.messageEdit,
             characterName = state.roleplay?.characterName,
+            scrollToTopRequest = scrollToTopRequest,
             onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
             onCompactContext = { onAction(AgentHomeAction.CompactContext) },
             canCompactContext = state.canCompactContext,

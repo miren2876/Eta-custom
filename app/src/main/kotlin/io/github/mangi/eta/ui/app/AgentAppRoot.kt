@@ -256,6 +256,9 @@ fun AgentAppRoot(
         conversationPaneOpen = false
     }
 
+    // 顶栏标题双击 → 回到第一条消息：这里只累加请求号，聊天区自己决定是否响应。
+    var chatScrollToTopRequest by remember { mutableIntStateOf(0) }
+
     // 聊天页顶栏左侧显示当前会话标题；草稿（未选中会话）时留空。
     val paneUiState = agentState.conversationPaneState
     val conversationPaneTitle = conversationTopBarTitle(
@@ -276,6 +279,7 @@ fun AgentAppRoot(
             conversationPaneState = paneUiState,
             isConversationPaneOpen = conversationPaneOpen,
             homeConversationTitle = conversationPaneTitle,
+            onConversationTitleDoubleTap = { chatScrollToTopRequest += 1 },
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
@@ -410,6 +414,7 @@ fun AgentAppRoot(
                             }
                         },
                         isDrawerOpen = conversationPaneOpen,
+                        scrollToTopRequest = chatScrollToTopRequest,
                     )
                 }
             }

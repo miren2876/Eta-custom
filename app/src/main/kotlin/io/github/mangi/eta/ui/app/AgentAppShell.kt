@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.app
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
@@ -64,6 +66,7 @@ fun AgentAppShell(
     conversationPaneState: ConversationPaneUiState?,
     isConversationPaneOpen: Boolean,
     homeConversationTitle: String,
+    onConversationTitleDoubleTap: () -> Unit,
     onBack: () -> Unit,
     onOpenConversationPane: () -> Unit,
     onDismissConversationPane: () -> Unit,
@@ -111,6 +114,7 @@ fun AgentAppShell(
                         AgentTopBar(
                             route = currentRoute,
                             homeConversationTitle = homeConversationTitle,
+                            onConversationTitleDoubleTap = onConversationTitleDoubleTap,
                             scrollBehavior = scrollBehavior,
                             color = topBarColor,
                             onBack = onBack,
@@ -179,6 +183,7 @@ fun AgentAppShell(
 private fun AgentTopBar(
     route: AppRoute?,
     homeConversationTitle: String,
+    onConversationTitleDoubleTap: () -> Unit,
     scrollBehavior: ScrollBehavior,
     color: Color,
     onBack: () -> Unit,
@@ -223,13 +228,22 @@ private fun AgentTopBar(
 
     if (isHome) {
         // 首页聊天舞台保持紧凑；二级内容页统一使用可折叠大标题。
-        SmallTopAppBar(
-            title = homeConversationTitle,
-            color = color,
-            scrollBehavior = scrollBehavior,
-            navigationIcon = navigationIcon,
-            actions = actions,
-        )
+        // 标题支持双击回到第一条消息：SmallTopAppBar 的标题是字符串槽位挂不了手势，
+        // 这里在顶栏上叠一层双击识别，左右两侧的图标按钮会先消费自己的点击。
+        Box(
+            modifier = Modifier.pointerInput(homeConversationTitle, onConversationTitleDoubleTap) {
+                if (homeConversationTitle.isBlank()) return@pointerInput
+                detectTapGestures(onDoubleTap = { onConversationTitleDoubleTap() })
+            },
+        ) {
+            SmallTopAppBar(
+                title = homeConversationTitle,
+                color = color,
+                scrollBehavior = scrollBehavior,
+                navigationIcon = navigationIcon,
+                actions = actions,
+            )
+        }
     } else {
         AdaptiveTopAppBar(
             title = titleForRoute(route),

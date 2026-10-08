@@ -49,6 +49,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -157,6 +158,7 @@ internal fun AgentChatBody(
     onOpenBrowser: () -> Unit,
     characterName: String? = null,
     isDrawerOpen: Boolean = false,
+    scrollToTopRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState()
@@ -210,6 +212,16 @@ internal fun AgentChatBody(
         if (isDrawerOpen) {
             keyboard?.hide()
         }
+    }
+
+    // 顶栏标题双击：回到第一条消息，并解除跟底，避免紧接着又被拉回尾部。
+    // 请求计数由外层持有，这里只处理「本次组合之后新增的请求」。
+    var handledScrollToTopRequest by remember { mutableIntStateOf(scrollToTopRequest) }
+    LaunchedEffect(scrollToTopRequest) {
+        if (scrollToTopRequest == handledScrollToTopRequest) return@LaunchedEffect
+        handledScrollToTopRequest = scrollToTopRequest
+        keepBottomAnchored = false
+        scrollState.animateScrollToItem(0)
     }
 
     SpeechPlaybackHost {
@@ -498,10 +510,8 @@ internal fun AgentConversationMessages(
         bottomItemIndex,
         keepBottomAnchored,
         isUserDragging,
-        isStreaming,
     ) {
         if (shouldRequestInitialBottom(
-                isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
             )
@@ -1009,11 +1019,14 @@ internal fun resolveBottomFollowEnabled(
     isBottomSettling: Boolean = false,
 ): Boolean = (isStreaming || isBottomSettling) && keepBottomAnchored && !isUserDragging
 
+/**
+ * 打开会话（含冷启动恢复）先贴到最新一条消息；流式输出同理。
+ * 用户主动上滑离开底部后 keepBottomAnchored 为 false，不再强制回到底部。
+ */
 internal fun shouldRequestInitialBottom(
-    isStreaming: Boolean,
     keepBottomAnchored: Boolean,
     isUserDragging: Boolean,
-): Boolean = isStreaming && keepBottomAnchored && !isUserDragging
+): Boolean = keepBottomAnchored && !isUserDragging
 
 @Composable
 private fun EmptyChatState(
