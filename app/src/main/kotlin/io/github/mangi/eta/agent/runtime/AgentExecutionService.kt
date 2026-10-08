@@ -93,6 +93,8 @@ internal class AgentExecutionService : Service() {
             foregroundActive = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+            // 执行通知已经收起，保留的虚拟屏改由自己的常驻通知承载入口。
+            io.github.mangi.eta.agent.display.VirtualScreenNotification.refresh(this)
         } else {
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
         }
@@ -109,12 +111,21 @@ internal class AgentExecutionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val taskCount = leases.count()
+        // 没有 run 但有保留的虚拟屏会话：只有这一条通知时用虚拟屏文案。
+        val virtualScreenOnly = status == null &&
+            io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(getString(R.string.execution_title))
+            .setContentTitle(
+                if (virtualScreenOnly) getString(R.string.virtual_screen_notification_title)
+                else getString(R.string.execution_title),
+            )
             .setContentText(
-                status?.localizedText(resources)
-                    ?: resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+                when {
+                    virtualScreenOnly -> getString(R.string.virtual_screen_notification_content)
+                    status != null -> status.localizedText(resources)
+                    else -> resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+                },
             )
             .setContentIntent(open)
             .setOngoing(true)
@@ -172,7 +183,8 @@ internal class AgentExecutionService : Service() {
         }
 
         /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
-        fun isRunActive(): Boolean = runStatus != null
+        fun isRunActive(): Boolean =
+            runStatus != null || leases.hasPrefix("run:") || instance?.foregroundActive == true
 
         /** 必须从有效的用户入口取得引用，再创建会话或子进程；失败时调用方不启动任务。 */
         fun acquire(
@@ -182,7 +194,14 @@ internal class AgentExecutionService : Service() {
             onStop: () -> Unit,
         ): Boolean {
             if (instance?.startRejected == true) return false
-            if (!leases.acquire(id, allowBoundFallback, onStop)) return true
+            val acquired = leases.acquire(id, allowBoundFallback, onStop)
+            if (id.startsWith("run:")) {
+                mainHandler.post {
+                    io.github.mangi.eta.agent.display.VirtualScreenNotification
+                        .refresh(context.applicationContext)
+                }
+            }
+            if (!acquired) return true
             return try {
                 context.applicationContext.startForegroundService(Intent(context, AgentExecutionService::class.java))
                 true
@@ -195,7 +214,14 @@ internal class AgentExecutionService : Service() {
 
         fun release(id: String) {
             leases.release(id)
-            mainHandler.post { instance?.refreshNotification() }
+            mainHandler.post {
+                instance?.refreshNotification()
+                if (id.startsWith("run:")) {
+                    instance?.applicationContext?.let {
+                        io.github.mangi.eta.agent.display.VirtualScreenNotification.refresh(it)
+                    }
+                }
+            }
         }
     }
 }
