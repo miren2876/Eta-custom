@@ -90,14 +90,12 @@ import top.yukonga.miuix.kmp.window.WindowListPopup
 private object ConversationPanelMetrics {
     val PaneHorizontalPadding = 16.dp
     val TopInset = 6.dp
-    val AfterActionBar = 6.dp
+    val AfterActionBar = 10.dp
     val BottomInset = 2.dp
     val ActionIconSize = 20.dp
     val ActionLeadIconSize = 18.dp
     val PinIconSize = 14.dp
-    val AfterChips = 6.dp
-    val TopRowMinHeight = 36.dp
-    val TopRowVerticalPadding = 8.dp
+    val AfterChips = 10.dp
     val ChipMinHeight = 36.dp
     val ChipHorizontalPadding = 12.dp
     val SectionTopPadding = 8.dp
@@ -107,7 +105,7 @@ private object ConversationPanelMetrics {
     val SectionCountGap = 12.dp
     val RowMinHeight = 44.dp
     val RowGap = 4.dp
-    val RowCornerRadius = 14.dp
+    val RowCornerRadius = 18.dp
     val RowHorizontalPadding = 12.dp
     val RowVerticalPadding = 10.dp
     val ActiveDotSize = 6.dp
@@ -282,12 +280,12 @@ private fun PaneSearchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = ConversationPanelMetrics.TopRowMinHeight)
+            .heightIn(min = ConversationPanelMetrics.RowMinHeight)
             .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
             .background(MiuixTheme.colorScheme.surfaceContainerHighest)
             .padding(
                 horizontal = ConversationPanelMetrics.RowHorizontalPadding,
-                vertical = ConversationPanelMetrics.TopRowVerticalPadding,
+                vertical = ConversationPanelMetrics.RowVerticalPadding,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -610,13 +608,13 @@ private fun DrawerActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = ConversationPanelMetrics.TopRowMinHeight)
+            .heightIn(min = ConversationPanelMetrics.RowMinHeight)
             .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
             .background(MiuixTheme.colorScheme.surfaceContainerHighest)
             .clickable(onClickLabel = label, onClick = onClick)
             .padding(
                 horizontal = ConversationPanelMetrics.RowHorizontalPadding,
-                vertical = ConversationPanelMetrics.TopRowVerticalPadding,
+                vertical = ConversationPanelMetrics.RowVerticalPadding,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
