@@ -92,6 +92,7 @@ internal object Prefs {
             AGENT_AUTO_COMPACTION_ENABLED,
             AGENT_MID_RUN_INTERJECTION,
             AGENT_LINUX_RUN_NOTIFICATION,
+            AGENT_ASK_USER,
         )
     }
 
