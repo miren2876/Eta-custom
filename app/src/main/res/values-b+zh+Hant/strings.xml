@@ -1364,4 +1364,6 @@
     <string name="user_prompt_close">關閉並略過</string>
     <string name="user_prompt_collapse">收合</string>
     <string name="user_prompt_expand">展開</string>
+    <string name="settings_ask_user_preview">預覽提問卡片</string>
+    <string name="settings_ask_user_preview_summary">彈一次範例卡片，檢查版面與互動；不會送給模型。</string>
 </resources>

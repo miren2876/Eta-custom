@@ -1405,4 +1405,6 @@
     <string name="user_prompt_close">关闭并跳过</string>
     <string name="user_prompt_collapse">收起</string>
     <string name="user_prompt_expand">展开</string>
+    <string name="settings_ask_user_preview">预览提问卡片</string>
+    <string name="settings_ask_user_preview_summary">弹一次示例卡片，检查布局与交互；不会发给模型。</string>
 </resources>

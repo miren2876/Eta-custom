@@ -1425,4 +1425,6 @@
     <string name="user_prompt_close">Close and skip</string>
     <string name="user_prompt_collapse">Collapse</string>
     <string name="user_prompt_expand">Expand</string>
+    <string name="settings_ask_user_preview">Preview the question card</string>
+    <string name="settings_ask_user_preview_summary">Show a sample card to check layout and interaction; nothing is sent to the model.</string>
 </resources>

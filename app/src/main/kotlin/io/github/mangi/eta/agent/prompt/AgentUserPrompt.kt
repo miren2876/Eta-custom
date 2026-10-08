@@ -221,4 +221,35 @@ internal object AgentUserPrompt {
     fun warnFailure(throwable: Throwable) {
         AndroidAgentLogger.warn("Agent user prompt failed: type=${throwable.safeLogType()}")
     }
+
+    /**
+     * 预览入口：设置页可以手动弹一次示例卡片，用来检查渲染与交互。
+     * 不经过模型，回答只写日志，不改变任何任务状态。
+     */
+    fun previewDemo(context: Context) {
+        if (current() != null) return
+        val app = context.applicationContext
+        Thread {
+            val args = runCatching { JSONObject(DEMO_PAYLOAD) }.getOrNull() ?: return@Thread
+            val result = request(app, "preview", args) { false }
+            AndroidAgentLogger.info("Agent user prompt preview answered: ${result.take(300)}")
+        }.apply { name = "eta-ask-user-preview"; isDaemon = true }.start()
+    }
+
+    private val DEMO_PAYLOAD = """
+        {"questions":[
+          {"label":"选项框试试","question":"这是一次弹窗选择测试 —— 你想让我接着干哪件事？","multi":false,"allowCustom":true,
+           "customPlaceholder":"输入你的答案（也可以写别的需求）",
+           "options":[
+             {"title":"什么都不做，只看 UI","description":"我只把卡片渲染出来，不改任何代码","recommended":true},
+             {"title":"顺手把卡片样式再调细一点","description":"圆角、间距、字号按你的反馈微调"},
+             {"title":"继续测虚拟屏剩下的两项","description":"主屏回退授权、熄屏执行、空闲回收"}]},
+          {"label":"第二个问题","question":"卡片里这几项，你想保留哪些？","multi":true,"allowCustom":true,
+           "customPlaceholder":"补充说明",
+           "options":[
+             {"title":"推荐角标","description":"标在推荐的选项后面"},
+             {"title":"自定义输入框","description":"可以自己写答案"},
+             {"title":"跳过按钮","description":"不想回答就跳过本题"},
+             {"title":"翻页 1/N","description":"多题时用 ‹ › 切换"}]}]}
+    """.trimIndent()
 }
