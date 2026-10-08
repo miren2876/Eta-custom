@@ -149,7 +149,7 @@ internal class AgentExecutionService : Service() {
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
         @Volatile private var instance: AgentExecutionService? = null
-        private var runStatus: AgentOverlayStatus? = null
+        @Volatile private var runStatus: AgentOverlayStatus? = null
         private var publishedStatusText: String? = null
 
         /**
@@ -158,13 +158,21 @@ internal class AgentExecutionService : Service() {
          */
         fun updateRunStatus(context: Context, status: AgentOverlayStatus?) {
             mainHandler.post {
+                val activeChanged = (runStatus != null) != (status != null)
                 runStatus = status
+                if (activeChanged) {
+                    // 运行期间执行通知已指向查看页，结束后才单独显示保留的虚拟屏。
+                    io.github.mangi.eta.agent.display.VirtualScreenNotification.refresh(context.applicationContext)
+                }
                 val text = status?.localizedText(context.resources)
                 if (text == publishedStatusText) return@post
                 publishedStatusText = text
                 instance?.takeIf { it.foregroundActive }?.refreshNotification()
             }
         }
+
+        /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
+        fun isRunActive(): Boolean = runStatus != null
 
         /** 必须从有效的用户入口取得引用，再创建会话或子进程；失败时调用方不启动任务。 */
         fun acquire(

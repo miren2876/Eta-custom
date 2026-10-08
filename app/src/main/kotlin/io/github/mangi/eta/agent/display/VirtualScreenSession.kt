@@ -65,7 +65,7 @@ internal object VirtualScreenSession {
                     taskPhase = if (it.taskPhase == VirtualScreenTaskPhase.RUNNING) VirtualScreenTaskPhase.STOPPED else it.taskPhase,
                 )
             }
-            VirtualScreenNotification.cancel(context, id)
+            VirtualScreenNotification.cancel(context)
             AgentExecutionService.release("virtual-screen-$id")
             // 不等待 execute 持有的锁或正在读取的帧；主线程取消必须立即返回。
             process.destroy()
@@ -78,6 +78,10 @@ internal object VirtualScreenSession {
     }
 
     fun isActive(): Boolean = session.get()?.let { !it.closed.get() && it.process.isAlive } == true
+
+    /** 当前存活的虚拟屏会话 ID；通知入口据此指向对应会话。 */
+    fun currentSessionId(): String? =
+        session.get()?.takeIf { !it.closed.get() && it.process.isAlive }?.id
 
     fun isOwnedBy(owner: String): Boolean = session.get()?.let {
         it.owner == owner && !it.closed.get() && it.process.isAlive
@@ -211,10 +215,10 @@ internal object VirtualScreenSession {
                     taskPhase = if (runId == null) VirtualScreenTaskPhase.IDLE else VirtualScreenTaskPhase.RUNNING,
                     activeRunId = runId,
                 )
-                VirtualScreenNotification.show(context, current.id)
+                VirtualScreenNotification.refresh(context)
                 if (current.closed.get()) {
                     viewerState.update { if (it.display?.sessionId == current.id) VirtualScreenViewerState() else it }
-                    VirtualScreenNotification.cancel(context, current.id)
+                    VirtualScreenNotification.cancel(context)
                     error("DISPLAY_CANCELLED")
                 }
                 return@synchronized AgentModelClient.ToolResult(response.toString())
