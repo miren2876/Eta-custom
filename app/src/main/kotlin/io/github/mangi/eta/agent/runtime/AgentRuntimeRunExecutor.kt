@@ -148,6 +148,8 @@ internal class AgentRuntimeRunExecutor(
                 context = appContext,
                 logger = AndroidAgentLogger,
                 browserRunId = request.runId,
+                virtualScreenOwner = request.virtualScreenOwner,
+                isRunCancelled = { runController.isCancelled },
                 browserToolsEnabled = {
                     request.config.browserTools && currentPermissions().browserTools
                 },
@@ -208,6 +210,8 @@ internal class AgentRuntimeRunExecutor(
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
+                onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
+                onVirtualTaskCancelled = { session.cancel("用户取消虚拟屏任务") },
             )
             val routingExecutor = RoutingToolExecutor(
                 local = executor,
@@ -253,7 +257,7 @@ internal class AgentRuntimeRunExecutor(
                     AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
                     session.updateTranscript(transcript)
                 },
-                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                capabilitiesProvider = { executor.capabilitiesForRun(AgentToolCapabilities.capture(appContext)) },
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,
@@ -274,6 +278,8 @@ internal class AgentRuntimeRunExecutor(
                 )
             }
             response = completedResponse
+            runController.throwIfCancelled()
+            executor.retainVirtualScreenOnSuccess()
             AgentRuntimeWire.RunResult(
                 runId = request.runId,
                 ok = true,
