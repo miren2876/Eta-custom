@@ -47,8 +47,8 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val ManageRowHorizontalPadding = 16.dp
-private val ManageRowVerticalPadding = 14.dp
-private val ManageRowCornerRadius = 16.dp
+private val ManageRowVerticalPadding = 12.dp
+private val ManageRowCornerRadius = 10.dp
 private val ManageSwipeRevealWidth = 96.dp
 private val ManageSwipeTriggerWidth = 64.dp
 private val ManageRowIconSize = 20.dp

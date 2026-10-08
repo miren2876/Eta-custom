@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.runtime.Composable
@@ -52,10 +54,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -72,11 +74,9 @@ import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
-import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
@@ -103,11 +103,11 @@ private object ConversationPanelMetrics {
     val SectionIconSize = 14.dp
     val SectionIconGap = 8.dp
     val SectionCountGap = 12.dp
-    val RowMinHeight = 48.dp
+    val RowMinHeight = 44.dp
     val RowGap = 4.dp
-    val RowCornerRadius = 12.dp
+    val RowCornerRadius = 10.dp
     val RowHorizontalPadding = 12.dp
-    val RowVerticalPadding = 12.dp
+    val RowVerticalPadding = 10.dp
     val ActiveDotSize = 6.dp
     val ActiveDotGap = 10.dp
     val EmptyVerticalPadding = 28.dp
@@ -176,7 +176,7 @@ internal fun ConversationPanePanel(
                         .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
                 ) {
                     Spacer(Modifier.height(ConversationPanelMetrics.TopInset))
-                    PaneActionBar(query = state.searchQuery, onSearchChange = onSearchChange)
+                    PaneSearchRow(query = state.searchQuery, onSearchChange = onSearchChange)
                     Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
                     PaneDrawerActions(
                         onNewConversation = onNewConversation,
@@ -271,35 +271,50 @@ private fun PaneFixedRegion(content: @Composable () -> Unit) {
     }
 }
 
+/** 搜索框与下面两行入口共用同一套圆角、内边距，视觉上连成一组。 */
 @Composable
-private fun PaneActionBar(
+private fun PaneSearchRow(
     query: String,
     onSearchChange: (String) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ConversationPanelMetrics.RowMinHeight)
+            .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+            .background(MiuixTheme.colorScheme.surfaceContainerHighest)
+            .padding(
+                horizontal = ConversationPanelMetrics.RowHorizontalPadding,
+                vertical = ConversationPanelMetrics.RowVerticalPadding,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SearchBar(
-            modifier = Modifier.weight(1f),
-            insideMargin = DpSize.Zero,
-            expanded = false,
-            onExpandedChange = {},
-            inputField = {
-                InputField(
-                    query = query,
-                    onQueryChange = onSearchChange,
-                    onSearch = onSearchChange,
-                    expanded = false,
-                    onExpandedChange = {},
-                    label = stringResource(R.string.conversation_search_hint),
-                    // 深色下侧栏已抬高到 surfaceContainer，搜索框需再高一档才能显出轮廓；
-                    // 浅色的 surfaceContainerHigh 与 surfaceContainerHighest 相同，观感不变。
-                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                )
-            },
-            content = {},
+        Icon(
+            imageVector = Icons.Rounded.Search,
+            contentDescription = null,
+            modifier = Modifier.size(ConversationPanelMetrics.ActionLeadIconSize),
+            tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
         )
+        Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.conversation_search_hint),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    style = MiuixTheme.textStyles.body1,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onSearchChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle = MiuixTheme.textStyles.body1.copy(color = MiuixTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+            )
+        }
     }
 }
 
@@ -593,6 +608,7 @@ private fun DrawerActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = ConversationPanelMetrics.RowMinHeight)
             .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
             .background(MiuixTheme.colorScheme.surfaceContainerHighest)
             .clickable(onClickLabel = label, onClick = onClick)
