@@ -55,6 +55,9 @@ internal object Prefs {
         /** 多会话运行策略：replace（原版替换）/ queue（排队）/ concurrent（并发）。 */
         const val AGENT_MULTI_RUN_MODE = "agent_multi_run_mode"
 
+        /** 不确定时向用户提问：运行中弹出带选项的提问卡片。 */
+        const val AGENT_ASK_USER = "agent_ask_user"
+
         /** 全部布尔开关及其默认值。 */
         val BOOLEAN_DEFAULTS: Map<String, Boolean> = mapOf(
             POWER_KEY_TAKEOVER to false,
@@ -75,6 +78,7 @@ internal object Prefs {
             AGENT_AUTO_COMPACTION_ENABLED to true,
             AGENT_MID_RUN_INTERJECTION to true,
             AGENT_LINUX_RUN_NOTIFICATION to true,
+            AGENT_ASK_USER to false,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */

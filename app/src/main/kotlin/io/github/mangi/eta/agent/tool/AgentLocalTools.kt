@@ -106,6 +106,7 @@ internal class AgentLocalTools(
     private val virtualScreenSettings: () -> Settings = { runBlocking { SettingsDataStore.settings() } },
     private val virtualUiExecutor: ((String, JSONObject) -> AgentModelClient.ToolResult)? = null,
     private val fallbackApproval: ((String, String) -> MainScreenFallbackDecision)? = null,
+    private val askUserPrompt: ((JSONObject) -> String)? = null,
     private val onMainScreenFallback: () -> Unit = {},
     private val onVirtualTaskCancelled: () -> Unit = {},
     private val virtualScreenOwner: String = browserRunId,
@@ -171,6 +172,7 @@ internal class AgentLocalTools(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         MainScreenFallbackApproval.cancelOwner(browserRunId)
+        io.github.mangi.eta.agent.prompt.AgentUserPrompt.cancelOwner(browserRunId)
         val cancelled = isRunCancelled()
         VirtualScreenSession.releaseRun(virtualScreenOwner, browserRunId, retainVirtualScreen.get() && !cancelled, cancelled)
         publishedObservation.set(PublishedObservation())
@@ -301,6 +303,7 @@ internal class AgentLocalTools(
                     else VirtualScreenSession.execute(context, virtualScreenOwner, args, closed::get, browserRunId).let { result ->
                         if (args.optString("action") == "close") result else handleVirtualResult(toolCall.name, result)
                     }
+                "ask_user" -> askUser(args)
                 "get_current_context" -> textResult(DeviceContextTool.current(context))
                 "search_apps" -> textResult(searchApps(args))
                 "launch_app" -> textResult(launchApp(args))
@@ -1030,6 +1033,18 @@ internal class AgentLocalTools(
                 "观察快照状态异常，请重新观察屏幕",
             )
         }
+    }
+
+    /** 不确定时向用户提问：卡片由聊天页渲染，这里阻塞等待用户提交或跳过。 */
+    private fun askUser(args: JSONObject): AgentModelClient.ToolResult {
+        if (!io.github.mangi.eta.config.Prefs.isEnabled(io.github.mangi.eta.config.Prefs.Keys.AGENT_ASK_USER)) {
+            return textResult(errorResult("ASK_USER_DISABLED", "请先在 设置 → 对话 里开启「不确定时向我提问」"))
+        }
+        val executor = askUserPrompt
+        val result = executor?.invoke(args) ?: io.github.mangi.eta.agent.prompt.AgentUserPrompt.request(
+            context, browserRunId, args, { closed.get() || isRunCancelled() },
+        )
+        return textResult(result)
     }
 
     // ==================== Skills tools ====================

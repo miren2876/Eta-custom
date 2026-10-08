@@ -1412,4 +1412,17 @@
     <string name="virtual_screen_text_placeholder">Text</string>
     <string name="virtual_screen_text_insert">Insert text</string>
   <string name="tool_virtual_screen">Manage virtual screen</string>
+    <string name="tool_ask_user">Ask you a question</string>
+    <string name="settings_ask_user_title">Ask me when unsure</string>
+    <string name="settings_ask_user_summary">When a task needs your decision, show a card with options: single choice, multiple choice, your own answer, or skip.</string>
+    <string name="user_prompt_custom_hint">Type your answer</string>
+    <string name="user_prompt_skip">Skip</string>
+    <string name="user_prompt_submit">Submit</string>
+    <string name="user_prompt_next">Next</string>
+    <string name="user_prompt_recommended">Recommended</string>
+    <string name="user_prompt_multi_hint">Multiple choice</string>
+    <string name="user_prompt_progress">%1$d/%2$d</string>
+    <string name="user_prompt_close">Close and skip</string>
+    <string name="user_prompt_collapse">Collapse</string>
+    <string name="user_prompt_expand">Expand</string>
 </resources>

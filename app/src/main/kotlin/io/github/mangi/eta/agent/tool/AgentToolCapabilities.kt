@@ -33,6 +33,7 @@ internal data class AgentToolCapabilities(
     val virtualScreenEnabled: Boolean = false,
     val virtualScreenFallbackEnabled: Boolean = false,
     val virtualUiTreeAvailable: Boolean = true,
+    val askUser: Boolean = false,
 ) {
     fun unavailableCode(name: String): String? {
         if (virtualScreenEnabled && name in VirtualScreenRoutingPolicy.uiTools) {
@@ -44,6 +45,7 @@ internal data class AgentToolCapabilities(
             }
         }
         if (name == "virtual_screen" && !virtualDisplayAvailable) return "DEVICE_UNSUPPORTED"
+        if (name == "ask_user" && !askUser) return "ASK_USER_DISABLED"
         if (name in setOf(
                 "get_flashlight",
                 "set_flashlight"
@@ -146,6 +148,7 @@ internal data class AgentToolCapabilities(
                 virtualDisplayAvailable = Build.VERSION.SDK_INT >= 34,
                 virtualScreenEnabled = settings.virtualScreenEnabled,
                 virtualScreenFallbackEnabled = settings.virtualScreenFallbackEnabled,
+                askUser = io.github.mangi.eta.config.Prefs.isEnabled(io.github.mangi.eta.config.Prefs.Keys.AGENT_ASK_USER),
                 calendarReadable = io.github.mangi.eta.agent.device.CalendarPermissions.granted(
                     context,
                     false

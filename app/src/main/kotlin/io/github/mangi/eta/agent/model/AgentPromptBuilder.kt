@@ -19,8 +19,12 @@ internal object AgentPromptBuilder {
         roleplayContext: RoleplayRunContext? = null,
         virtualScreenEnabled: Boolean = false,
         virtualScreenFallbackEnabled: Boolean = false,
+        askUser: Boolean = false,
     ): JSONArray {
-        val messages = buildSystemMessages(config, skillContext, memoryContext, rootAvailable, roleplayContext, virtualScreenEnabled, virtualScreenFallbackEnabled)
+        val messages = buildSystemMessages(
+            config, skillContext, memoryContext, rootAvailable, roleplayContext,
+            virtualScreenEnabled, virtualScreenFallbackEnabled, askUser,
+        )
         history.forEach { item ->
             runCatching { AgentConversationCodec.toJsonObject(item) }.getOrNull()?.let(messages::put)
         }
@@ -36,6 +40,7 @@ internal object AgentPromptBuilder {
         roleplayContext: RoleplayRunContext? = null,
         virtualScreenEnabled: Boolean = false,
         virtualScreenFallbackEnabled: Boolean = false,
+        askUser: Boolean = false,
     ): JSONArray {
         val messages = JSONArray()
         if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
@@ -104,6 +109,7 @@ internal object AgentPromptBuilder {
                                 else "除用户在应用冲突三选项中明确选择主屏外，虚拟屏失败或不兼容时说明实际限制，不切换主屏。") +
                             "在虚拟屏路由期间剪贴板仅属于本次运行；支持 BACK、ENTER 和本地 PASTE，不能打开主屏 HOME、最近任务或通知栏。"
                     } else "") +
+                    (if (askUser) "用户已开启「不确定时向我提问」：需求存在多种合理做法、或缺少只有用户才知道的关键信息时，调用 ask_user 提问，一次可提多道题；每题给 2-4 个具体选项，把推荐项放第一个并标 recommended=true，允许多选时设 multi=true，保留 allowCustom 让用户补充文字。用户跳过时按你自己的判断继续，并在回复里说明你采用了哪种假设；能自己查证或显而易见的下一步不要提问。" else "") +
                     "需要重新看屏幕时先按默认参数调用 observe_screen，只读取 UI 树，不附截图；" +
                     "节点为空、目标无法唯一识别、界面以 Canvas、地图、图片或二维码等视觉内容为主，或任务依赖颜色、图像、空间布局时，" +
                     "再显式设置 include_screenshot=true；补截图时保持 include_ui_tree=true，让截图、节点与新的 observation_id 来自同一次观察，" +

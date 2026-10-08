@@ -380,6 +380,17 @@ private fun SettingsPageContent(
                     )
 
                     EtaPreferenceDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_ask_user_title),
+                        summary = stringResource(R.string.settings_ask_user_summary),
+                        key = Prefs.Keys.AGENT_ASK_USER,
+                        icon = Icons.Rounded.Forum,
+                        iconTint = EtaPreferenceColors.Blue,
+                    )
+
+                    EtaPreferenceDivider()
                     EtaDropdownPreference(
                         title = stringResource(R.string.settings_multi_run_mode),
                         summary = stringResource(R.string.settings_multi_run_mode_summary),

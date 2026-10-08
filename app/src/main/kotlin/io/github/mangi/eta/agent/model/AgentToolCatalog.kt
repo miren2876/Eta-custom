@@ -39,6 +39,7 @@ internal object AgentToolCatalog {
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
             if (deviceDirectTools) AgentVirtualScreenToolCatalog.appendTo(tools)
+            if (capabilities.askUser) AgentUserPromptToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

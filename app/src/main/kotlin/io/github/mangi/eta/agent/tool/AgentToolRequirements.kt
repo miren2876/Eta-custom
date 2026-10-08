@@ -36,7 +36,7 @@ internal object AgentToolRequirements {
             "wait", "wait_for_text", "wait_for_package", "open_system_panel",
             "set_alarm", "set_timer", "device_status", "inspect_app", "media_control", "set_volume",
             "search_notification_history", "recent_app_activity", "app_usage_summary",
-            "get_current_location", "get_device_environment", "memory_get", "memory_write",
+            "get_current_location", "get_device_environment", "memory_get", "memory_write", "ask_user",
             "character_memory_get", "character_memory_write",
             "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
             "skills_inspect_github", "skills_install_from_github",
