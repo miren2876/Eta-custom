@@ -1427,4 +1427,5 @@
     <string name="user_prompt_expand">Expand</string>
     <string name="settings_ask_user_preview">Preview the question card</string>
     <string name="settings_ask_user_preview_summary">Show a sample card to check layout and interaction; nothing is sent to the model.</string>
+    <string name="user_prompt_chip">Waiting</string>
 </resources>

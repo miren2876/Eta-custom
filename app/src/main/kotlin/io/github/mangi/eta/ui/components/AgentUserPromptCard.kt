@@ -106,7 +106,7 @@ private fun PromptCard(request: AgentUserPromptRequest, modifier: Modifier) {
             .fillMaxWidth()
             .clip(shape)
             .background(MiuixTheme.colorScheme.surface)
-            .border(1.dp, MiuixTheme.colorScheme.outline, shape)
+            .border(0.5.dp, MiuixTheme.colorScheme.outline, shape)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -205,7 +205,7 @@ private fun PromptCard(request: AgentUserPromptRequest, modifier: Modifier) {
                     color = MiuixTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                        .border(0.5.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                         .clickable { skipCurrent() }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -245,7 +245,7 @@ private fun OptionRow(
             .fillMaxWidth()
             .clip(shape)
             .background(background)
-            .then(if (selected) Modifier.border(1.dp, MiuixTheme.colorScheme.primary, shape) else Modifier)
+            .then(if (selected) Modifier.border(0.5.dp, MiuixTheme.colorScheme.primary, shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
@@ -319,7 +319,7 @@ private fun CustomAnswerField(
             .fillMaxWidth()
             .clip(shape)
             .background(MiuixTheme.colorScheme.surfaceContainer)
-            .border(1.dp, MiuixTheme.colorScheme.outline, shape)
+            .border(0.5.dp, MiuixTheme.colorScheme.outline, shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

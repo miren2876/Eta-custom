@@ -102,8 +102,16 @@ internal class AgentExecutionService : Service() {
 
     private fun notification(): Notification {
         val status = runStatus
+        val activePrompt = io.github.mangi.eta.agent.prompt.AgentUserPrompt.current()
+        // 有待回答的提问时，点通知直接回到聊天页（那里有完整卡片）；否则维持原有目标。
+        val openTarget = when {
+            activePrompt != null -> MainActivity::class.java
+            io.github.mangi.eta.agent.display.VirtualScreenSession.isActive() ->
+                io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java
+            else -> MainActivity::class.java
+        }
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, if (io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()) io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java else MainActivity::class.java),
+            this, 0, Intent(this, openTarget),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
@@ -122,6 +130,8 @@ internal class AgentExecutionService : Service() {
             )
             .setContentText(
                 when {
+                    activePrompt != null -> activePrompt.questions.firstOrNull()?.question
+                        ?.take(120) ?: getString(R.string.user_prompt_chip)
                     virtualScreenOnly -> getString(R.string.virtual_screen_notification_content)
                     status != null -> status.localizedText(resources)
                     else -> resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
@@ -130,14 +140,40 @@ internal class AgentExecutionService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        val prompt = activePrompt
+        val promptQuestion = prompt?.questions?.firstOrNull()
+        if (prompt == null || promptQuestion == null) {
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        } else {
+            // 推荐项排前面，最多三个动作；展开卡片里点一下即作答，解锁后才生效。
+            promptQuestion.options.sortedByDescending { it.recommended }.take(3)
+                .forEachIndexed { index, option ->
+                    val answer = Intent(this, io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver::class.java)
+                        .setAction(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.ACTION_ANSWER)
+                        .putExtra(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.EXTRA_TOKEN, prompt.token)
+                        .putExtra(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.EXTRA_QUESTION, promptQuestion.id)
+                        .putExtra(io.github.mangi.eta.agent.prompt.AgentUserPromptReceiver.EXTRA_OPTION, option.id)
+                    builder.addAction(
+                        Notification.Action.Builder(
+                            null,
+                            option.title.take(24),
+                            PendingIntent.getBroadcast(
+                                this, 200 + index, answer,
+                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                            ),
+                        ).setAuthenticationRequired(true).build(),
+                    )
+                }
+        }
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         // 门槛取 Baklava(Android 16, 36.0)：ColorOS 16/17 的流体云直接对接原生 Live Updates API，
         // 36.0 设备同样支持提升（上游原先要求 QPR1，会把 36.0 的设备整体排除）。
-        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+        if ((status != null || activePrompt != null) && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
-                .setShortCriticalText(status.shortText())
+                .setShortCriticalText(
+                    if (activePrompt != null) getString(R.string.user_prompt_chip) else status!!.shortText(),
+                )
                 .setRequestPromotedOngoing(true)
         }
         return builder.build()
@@ -180,6 +216,11 @@ internal class AgentExecutionService : Service() {
                 publishedStatusText = text
                 instance?.takeIf { it.foregroundActive }?.refreshNotification()
             }
+        }
+
+        /** 提问挂起或作答后刷新执行通知（流体云文案与选项按钮）。 */
+        fun refreshRunNotification() {
+            mainHandler.post { instance?.refreshNotification() }
         }
 
         /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
