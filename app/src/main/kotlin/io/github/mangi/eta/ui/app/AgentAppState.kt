@@ -140,7 +140,12 @@ internal class AgentAppState(
     private var conversationFolders: List<ConversationFolderUi> = initialConversations.folders
     private var conversationFolderIds: Map<String, String> = initialConversations.folderIds
     private var conversationPinned: Set<String> = initialConversations.pinnedIds
-    private var selectedFolderId: String? = null
+    /**
+     * 侧栏当前选中的文件夹：启动时跟随选中会话所属的文件夹，
+     * 未归类会话（或没有会话）时回到「聊天」。
+     */
+    private var selectedFolderId: String? =
+        initialConversations.selectedConversationId?.let { initialConversations.folderIds[it] }
 
     /** 在文件夹里点「新建对话」时，会话 id 直到首条消息才产生，先记住要落进哪个文件夹。 */
     private var pendingNewConversationFolderId: String? = null
@@ -288,7 +293,7 @@ internal class AgentAppState(
             conversationFolders = snapshot.folders
             conversationFolderIds = snapshot.folderIds
             conversationPinned = snapshot.pinnedIds
-            selectedFolderId = null
+            selectedFolderId = snapshot.selectedConversationId?.let { snapshot.folderIds[it] }
             pendingNewConversationFolderId = null
             conversationPersistence = AgentConversationPersistence(snapshot)
             fileAttachmentOwnerVersion += 1
