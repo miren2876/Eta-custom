@@ -1,7 +1,6 @@
 package io.github.mangi.eta.ui.app
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.outlined.MoreHoriz
@@ -32,9 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
@@ -58,8 +55,6 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
 
 /**
@@ -191,7 +186,6 @@ fun AgentAppShell(
 }
 
 @Composable
-@OptIn(ExperimentalFoundationApi::class)
 private fun AgentTopBar(
     route: AppRoute?,
     homeConversationTitle: String,
@@ -238,46 +232,33 @@ private fun AgentTopBar(
         }
     }
 
-    // 双击回调每次重组都是新实例，若直接拿它当 key，点击识别器会不断重启，
+    // 双击回调每次重组都是新实例，若直接拿它当 key，手势识别器会不断重启，
     // 两次点击之间状态被清掉就识别不出双击；这里用 rememberUpdatedState 固定。
     val currentOnTitleDoubleTap by rememberUpdatedState(onConversationTitleDoubleTap)
     if (isHome) {
         // 首页聊天舞台保持紧凑；二级内容页统一使用可折叠大标题。
         Box {
-            // 标题改由下方自绘：SmallTopAppBar 的标题是字符串槽位，挂不了手势。
             SmallTopAppBar(
-                title = "",
+                title = homeConversationTitle,
                 color = color,
                 scrollBehavior = scrollBehavior,
                 navigationIcon = navigationIcon,
                 actions = actions,
             )
             if (homeConversationTitle.isNotBlank()) {
+                // 标题仍由 Miuix 渲染（样式与顶栏完全一致），这里只叠一层透明的双击接收区。
+                // 必须和顶栏一样让开状态栏内边距：否则这层会落进状态栏那一行，
+                // 点击被系统状态栏截走（早期版本"双击没反应"的原因之一）。
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        // 顶栏自己吃掉了状态栏内边距；这一层必须同样让开，否则标题会落进状态栏那一行，
-                        // 点击也会被系统状态栏截走（双击因此完全收不到）。
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                         .height(TopBarTitleHeight)
                         .fillMaxWidth(TopBarTitleMaxWidthFraction)
-                        .padding(horizontal = TopBarTitleHorizontalPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = homeConversationTitle,
-                        color = MiuixTheme.colorScheme.onSurface,
-                        style = MiuixTheme.textStyles.title3,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(TopBarTitleCornerRadius))
-                            .combinedClickable(
-                                onClick = {},
-                                onDoubleClick = { currentOnTitleDoubleTap() },
-                            ),
-                    )
-                }
+                        .pointerInput(homeConversationTitle) {
+                            detectTapGestures(onDoubleTap = { currentOnTitleDoubleTap() })
+                        },
+                )
             }
         }
     } else {
@@ -293,11 +274,9 @@ private fun AgentTopBar(
 
 private val TopBarMenuIconSize = 20.dp
 
-/** 顶栏标题自绘槽位：只覆盖中段，左右两侧的按钮不受影响。 */
+/** 顶栏标题双击区：只覆盖标题所在的中段，左右两侧的按钮不受影响。 */
 private const val TopBarTitleMaxWidthFraction = 0.66f
 private val TopBarTitleHeight = 50.dp
-private val TopBarTitleHorizontalPadding = 12.dp
-private val TopBarTitleCornerRadius = 10.dp
 
 /**
  * 首页顶栏溢出菜单。WindowListPopup 以父布局为锚点，因此与触发按钮包在同一个 Box 中，
