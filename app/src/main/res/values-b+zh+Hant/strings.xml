@@ -1366,4 +1366,17 @@
     <string name="user_prompt_expand">展開</string>
     <string name="user_prompt_chip">待回答</string>
     <string name="user_prompt_open">去作答</string>
+  <string name="drawer_new_conversation">新增對話</string>
+  <string name="drawer_manage_chats">管理聊天</string>
+  <string name="drawer_chats_chip">聊天</string>
+  <string name="drawer_new_folder">新增資料夾</string>
+  <string name="drawer_folder_name">資料夾名稱</string>
+  <string name="drawer_create_folder_title">新增資料夾</string>
+  <string name="drawer_rename_folder_title">重新命名資料夾</string>
+  <string name="drawer_delete_folder_title">刪除資料夾？</string>
+  <string name="drawer_delete_folder_message">資料夾內的對話會回到「聊天」，資料夾本身將被刪除。</string>
+  <string name="action_pin_conversation">置頂</string>
+  <string name="action_unpin_conversation">取消置頂</string>
+  <string name="action_move_to_folder">移動到資料夾</string>
+  <string name="move_to_folder_unfiled">聊天（未分類）</string>
 </resources>

@@ -11,7 +11,8 @@ import androidx.room.Upsert
 internal interface ConversationDao : ChunkedTextDao {
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, " +
+            "folder_id, is_pinned " +
             "FROM conversations ORDER BY updated_at DESC"
     )
     suspend fun conversationMetadataRows(): List<ConversationMetadata>
@@ -21,10 +22,32 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, " +
+            "folder_id, is_pinned " +
             "FROM conversations ORDER BY updated_at DESC LIMIT :limit OFFSET :offset"
     )
     suspend fun conversationMetadataPage(limit: Int, offset: Int): List<ConversationMetadata>
+
+    @Query("SELECT * FROM conversation_folders ORDER BY sort_index ASC, created_at ASC")
+    suspend fun folders(): List<ConversationFolderEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFolders(folders: List<ConversationFolderEntity>)
+
+    @Query("DELETE FROM conversation_folders")
+    suspend fun deleteFolders()
+
+    @Transaction
+    suspend fun replaceFolders(folders: List<ConversationFolderEntity>) {
+        deleteFolders()
+        if (folders.isNotEmpty()) insertFolders(folders)
+    }
+
+    @Query("UPDATE conversations SET folder_id = :folderId WHERE id = :conversationId")
+    suspend fun updateConversationFolder(conversationId: String, folderId: String)
+
+    @Query("UPDATE conversations SET is_pinned = :pinned WHERE id = :conversationId")
+    suspend fun updateConversationPinned(conversationId: String, pinned: Boolean)
 
     @Transaction
     suspend fun conversationsPage(limit: Int, offset: Int): List<ConversationMetadata> =

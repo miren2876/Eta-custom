@@ -9,6 +9,9 @@ sealed interface AppRoute : NavKey {
     data object Home : AppRoute
 
     @Serializable
+    data object ManageChats : AppRoute
+
+    @Serializable
     data object Browser : AppRoute
 
     @Serializable

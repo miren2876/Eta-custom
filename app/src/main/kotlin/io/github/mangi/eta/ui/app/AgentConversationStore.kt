@@ -8,6 +8,7 @@ import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
 import io.github.mangi.eta.data.db.ConversationEntity
+import io.github.mangi.eta.data.db.ConversationFolderEntity
 import io.github.mangi.eta.data.db.ConversationMetadata
 import io.github.mangi.eta.data.db.ConversationMessageEntity
 import io.github.mangi.eta.data.db.ConversationStateEntity
@@ -18,6 +19,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.core.safeStackTrace
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
@@ -53,6 +55,11 @@ internal object AgentConversationStore {
          * 重启后列表被压紧；增量保存按下标截断后缀，这些会话必须先整段重写一次。
          */
         val unalignedConversationIds: Set<String> = emptySet(),
+        /** 侧栏文件夹定义。 */
+        val folders: List<ConversationFolderUi> = emptyList(),
+        /** 会话 → 文件夹 id；未归类会话不在表内。 */
+        val folderIds: Map<String, String> = emptyMap(),
+        val pinnedIds: Set<String> = emptySet(),
     )
 
     private val saveMutex = Mutex()
@@ -103,6 +110,9 @@ internal object AgentConversationStore {
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     modelId = state.modelId,
+                                    // 置顶与文件夹归属由 saveOrganization 单独维护，增量写元数据时保留原值。
+                                    folderId = stored[id]?.folderId.orEmpty(),
+                                    isPinned = stored[id]?.isPinned == true,
                                 )
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
@@ -160,12 +170,14 @@ internal object AgentConversationStore {
     private suspend fun loadSnapshot(context: Context): Snapshot {
         val dao = EtaDatabase.get(context).conversationDao()
         val conversations = dao.conversations()
+        val folders = dao.folders().toUiFolders()
         if (conversations.isEmpty()) {
             return Snapshot(
                 selectedConversationId = null,
                 conversationsById = emptyMap(),
                 titles = emptyMap(),
                 updatedAt = emptyMap(),
+                folders = folders,
             )
         }
 
@@ -173,6 +185,8 @@ internal object AgentConversationStore {
         val titles = mutableMapOf<String, String>()
         val updatedAt = mutableMapOf<String, Long>()
         val unaligned = mutableSetOf<String>()
+        val folderIds = mutableMapOf<String, String>()
+        val pinnedIds = mutableSetOf<String>()
 
         conversations.forEach { conversation ->
             val messages = buildList {
@@ -211,6 +225,8 @@ internal object AgentConversationStore {
             ).let(RoleplayConversationReducer::decorate)
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
+            conversation.folderId.takeIf(String::isNotBlank)?.let { folderIds[conversation.id] = it }
+            if (conversation.isPinned) pinnedIds += conversation.id
         }
 
         val selected = dao.state()?.selectedConversationId
@@ -223,7 +239,56 @@ internal object AgentConversationStore {
             titles = titles,
             updatedAt = updatedAt,
             unalignedConversationIds = unaligned,
+            folders = folders,
+            folderIds = folderIds,
+            pinnedIds = pinnedIds,
         )
+    }
+
+    private fun List<ConversationFolderEntity>.toUiFolders(): List<ConversationFolderUi> =
+        map { folder -> ConversationFolderUi(id = folder.id, name = folder.name, sortIndex = folder.sortIndex) }
+
+    /**
+     * 只保存侧栏组织信息（文件夹、归属、置顶）。
+     *
+     * 会话正文走增量保存，这里独立写回，避免置顶/移动文件夹触发整份会话重写。
+     * 尚未入库的新会话会被跳过，正常保存时带上初始值。
+     */
+    suspend fun saveOrganization(
+        context: Context,
+        folders: List<ConversationFolderUi>,
+        folderIds: Map<String, String>,
+        pinnedIds: Set<String>,
+    ) {
+        val appContext = context.applicationContext
+        saveMutex.withLock {
+            withContext(Dispatchers.IO) {
+                try {
+                    val dao = EtaDatabase.get(appContext).conversationDao()
+                    dao.replaceFolders(folders.mapIndexed { index, folder ->
+                        ConversationFolderEntity(
+                            id = folder.id,
+                            name = folder.name,
+                            sortIndex = folder.sortIndex.takeIf { it > 0 } ?: index,
+                            createdAt = 0L,
+                        )
+                    })
+                    dao.conversationMetadataRows().forEach { row ->
+                        val folderId = folderIds[row.id].orEmpty()
+                        if (row.folderId != folderId) dao.updateConversationFolder(row.id, folderId)
+                        val pinned = row.id in pinnedIds
+                        if (row.isPinned != pinned) dao.updateConversationPinned(row.id, pinned)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    AndroidAgentLogger.error(
+                        "Agent conversation organization persistence failed: type=${failure.safeLogType()}\n${failure.safeStackTrace()}",
+                    )
+                    throw failure
+                }
+            }
+        }
     }
 
     private val ConversationMetadata.reasoningEffortValue: ReasoningEffort

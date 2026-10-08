@@ -24,6 +24,9 @@ internal data class ConversationEntity(
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     /** 会话最近使用的本地 Model.id；null 表示跟随默认模型。 */
     @ColumnInfo(name = "model_id") val modelId: String? = null,
+    /** 所属文件夹 id；空串表示未归类，显示在侧栏「聊天」分组。 */
+    @ColumnInfo(name = "folder_id", defaultValue = "''") val folderId: String = "",
+    @ColumnInfo(name = "is_pinned", defaultValue = "0") val isPinned: Boolean = false,
 )
 
 internal data class ConversationMetadata(
@@ -37,6 +40,18 @@ internal data class ConversationMetadata(
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     @ColumnInfo(name = "model_id") val modelId: String? = null,
+    @ColumnInfo(name = "folder_id") val folderId: String = "",
+    @ColumnInfo(name = "is_pinned") val isPinned: Boolean = false,
+)
+
+/** 侧栏会话文件夹。会话通过 conversations.folder_id 归属，文件夹删除后会话回到「聊天」。 */
+@Serializable
+@Entity(tableName = "conversation_folders")
+internal data class ConversationFolderEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    @ColumnInfo(name = "sort_index") val sortIndex: Int,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
 )
 
 @Serializable

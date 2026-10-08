@@ -13,11 +13,17 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,13 +35,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -68,6 +78,7 @@ import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserScreen
+import io.github.mangi.eta.ui.screens.chat.ManageChatsScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
@@ -90,6 +101,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
@@ -97,6 +110,7 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.layout.DialogDefaults
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
@@ -155,6 +169,7 @@ fun AgentAppRoot(
     var conversationPaneOpen by remember { mutableStateOf(false) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
+    var conversationMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var messageDeleteTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var messageRegenerateTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
@@ -293,6 +308,17 @@ fun AgentAppRoot(
             onConversationDelete = { conversation ->
                 conversationDeleteTarget = conversation
             },
+            onConversationMoveToFolder = { conversation ->
+                conversationMoveTarget = conversation
+            },
+            onConversationTogglePin = { conversation ->
+                agentState.toggleConversationPinned(conversation.id)
+            },
+            onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
+            onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
+            onCreateFolder = { name -> agentState.createFolder(name) },
+            onRenameFolder = { folderId, name -> agentState.renameFolder(folderId, name) },
+            onDeleteFolder = { folderId -> agentState.deleteFolder(folderId) },
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
@@ -375,6 +401,19 @@ fun AgentAppRoot(
                         isDrawerOpen = conversationPaneOpen,
                     )
                 }
+            }
+            entry<AppRoute.ManageChats>(swipeDismiss = null) {
+                ManageChatsScreen(
+                    conversations = agentState.conversationPaneState.historyConversations,
+                    onBack = ::popRoute,
+                    onOpenConversation = { conversationId ->
+                        popRoute()
+                        selectConversation(conversationId)
+                    },
+                    onTogglePin = { conversation -> agentState.toggleConversationPinned(conversation.id) },
+                    onRename = { conversation -> conversationRenameTarget = conversation },
+                    onDelete = { conversation -> conversationDeleteTarget = conversation },
+                )
             }
             entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Browser) {
@@ -728,6 +767,36 @@ fun AgentAppRoot(
         }
     }
 
+    conversationMoveTarget?.let { conversation ->
+        WindowDialog(
+            show = true,
+            cornerRadius = DialogDefaults.CornerRadius,
+            title = stringResource(R.string.action_move_to_folder),
+            onDismissRequest = { conversationMoveTarget = null },
+        ) {
+            Column {
+                MoveToFolderRow(
+                    label = stringResource(R.string.move_to_folder_unfiled),
+                    selected = conversation.folderId.isBlank(),
+                    onClick = {
+                        agentState.moveConversationToFolder(conversation.id, null)
+                        conversationMoveTarget = null
+                    },
+                )
+                agentState.conversationPaneState.folders.forEach { folder ->
+                    MoveToFolderRow(
+                        label = folder.name,
+                        selected = conversation.folderId == folder.id,
+                        onClick = {
+                            agentState.moveConversationToFolder(conversation.id, folder.id)
+                            conversationMoveTarget = null
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     conversationRenameTarget?.let { conversation ->
         var renameInput by remember(conversation.id) { mutableStateOf(conversation.title) }
         WindowDialog(
@@ -830,6 +899,40 @@ fun AgentAppRoot(
                     agentState.regenerateMessage(target.messageId)
                     messageRegenerateTarget = null
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoveToFolderRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
+            style = MiuixTheme.textStyles.body1,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MiuixTheme.colorScheme.primary,
             )
         }
     }

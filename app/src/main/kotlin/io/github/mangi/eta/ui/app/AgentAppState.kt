@@ -52,9 +52,11 @@ import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerProjector
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.filterForFolder
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
@@ -133,6 +135,15 @@ internal class AgentAppState(
         )
     )
         private set
+
+    /** 侧栏文件夹定义与组织状态；写回 conversations.folder_id / is_pinned 与 conversation_folders。 */
+    private var conversationFolders: List<ConversationFolderUi> = emptyList()
+    private var conversationFolderIds: Map<String, String> = emptyMap()
+    private var conversationPinned: Set<String> = emptySet()
+    private var selectedFolderId: String? = null
+
+    /** 在文件夹里点「新建对话」时，会话 id 直到首条消息才产生，先记住要落进哪个文件夹。 */
+    private var pendingNewConversationFolderId: String? = null
 
     init {
         refreshConversationSummaries()
@@ -274,6 +285,11 @@ internal class AgentAppState(
             conversationsById = snapshot.conversationsById
             conversationTitles = snapshot.titles
             conversationUpdatedAt = snapshot.updatedAt
+            conversationFolders = snapshot.folders
+            conversationFolderIds = snapshot.folderIds
+            conversationPinned = snapshot.pinnedIds
+            selectedFolderId = null
+            pendingNewConversationFolderId = null
             conversationPersistence = AgentConversationPersistence(snapshot)
             fileAttachmentOwnerVersion += 1
             homeState = selectedConversationId
@@ -668,6 +684,93 @@ internal class AgentAppState(
         }
     }
 
+    fun selectFolder(folderId: String?) {
+        if (selectedFolderId == folderId) return
+        selectedFolderId = folderId
+        refreshConversationSummaries()
+    }
+
+    fun createFolder(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val folder = ConversationFolderUi(
+            id = "folder-${UUID.randomUUID()}",
+            name = trimmed,
+            sortIndex = (conversationFolders.maxOfOrNull { it.sortIndex } ?: -1) + 1,
+        )
+        conversationFolders = conversationFolders + folder
+        selectedFolderId = folder.id
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun renameFolder(folderId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        conversationFolders = conversationFolders.map { folder ->
+            if (folder.id == folderId) folder.copy(name = trimmed) else folder
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun deleteFolder(folderId: String) {
+        if (conversationFolders.none { it.id == folderId }) return
+        conversationFolders = conversationFolders.filterNot { it.id == folderId }
+        conversationFolderIds = conversationFolderIds.filterValues { it != folderId }
+        if (selectedFolderId == folderId) selectedFolderId = null
+        if (pendingNewConversationFolderId == folderId) pendingNewConversationFolderId = null
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun moveConversationToFolder(conversationId: String, folderId: String?) {
+        if (conversationId !in conversationsById) return
+        conversationFolderIds = if (folderId.isNullOrBlank()) {
+            conversationFolderIds - conversationId
+        } else {
+            conversationFolderIds + (conversationId to folderId)
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun toggleConversationPinned(conversationId: String) {
+        if (conversationId !in conversationsById) return
+        conversationPinned = if (conversationId in conversationPinned) {
+            conversationPinned - conversationId
+        } else {
+            conversationPinned + conversationId
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    /** 组织信息独立落库，避免置顶/移动文件夹触发整份会话重写。 */
+    private fun persistOrganization() {
+        val folders = conversationFolders
+        val folderIds = conversationFolderIds
+        val pinned = conversationPinned
+        scope.launch(Dispatchers.IO) {
+            try {
+                AgentConversationStore.saveOrganization(appContext, folders, folderIds, pinned)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (throwable: Throwable) {
+                AndroidAgentLogger.error("Agent sidebar organization save failed: type=${throwable.safeLogType()}")
+            }
+        }
+    }
+
+    /** 新建对话在文件夹里创建时，会话 id 诞生后才落归属。 */
+    private fun assignPendingFolder(conversationId: String) {
+        val folderId = pendingNewConversationFolderId ?: return
+        pendingNewConversationFolderId = null
+        if (conversationFolders.none { it.id == folderId }) return
+        conversationFolderIds = conversationFolderIds + (conversationId to folderId)
+        persistOrganization()
+    }
+
     fun updateSearchQuery(query: String) {
         conversationPaneState = conversationPaneState.copy(searchQuery = query)
         refreshConversationSummaries()
@@ -697,6 +800,7 @@ internal class AgentAppState(
         if (homeState.messageEdit != null) cancelMessageEdit()
         fileAttachmentOwnerVersion += 1
         selectedConversationId = null
+        pendingNewConversationFolderId = selectedFolderId
         homeState = emptyChatState(defaultThinkingEnabled)
         refreshConversationModel()
         conversationPaneState = conversationPaneState.copy(
@@ -729,6 +833,7 @@ internal class AgentAppState(
         )
         conversationTitles = conversationTitles + (id to binding.characterName)
         updateConversation(id, homeState)
+        assignPendingFolder(id)
         conversationPaneState = conversationPaneState.copy(selectedConversationId = id, searchQuery = "")
         refreshConversationSummaries()
         persistConversations()
@@ -877,6 +982,7 @@ internal class AgentAppState(
 
         val conversationId = selectedConversationId ?: newConversationId().also {
             selectedConversationId = it
+            assignPendingFolder(it)
         }
         val runId = "run-${UUID.randomUUID()}"
         val userMessage = UserMessageUi(
@@ -1788,9 +1894,10 @@ internal class AgentAppState(
 
     private fun refreshConversationSummaries() {
         val summaries = conversationsById.entries
-            .sortedByDescending { (id, _) ->
-                conversationUpdatedAt[id] ?: 0L
-            }
+            .sortedWith(
+                compareByDescending<Map.Entry<String, AgentChatHomeUiState>> { (id, _) -> id in conversationPinned }
+                    .thenByDescending { (id, _) -> conversationUpdatedAt[id] ?: 0L },
+            )
             .map { (id, state) ->
                 val lastMessage = state.messages.lastOrNull()
                 ConversationSummaryUi(
@@ -1835,21 +1942,28 @@ internal class AgentAppState(
                     mode = ConversationModeUi.Chat,
                     characterName = state.roleplay?.characterName,
                     isActiveRun = state.isStreaming,
+                    isPinned = id in conversationPinned,
+                    folderId = conversationFolderIds[id].orEmpty(),
                 )
             }
         val query = conversationPaneState.searchQuery.trim()
+        // 文件夹过滤先于搜索：搜索只在当前分组内生效，「聊天」分组只看未归类会话。
+        val visible = summaries.filterForFolder(selectedFolderId)
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = selectedConversationId,
             conversations = if (query.isBlank()) {
-                summaries
+                visible
             } else {
                 contentMatchCache.keys.retainAll(conversationsById.keys)
-                summaries.filter { summary ->
+                visible.filter { summary ->
                     summary.title.contains(query, ignoreCase = true) ||
                         summary.preview.contains(query, ignoreCase = true) ||
                         conversationContentMatches(summary.id, query)
                 }
             },
+            folders = conversationFolders,
+            selectedFolderId = selectedFolderId,
+            historyConversations = summaries,
         )
     }
 

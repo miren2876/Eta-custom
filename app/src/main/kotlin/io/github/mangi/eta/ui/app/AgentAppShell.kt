@@ -79,6 +79,13 @@ fun AgentAppShell(
     onConversationRename: (ConversationSummaryUi) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
+    onConversationTogglePin: (ConversationSummaryUi) -> Unit,
+    onOpenManageChats: () -> Unit,
+    onSelectFolder: (String?) -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
     onOpenCharacters: () -> Unit,
@@ -143,6 +150,14 @@ fun AgentAppShell(
                 onConversationRename = onConversationRename,
                 onConversationExport = onConversationExport,
                 onConversationDelete = onConversationDelete,
+                onConversationMoveToFolder = onConversationMoveToFolder,
+                onConversationTogglePin = onConversationTogglePin,
+                onNewConversation = onNewConversation,
+                onOpenManageChats = onOpenManageChats,
+                onSelectFolder = onSelectFolder,
+                onCreateFolder = onCreateFolder,
+                onRenameFolder = onRenameFolder,
+                onDeleteFolder = onDeleteFolder,
                 onOpenSettings = onOpenSettings,
                 onOpenModelProviders = onOpenModelProviders,
                 onOpenTools = onOpenTools,
@@ -337,6 +352,7 @@ private fun TopBarOverflowMenu(
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Home -> ""
+    is AppRoute.ManageChats -> stringResource(R.string.drawer_manage_chats)
     is AppRoute.Browser -> stringResource(R.string.route_browser)
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)

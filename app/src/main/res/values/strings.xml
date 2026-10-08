@@ -1427,4 +1427,17 @@
     <string name="user_prompt_expand">Expand</string>
     <string name="user_prompt_chip">Waiting</string>
     <string name="user_prompt_open">Answer</string>
+  <string name="drawer_new_conversation">New chat</string>
+  <string name="drawer_manage_chats">Manage chats</string>
+  <string name="drawer_chats_chip">Chats</string>
+  <string name="drawer_new_folder">New folder</string>
+  <string name="drawer_folder_name">Folder name</string>
+  <string name="drawer_create_folder_title">New folder</string>
+  <string name="drawer_rename_folder_title">Rename folder</string>
+  <string name="drawer_delete_folder_title">Delete folder?</string>
+  <string name="drawer_delete_folder_message">Conversations in this folder will move back to Chats. The folder will be deleted.</string>
+  <string name="action_pin_conversation">Pin</string>
+  <string name="action_unpin_conversation">Unpin</string>
+  <string name="action_move_to_folder">Move to folder</string>
+  <string name="move_to_folder_unfiled">Chats (unfiled)</string>
 </resources>
