@@ -1426,4 +1426,5 @@
     <string name="user_prompt_collapse">Collapse</string>
     <string name="user_prompt_expand">Expand</string>
     <string name="user_prompt_chip">Waiting</string>
+    <string name="user_prompt_open">Answer</string>
 </resources>

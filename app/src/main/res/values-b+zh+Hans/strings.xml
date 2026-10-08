@@ -1406,4 +1406,5 @@
     <string name="user_prompt_collapse">收起</string>
     <string name="user_prompt_expand">展开</string>
     <string name="user_prompt_chip">待回答</string>
+    <string name="user_prompt_open">去作答</string>
 </resources>

@@ -140,8 +140,20 @@ internal class AgentExecutionService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-        // 提问挂起时不在系统里放选项按钮：展开卡片只显示题干，点正文回到 App 用卡片作答。
-        builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        // 提问挂起时不放「停止」按钮：系统展开卡片里只提供「去作答」，选项在 App 的卡片里选。
+        val prompt = activePrompt
+        if (prompt == null) {
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        } else {
+            val answer = PendingIntent.getActivity(
+                this, 2,
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                Notification.Action.Builder(null, getString(R.string.user_prompt_open), answer).build(),
+            )
+        }
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         // 门槛取 Baklava(Android 16, 36.0)：ColorOS 16/17 的流体云直接对接原生 Live Updates API，
         // 36.0 设备同样支持提升（上游原先要求 QPR1，会把 36.0 的设备整体排除）。
