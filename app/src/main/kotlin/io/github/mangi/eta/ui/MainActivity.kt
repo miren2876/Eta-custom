@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
                         io.github.mangi.eta.ui.components.AgentUserPromptCard(
                             modifier = Modifier
                                 .padding(horizontal = 12.dp)
-                                .padding(bottom = 104.dp),
+                                .padding(bottom = 12.dp),
                         )
                     }
                 }

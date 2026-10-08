@@ -270,6 +270,7 @@ private fun OptionRow(
                     text = option.title,
                     style = MiuixTheme.textStyles.body2,
                     color = MiuixTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (option.recommended) {
                     Spacer(Modifier.width(6.dp))
@@ -277,6 +278,8 @@ private fun OptionRow(
                         text = stringResource(R.string.user_prompt_recommended),
                         style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(MiuixTheme.colorScheme.secondaryContainer)
