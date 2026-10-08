@@ -30,6 +30,22 @@ internal fun List<ConversationSummaryUi>.filterForFolder(selectedFolderId: Strin
         filter { it.folderId == selectedFolderId }
     }
 
+/** 聊天页顶栏标题的最大显示字数（含结尾省略号）。 */
+internal const val CONVERSATION_TITLE_MAX_CHARS = 12
+
+/**
+ * 顶栏显示的会话标题：超长时截断并补省略号，保证标题栏高度和右侧按钮不被挤压。
+ */
+internal fun conversationTopBarTitle(
+    title: String,
+    maxChars: Int = CONVERSATION_TITLE_MAX_CHARS,
+): String {
+    val trimmed = title.trim()
+    val limit = maxChars.coerceAtLeast(1)
+    if (trimmed.length <= limit) return trimmed
+    return trimmed.take(limit - 1) + "…"
+}
+
 @Immutable
 data class ConversationSummaryUi(
     val id: String,

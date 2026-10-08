@@ -68,6 +68,7 @@ import io.github.mangi.eta.ui.model.AgentSkillsAction
 import io.github.mangi.eta.ui.model.AgentSystemEnhanceAction
 import io.github.mangi.eta.ui.model.AgentToolsAction
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.conversationTopBarTitle
 import io.github.mangi.eta.ui.model.LOCAL_NETWORK_PERMISSION_ITEM_ID
 import io.github.mangi.eta.ui.model.PermissionHealthAction
 import io.github.mangi.eta.ui.navigation.AgentNavigator
@@ -255,6 +256,15 @@ fun AgentAppRoot(
         conversationPaneOpen = false
     }
 
+    // 聊天页顶栏左侧显示当前会话标题；草稿（未选中会话）时留空。
+    val paneUiState = agentState.conversationPaneState
+    val conversationPaneTitle = conversationTopBarTitle(
+        paneUiState.historyConversations
+            .firstOrNull { it.id == paneUiState.selectedConversationId }
+            ?.title
+            .orEmpty(),
+    )
+
     @Composable
     fun RoutedShell(
         route: AppRoute,
@@ -263,8 +273,9 @@ fun AgentAppRoot(
         AgentAppShell(
             currentRoute = route,
             isCurrentRoute = backStack.lastOrNull() == route,
-            conversationPaneState = agentState.conversationPaneState,
+            conversationPaneState = paneUiState,
             isConversationPaneOpen = conversationPaneOpen,
+            homeConversationTitle = conversationPaneTitle,
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
