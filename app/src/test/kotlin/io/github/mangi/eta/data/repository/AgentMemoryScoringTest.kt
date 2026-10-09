@@ -207,6 +207,23 @@ class AgentMemoryScoringTest {
         assertNull(AgentMemoryScoring.entryLine("- "))
     }
 
+    @Test fun normalizeEntryInputStripsEveryPrefixVariant() {
+        assertEquals(3 to "事实", AgentMemoryScoring.normalizeEntryInput("- (3) 事实"))
+        assertEquals(4 to "事实", AgentMemoryScoring.normalizeEntryInput("(4) 事实"))
+        assertEquals(4 to "事实", AgentMemoryScoring.normalizeEntryInput("（4）事实"))
+        assertEquals(5 to "事实", AgentMemoryScoring.normalizeEntryInput("* (5) 事实"))
+        assertEquals(null to "事实", AgentMemoryScoring.normalizeEntryInput("- 事实"))
+        assertEquals(null to "事实", AgentMemoryScoring.normalizeEntryInput("事实"))
+        // 重复标记（补丁 31 只剥一层时写下的 `- (4) (4) xxx`）要一次剥干净
+        assertEquals(4 to "事实", AgentMemoryScoring.normalizeEntryInput("- (4) (4) 事实"))
+        assertEquals(4 to "事实", AgentMemoryScoring.normalizeEntryInput("(4) (4) 事实"))
+        // 越界括号不当重要度，正文原样保留
+        assertEquals(null to "(6) 事实", AgentMemoryScoring.normalizeEntryInput("(6) 事实"))
+        assertEquals(null to "(2026-10-09) 事实", AgentMemoryScoring.normalizeEntryInput("(2026-10-09) 事实"))
+        assertNull(AgentMemoryScoring.normalizeEntryInput(""))
+        assertNull(AgentMemoryScoring.normalizeEntryInput("- (3) "))
+    }
+
     @Test fun entryKeyIgnoresCaseSpacingAndPunctuation() {
         assertEquals(
             AgentMemoryScoring.entryKey("Memory Bank"),

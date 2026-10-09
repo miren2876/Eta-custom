@@ -455,10 +455,10 @@ internal class AgentMemoryStore(
      * - `match` 非空：替换匹配到的第一条（归一化后包含匹配）；`content` 为空表示删除该条
      */
     fun writeEntry(content: String, importance: Int?, match: String?): AgentMemorySnapshot = synchronized(lock) {
-        // 容错：模型可能把整行 `- (3) 事实` 当 content 传进来，这里剥掉前缀，避免写出 `- (3) - (3) 事实`。
-        val parsedContent = AgentMemoryScoring.entryLine(content)
-        val text = (parsedContent?.text ?: content.replace('\n', ' ')).trim()
-        val entryImportance = importance ?: parsedContent?.importance
+        // 容错：模型可能整行复制条目（`- (3) 事实` / `(3) 事实` / 双重标记），统一剥掉前缀。
+        val normalized = AgentMemoryScoring.normalizeEntryInput(content)
+        val text = normalized?.second.orEmpty()
+        val entryImportance = importance ?: normalized?.first
         if (text.length > MAX_ENTRY_CHARS) {
             throw AgentMemoryException(
                 "MEMORY_ENTRY_TOO_LONG",

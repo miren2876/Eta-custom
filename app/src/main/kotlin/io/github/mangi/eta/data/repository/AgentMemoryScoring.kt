@@ -224,6 +224,33 @@ internal object AgentMemoryScoring {
         return MemoryEntryLine(importance = importance, text = text)
     }
 
+    /** 条目前缀：可选的列表符号 + 可选的重要度标记（半角/全角括号）。 */
+    private val ENTRY_PREFIX = Regex("^\\s*(?:[-*·•]\\s*)?(?:[（(]\\s*([1-5])\\s*[)）]\\s*)?")
+
+    /**
+     * 规整外部传入的条目文本：允许带 `- `、`(3) `、`- (3) ` 等前缀（可重复、可全角），
+     * 返回（行内重要度, 正文）；正文为空时返回 null。
+     *
+     * 模型经常从注入内容里整行复制条目，或只带 `(3) ` 而漏掉前导 `- `，这里统一剥掉。
+     */
+    fun normalizeEntryInput(content: String): Pair<Int?, String>? {
+        var rest = content.replace('\n', ' ').trim()
+        var importance: Int? = null
+        var guard = 0
+        while (guard++ < 8) {
+            val match = ENTRY_PREFIX.find(rest) ?: break
+            if (match.value.isEmpty()) break
+            if (importance == null) {
+                importance = match.groupValues[1].toIntOrNull()
+            }
+            val next = rest.substring(match.value.length).trimStart()
+            if (next == rest) break
+            rest = next
+        }
+        if (rest.isEmpty()) return null
+        return importance to rest
+    }
+
     /** 条目的 sidecar key：归一化后比较，避免空格/标点差异导致统计丢失。 */
     fun entryKey(text: String): String = normalize(text)
 
