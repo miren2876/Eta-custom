@@ -54,6 +54,7 @@ import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
 import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.ui.model.AgentMemoryAction
+import io.github.mangi.eta.ui.model.AgentMemoryEntryUi
 import io.github.mangi.eta.ui.model.AgentMemoryFileUi
 import io.github.mangi.eta.ui.model.AgentMemorySectionUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
@@ -101,6 +102,7 @@ internal fun AgentMemoryScreen(
     var profileExpanded by remember { mutableStateOf(false) }
     var workingExpanded by remember { mutableStateOf(false) }
     var filesExpanded by remember { mutableStateOf(false) }
+    var entriesExpanded by remember { mutableStateOf(false) }
     var showClearProfileDialog by remember { mutableStateOf(false) }
     var showClearWorkingDialog by remember { mutableStateOf(false) }
 
@@ -179,6 +181,33 @@ internal fun AgentMemoryScreen(
                         onClear = { showClearWorkingDialog = true },
                         onSave = { onAction(AgentMemoryAction.SaveWorking) },
                     )
+                }
+
+                item(key = "entries-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_entries_title)) }
+                item(key = "entries-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        ExpandableHeader(
+                            title = stringResource(R.string.memory_entries_title),
+                            summary = stringResource(R.string.memory_entries_summary, state.entries.size),
+                            expanded = entriesExpanded,
+                            onToggle = { entriesExpanded = !entriesExpanded },
+                        )
+                        if (entriesExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            if (state.entries.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_entries_empty))
+                            } else {
+                                state.entries.forEachIndexed { index, entry ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    EntryRow(entry = entry)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 item(key = "files-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_files_title)) }
@@ -750,6 +779,34 @@ private fun SectionHint(text: String) {
         style = MiuixTheme.textStyles.footnote1,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
     )
+}
+
+/** 工作记忆条目：正文 + 重要度 / EI / 引用次数 / 距今时间。 */
+@Composable
+private fun EntryRow(entry: AgentMemoryEntryUi) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = entry.text,
+            color = MiuixTheme.colorScheme.onSurface,
+            style = MiuixTheme.textStyles.body2,
+        )
+        Text(
+            text = listOfNotNull(
+                stringResource(R.string.memory_entry_meta, entry.importance, entry.eiLabel),
+                if (entry.hitCount > 0) stringResource(R.string.memory_entry_hits, entry.hitCount) else null,
+                entry.idleDays?.takeIf { days -> days > 0 }?.let { days ->
+                    stringResource(R.string.memory_entry_idle_days, days)
+                },
+            ).joinToString(" · "),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.footnote1,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
 }
 
 /** 章节列表与归档列表各自的多选范围。 */

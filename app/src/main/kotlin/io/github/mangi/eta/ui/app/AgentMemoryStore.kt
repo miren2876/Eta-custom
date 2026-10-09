@@ -13,6 +13,7 @@ import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentMemorySection
 import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.model.AgentMemoryEntryUi
 import io.github.mangi.eta.ui.model.AgentMemoryFileUi
 import io.github.mangi.eta.ui.model.AgentMemorySectionUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 /** 记忆页的读取、编辑与保存状态；与会话和 Agent run 无共享状态。 */
 internal class AgentMemoryStore(
@@ -44,6 +46,7 @@ internal class AgentMemoryStore(
                 val core = AgentMemoryRepository.coreSnapshot()
                 val profile = AgentMemoryRepository.coreProfile()
                 val working = AgentMemoryRepository.coreWorking()
+                val entries = AgentMemoryRepository.entries()
                 val files = AgentMemoryRepository.files()
                 val archive = AgentMemoryRepository.archiveSnapshot()
                 AgentMemorySnapshotBundle(
@@ -57,6 +60,7 @@ internal class AgentMemoryStore(
                     core = core,
                     profile = profile,
                     working = working,
+                    entries = entries,
                     files = files,
                     archive = archive,
                 )
@@ -77,6 +81,20 @@ internal class AgentMemoryStore(
                             profileSaved = bundle.profile,
                             workingDraft = bundle.working,
                             workingSaved = bundle.working,
+                            entries = bundle.entries.map { entry ->
+                                val reference = if (entry.lastHitAtMillis > 0L) {
+                                    entry.lastHitAtMillis
+                                } else {
+                                    entry.writtenAtMillis
+                                }
+                                AgentMemoryEntryUi(
+                                    text = entry.text,
+                                    importance = entry.importance,
+                                    hitCount = entry.hitCount,
+                                    idleDays = if (reference > 0L) ((now - reference) / DAY_MILLIS).toInt() else null,
+                                    eiLabel = String.format(Locale.US, "%.2f", entry.effectiveImportance),
+                                )
+                            },
                             files = bundle.files.map { file ->
                                 val reference = if (file.lastHitAtMillis > 0L) {
                                     file.lastHitAtMillis
@@ -598,6 +616,7 @@ internal class AgentMemoryStore(
         val core: io.github.mangi.eta.data.repository.AgentMemorySnapshot,
         val profile: String,
         val working: String,
+        val entries: List<io.github.mangi.eta.data.repository.AgentMemoryEntry>,
         val files: List<io.github.mangi.eta.data.repository.AgentMemoryFileInfo>,
         val archive: io.github.mangi.eta.data.repository.AgentMemoryArchiveSnapshot,
     )

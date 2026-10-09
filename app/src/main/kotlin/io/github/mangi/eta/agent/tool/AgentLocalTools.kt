@@ -449,29 +449,62 @@ internal class AgentLocalTools(
 
     private fun memoryGetContent(args: JSONObject): String = try {
         val query = args.optString("query").takeIf(String::isNotBlank)
-        val core = AgentMemoryRepository.coreSnapshot().content
-        val index = AgentMemoryRepository.fileIndexText()
-        if (query == null) memoryOverviewJson(core, index) else memorySearchJson(query, core, index)
+        if (query == null) memoryOverviewJson() else memorySearchJson(query)
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆读取失败")
     }
 
-    /** 不带 query：返回核心记忆全文与档案清单（等价于刷新常驻注入内容）。 */
-    private fun memoryOverviewJson(core: String, index: String): String = JSONObject()
-        .put("ok", true)
-        .put("mode", "overview")
-        .put("core", core)
-        .put("files", index)
-        .put("content", buildString {
-            if (core.isNotBlank()) append(core).append("\n\n")
-            append(index)
-        }.trim())
-        .toString()
+    /** 不带 query：返回用户画像 + 活跃条目（含 EI / 引用次数）+ 档案清单。 */
+    private fun memoryOverviewJson(): String {
+        val core = AgentMemoryRepository.coreSnapshot().content
+        val index = AgentMemoryRepository.fileIndexText()
+        val entries = JSONArray()
+        AgentMemoryRepository.entries().forEach { entry ->
+            entries.put(
+                JSONObject()
+                    .put("text", entry.text)
+                    .put("importance", entry.importance)
+                    .put("hit_count", entry.hitCount)
+                    .put("ei", entry.effectiveImportance)
+                    .put("idle_days", idleDays(entry.lastHitAtMillis, entry.writtenAtMillis)),
+            )
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("mode", "overview")
+            .put("core", core)
+            .put("entries", entries)
+            .put("files", index)
+            .put("content", buildString {
+                if (core.isNotBlank()) append(core).append("\n\n")
+                append(index)
+            }.trim())
+            .toString()
+    }
 
-    /** 带 query：在所有档案里按相关度检索，返回命中档案与命中行（引用次数随之 +1）。 */
-    private fun memorySearchJson(query: String, core: String, index: String): String {
+    /** 条目距最近一次使用（命中或写入）多少天；没有记录返回 null。 */
+    private fun idleDays(lastHitAtMillis: Long, writtenAtMillis: Long): Int? {
+        val lastTouched = maxOf(lastHitAtMillis, writtenAtMillis)
+        if (lastTouched <= 0L) return null
+        return ((System.currentTimeMillis() - lastTouched) / (24L * 60 * 60 * 1000)).toInt()
+    }
+
+    /** 带 query：在档案与活跃条目里按相关度检索（命中累加引用次数）。 */
+    private fun memorySearchJson(query: String): String {
         val hits = AgentMemoryRepository.searchFiles(query)
         hits.forEach { hit -> AgentMemoryRepository.recordFileHit(hit.name) }
+        val entryHits = AgentMemoryRepository.searchEntries(query)
+        entryHits.forEach { hit -> AgentMemoryRepository.recordEntryHit(hit.entry.text) }
+        val entryHitsJson = JSONArray()
+        entryHits.forEach { hit ->
+            entryHitsJson.put(
+                JSONObject()
+                    .put("text", hit.entry.text)
+                    .put("importance", hit.entry.importance)
+                    .put("ei", hit.entry.effectiveImportance)
+                    .put("score", hit.score),
+            )
+        }
         val hitsJson = JSONArray()
         hits.forEach { hit ->
             val lines = JSONArray()
@@ -495,10 +528,11 @@ internal class AgentLocalTools(
             .put("ok", true)
             .put("mode", "search")
             .put("query", query)
-            .put("core", core)
-            .put("files", index)
+            .put("files", AgentMemoryRepository.fileIndexText())
             .put("hit_count", hits.size)
             .put("hits", hitsJson)
+            .put("entry_count", entryHits.size)
+            .put("entry_hits", entryHitsJson)
             .toString()
     }
 
@@ -535,15 +569,39 @@ internal class AgentLocalTools(
                 coreWriteResult("working")
             }
 
+            "entry" -> {
+                val importance = args.optInt("importance", 0).takeIf { it in 1..5 }
+                val match = args.optString("match").takeIf(String::isNotBlank)
+                AgentMemoryRepository.writeEntry(content, importance, match)
+                entryWriteResult(replaced = match != null, content = content)
+            }
+
             else -> errorResult(
                 "MEMORY_TARGET_REQUIRED",
-                "请用 target=profile / target=working 写核心记忆，或用 archive=<名字> 写档案",
+                "请用 target=entry 写工作记忆条目、target=profile|working 覆盖整份文件，" +
+                    "或用 archive=<名字> 写档案",
             )
         }
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆写入失败")
     } catch (failure: JSONException) {
         errorResult("MEMORY_ARGUMENT_INVALID", "缺少 content 或参数格式不对")
+    }
+
+    /** 条目写入回执：顺带回报条目数与工作记忆字节数。 */
+    private fun entryWriteResult(replaced: Boolean, content: String): String {
+        val entries = AgentMemoryRepository.entries()
+        return JSONObject()
+            .put("ok", true)
+            .put("target", "entry")
+            .put("action", when {
+                content.isBlank() -> "removed"
+                replaced -> "replaced"
+                else -> "appended"
+            })
+            .put("entry_count", entries.size)
+            .put("working_bytes", AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size)
+            .toString()
     }
 
     private fun coreWriteResult(target: String): String {

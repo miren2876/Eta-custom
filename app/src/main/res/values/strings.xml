@@ -1470,7 +1470,13 @@
   <string name="memory_profile_title">User profile</string>
   <string name="memory_profile_summary">Injected every turn, up to 5 KB</string>
   <string name="memory_working_title">Working memory</string>
-  <string name="memory_working_summary">Archive index and current progress, up to 10 KB</string>
+  <string name="memory_working_summary">Active entries ranked by effective importance (EI), up to 10 KB</string>
+  <string name="memory_entries_title">Active entries</string>
+  <string name="memory_entries_summary">%1$d entries, ranked by EI (importance × references × decay)</string>
+  <string name="memory_entries_empty">No entries yet — the model can add one with memory_write target=entry</string>
+  <string name="memory_entry_meta">Importance %1$d · EI %2$s</string>
+  <string name="memory_entry_hits">%1$d refs</string>
+  <string name="memory_entry_idle_days">%1$d d ago</string>
   <string name="memory_files_title">Work archives</string>
   <string name="memory_archive_files_title">Archived archives</string>
   <string name="memory_files_empty">No archives yet — the model can create one with memory_write archive=&lt;name&gt;</string>

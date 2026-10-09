@@ -1,6 +1,7 @@
 package io.github.mangi.eta.data.repository
 
 import kotlin.math.ln
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 /** MEMORY.md 里一个章节的行范围（0-based、endIndex 开区间）。 */
@@ -13,6 +14,12 @@ internal data class MemorySectionRange(
     val lineCount: Int get() = endIndex - startIndex
     val displayTitle: String get() = title.trimStart('#').trim()
 }
+
+/** 工作记忆的一行条目：`- (4) 内容`；缺省重要度 3。 */
+internal data class MemoryEntryLine(
+    val importance: Int,
+    val text: String,
+)
 
 internal data class MemoryLineScore(
     val index: Int,
@@ -192,6 +199,65 @@ internal object AgentMemoryScoring {
             val lastTouched = maxOf(entry.lastHitAtMillis, entry.writtenAtMillis)
             isIdle(lastTouched, nowMillis, minIdleMillis)
         }
+    }
+
+    // ---- 工作记忆条目（memory/MEMORY.md 的 `- (重要度) 内容` 行） ----
+
+    /** 条目缺省基础重要度。 */
+    const val DEFAULT_ENTRY_IMPORTANCE = 3
+
+    /** 条目衰减半衰期：30 天。 */
+    const val ENTRY_HALF_LIFE_DAYS = 30.0
+
+    private const val DAY_MILLIS = 24L * 60 * 60 * 1000L
+    private val ENTRY = Regex("^[-*]\\s+(?:\\((\\d)\\)\\s*)?(.*\\S)$")
+
+    /** 解析一行条目；不是条目时返回 null。 */
+    fun entryLine(line: String): MemoryEntryLine? {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) return null
+        val match = ENTRY.matchEntire(trimmed) ?: return null
+        val importance = match.groupValues[1].toIntOrNull()?.coerceIn(1, 5)
+            ?: DEFAULT_ENTRY_IMPORTANCE
+        val text = match.groupValues[2].trim()
+        if (text.isEmpty()) return null
+        return MemoryEntryLine(importance = importance, text = text)
+    }
+
+    /** 条目的 sidecar key：归一化后比较，避免空格/标点差异导致统计丢失。 */
+    fun entryKey(text: String): String = normalize(text)
+
+    /** 基础权重：重要度 5 → 1.0、4 → 0.8、3 → 0.5、2 → 0.3、1 → 0.15。 */
+    fun baseWeight(importance: Int): Double = when (importance.coerceIn(1, 5)) {
+        5 -> 1.0
+        4 -> 0.8
+        3 -> 0.5
+        2 -> 0.3
+        else -> 0.15
+    }
+
+    /**
+     * 有效重要度 EI = 基础权重 × 访问因子 × 衰减因子 × 连接因子。
+     *
+     * 访问因子 max(1, ln(1 + 引用次数))；衰减因子 30 天半衰期；
+     * 连接因子暂无关系边（1.0 + 0.1 × 边数，最多 +0.5），保留参数以便后续接 link。
+     */
+    fun effectiveImportance(
+        importance: Int,
+        hitCount: Int,
+        lastTouchedMillis: Long,
+        nowMillis: Long,
+        edgeCount: Int = 0,
+    ): Double {
+        val access = maxOf(1.0, ln(1.0 + hitCount.coerceAtLeast(0)))
+        val decay = if (lastTouchedMillis <= 0L) {
+            1.0
+        } else {
+            val days = (nowMillis - lastTouchedMillis).coerceAtLeast(0L).toDouble() / DAY_MILLIS
+            0.5.pow(days / ENTRY_HALF_LIFE_DAYS)
+        }
+        val edges = 1.0 + 0.1 * minOf(edgeCount, 5)
+        return baseWeight(importance) * access * decay * edges
     }
 
     const val CORE_SECTION_TITLE = "核心记忆"

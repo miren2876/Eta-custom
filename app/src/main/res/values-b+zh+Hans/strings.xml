@@ -1450,7 +1450,13 @@
   <string name="memory_profile_title">用户画像</string>
   <string name="memory_profile_summary">每轮固定注入，上限 5 KB</string>
   <string name="memory_working_title">工作记忆</string>
-  <string name="memory_working_summary">档案索引与当前进度，上限 10 KB</string>
+  <string name="memory_working_summary">活跃条目，按有效重要度（EI）排序，上限 10 KB</string>
+  <string name="memory_entries_title">活跃条目</string>
+  <string name="memory_entries_summary">共 %1$d 条，按 EI（重要度 × 引用次数 × 衰减）排序</string>
+  <string name="memory_entries_empty">还没有条目；模型可以用 memory_write target=entry 记一条</string>
+  <string name="memory_entry_meta">重要度 %1$d · EI %2$s</string>
+  <string name="memory_entry_hits">引用 %1$d 次</string>
+  <string name="memory_entry_idle_days">%1$d 天前</string>
   <string name="memory_files_title">工作档案</string>
   <string name="memory_archive_files_title">归档档案</string>
   <string name="memory_files_empty">还没有档案；模型可以用 memory_write archive=&lt;名字&gt; 新建</string>

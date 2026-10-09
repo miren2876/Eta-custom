@@ -71,6 +71,29 @@ internal data class AgentMemoryReadResult(
     val sections: List<AgentMemorySection> = emptyList(),
 )
 
+/** 工作记忆条目：一行 `- (重要度) 内容`，附 sidecar 统计与算出的有效重要度。 */
+internal data class AgentMemoryEntry(
+    val text: String,
+    val importance: Int,
+    val hitCount: Int,
+    val lastHitAtMillis: Long,
+    val writtenAtMillis: Long,
+    val effectiveImportance: Double,
+)
+
+/** 条目检索命中。 */
+internal data class AgentMemoryEntryHit(
+    val entry: AgentMemoryEntry,
+    val score: Double,
+)
+
+/** 条目统计的 sidecar（memory/working.json）：与档案的 usage.json 分开，互不干扰。 */
+internal data class AgentMemoryEntryUsage(
+    val entries: Map<String, AgentMemoryUsageEntry> = emptyMap(),
+    /** 旧版「每行一个档案名」的清单行是否已清理过（一次性迁移标记）。 */
+    val migrated: Boolean = false,
+)
+
 /** 章节的引用统计；持久化在 memory/usage.json，不影响 MEMORY.md 的 revision。 */
 internal data class AgentMemoryUsageEntry(
     val hitCount: Int = 0,
@@ -159,6 +182,8 @@ internal class AgentMemoryStore(
     private val atomicFile = AtomicFile(File(memoryDir, FILE_NAME))
     private val archiveFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
     private val usageFile = AtomicFile(File(memoryDir, USAGE_FILE_NAME))
+    /** 工作记忆条目的统计 sidecar（引用次数 / 写入时间）。 */
+    private val entryFile = AtomicFile(File(memoryDir, ENTRY_FILE_NAME))
     /** 旧结构文件：画像 + 工作记忆同在一个 CORE.md，只在迁移时读写。 */
     private val coreFile = AtomicFile(File(memoryDir, LEGACY_CORE_FILE_NAME))
     private val userFile = AtomicFile(File(memoryDir, USER_FILE_NAME))
@@ -363,23 +388,261 @@ internal class AgentMemoryStore(
         deleted
     }
 
-    /** 档案变动后同步「工作记忆」里的档案清单：删掉 removed 里的行，补上 added。 */
+    /**
+     * 档案变动后同步工作记忆：新版工作记忆不再逐条列档案（清单由 `files/` 实时生成），
+     * 这里只清理旧版遗留的「- 档案名」行。added 保留在签名里以兼容调用方。
+     */
     fun syncWorkingIndex(removed: List<String>, added: String?): AgentMemorySnapshot = synchronized(lock) {
-        val removedSet = removed.toSet()
+        val keys = removed.map { name -> AgentMemoryScoring.entryKey(name) }.toSet()
+        if (keys.isEmpty()) return@synchronized coreSnapshotLocked()
         val lines = readText(workingFile).memoryLines()
-            .filter { it.isNotBlank() }
-            .filter { line ->
-                val item = line.trim().removePrefix("-").trim()
-                item.isEmpty() || item !in removedSet
-            }
-            .toMutableList()
-        if (added != null) {
-            val exists = lines.any { it.trim().removePrefix("-").trim() == added }
-            if (!exists) lines += "- $added"
+        val kept = lines.filterNot { line ->
+            val parsed = AgentMemoryScoring.entryLine(line) ?: return@filterNot false
+            AgentMemoryScoring.entryKey(parsed.text) in keys
         }
-        val merged = lines.joinToString("\n")
-        writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
+        if (kept.size != lines.size) {
+            val merged = kept.joinToString("\n").trimEnd('\n')
+            writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
+        }
         coreSnapshotLocked()
+    }
+
+    /** 工作记忆条目，按有效重要度（EI）降序。 */
+    fun entries(): List<AgentMemoryEntry> = synchronized(lock) { entriesLocked() }
+
+    private fun entriesLocked(nowMillis: Long = System.currentTimeMillis()): List<AgentMemoryEntry> {
+        val stats = entryUsageLocked().entries
+        return readText(workingFile).memoryLines()
+            .mapNotNull { line -> AgentMemoryScoring.entryLine(line) }
+            .map { parsed ->
+                val stat = stats[AgentMemoryScoring.entryKey(parsed.text)]
+                val hits = stat?.hitCount ?: 0
+                val lastHit = stat?.lastHitAtMillis ?: 0L
+                val writtenAt = stat?.writtenAtMillis ?: 0L
+                AgentMemoryEntry(
+                    text = parsed.text,
+                    importance = parsed.importance,
+                    hitCount = hits,
+                    lastHitAtMillis = lastHit,
+                    writtenAtMillis = writtenAt,
+                    effectiveImportance = AgentMemoryScoring.effectiveImportance(
+                        importance = parsed.importance,
+                        hitCount = hits,
+                        lastTouchedMillis = maxOf(lastHit, writtenAt),
+                        nowMillis = nowMillis,
+                    ),
+                )
+            }
+            .sortedWith(compareByDescending<AgentMemoryEntry> { it.effectiveImportance }.thenBy { it.text })
+    }
+
+    /** 在活跃条目里按相关度检索（命中会累加引用次数）。 */
+    fun searchEntries(query: String, maxEntries: Int = 5): List<AgentMemoryEntryHit> = synchronized(lock) {
+        if (AgentMemoryScoring.tokenize(query).isEmpty()) return@synchronized emptyList()
+        entriesLocked()
+            .mapNotNull { entry ->
+                val score = AgentMemoryScoring.scoreLines(listOf(entry.text), query).firstOrNull()?.score
+                if (score == null) null else AgentMemoryEntryHit(entry, score)
+            }
+            .sortedByDescending { it.score }
+            .take(maxEntries)
+    }
+
+    /**
+     * 写一条工作记忆条目。
+     *
+     * - `match` 为空：追加一条 `- (重要度) 内容`
+     * - `match` 非空：替换匹配到的第一条（归一化后包含匹配）；`content` 为空表示删除该条
+     */
+    fun writeEntry(content: String, importance: Int?, match: String?): AgentMemorySnapshot = synchronized(lock) {
+        val text = content.replace('\n', ' ').trim()
+        if (text.length > MAX_ENTRY_CHARS) {
+            throw AgentMemoryException(
+                "MEMORY_ENTRY_TOO_LONG",
+                "单条条目请控制在 $MAX_ENTRY_CHARS 字符内；长内容写档案（archive=<名字>）",
+            )
+        }
+        // 条目池是一行一条：丢掉空行（含末尾换行 split 出的空串），顺带把历史遗留的空行清掉。
+        val lines = readText(workingFile).memoryLines().filter { it.isNotBlank() }.toMutableList()
+        val usage = entryUsageLocked()
+        val stats = usage.entries.toMutableMap()
+        val matchKey = match?.let { value -> AgentMemoryScoring.entryKey(value) }
+        if (matchKey == null) {
+            if (text.isEmpty()) throw AgentMemoryException("MEMORY_ENTRY_EMPTY", "条目内容不能为空")
+            val value = (importance ?: AgentMemoryScoring.DEFAULT_ENTRY_IMPORTANCE).coerceIn(1, 5)
+            lines += "- ($value) $text"
+            val key = AgentMemoryScoring.entryKey(text)
+            stats[key] = registerEntryWritten(stats, key)
+        } else {
+            val index = lines.indexOfFirst { line ->
+                val parsed = AgentMemoryScoring.entryLine(line) ?: return@indexOfFirst false
+                AgentMemoryScoring.entryKey(parsed.text).contains(matchKey)
+            }
+            if (index < 0) {
+                throw AgentMemoryException(
+                    "MEMORY_ENTRY_MISSING",
+                    "没有匹配到要改写的条目，先用 memory_get 看一下当前条目",
+                )
+            }
+            val previous = AgentMemoryScoring.entryLine(lines[index])
+            val oldKey = previous?.let { parsed -> AgentMemoryScoring.entryKey(parsed.text) }
+            if (text.isEmpty()) {
+                lines.removeAt(index)
+                if (oldKey != null) stats.remove(oldKey)
+            } else {
+                val value = (importance ?: previous?.importance ?: AgentMemoryScoring.DEFAULT_ENTRY_IMPORTANCE)
+                    .coerceIn(1, 5)
+                lines[index] = "- ($value) $text"
+                val newKey = AgentMemoryScoring.entryKey(text)
+                if (oldKey != null && oldKey != newKey) stats.remove(oldKey)?.let { stats[newKey] = it }
+                stats[newKey] = registerEntryWritten(stats, newKey)
+            }
+        }
+        val merged = lines.joinToString("\n").trimEnd('\n')
+        writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
+        writeEntryUsageLocked(usage.copy(entries = stats))
+        coreSnapshotLocked()
+    }
+
+    /** 读条目时记一次命中（EI 的访问因子）。 */
+    fun recordEntryHit(text: String) = synchronized(lock) {
+        val key = AgentMemoryScoring.entryKey(text)
+        if (key.isBlank()) return@synchronized
+        val usage = entryUsageLocked()
+        val stats = usage.entries.toMutableMap()
+        val previous = stats[key] ?: AgentMemoryUsageEntry()
+        stats[key] = previous.copy(
+            hitCount = previous.hitCount + 1,
+            lastHitAtMillis = System.currentTimeMillis(),
+        )
+        writeEntryUsageLocked(usage.copy(entries = stats))
+    }
+
+    /**
+     * 一次性迁移：旧版工作记忆里逐条列出的档案清单行（`- 档案名`）不再需要，
+     * 档案清单由 `files/` 实时生成。
+     */
+    fun migrateWorkingEntriesIfNeeded(): Boolean = synchronized(lock) {
+        val usage = entryUsageLocked()
+        if (usage.migrated) return@synchronized false
+        val names = files().map { file -> AgentMemoryScoring.entryKey(file.name) }.toSet()
+        val lines = readText(workingFile).memoryLines()
+        val kept = lines.filterNot { line ->
+            val parsed = AgentMemoryScoring.entryLine(line) ?: return@filterNot false
+            AgentMemoryScoring.entryKey(parsed.text) in names
+        }
+        if (kept.size != lines.size) {
+            val merged = kept.joinToString("\n").trimEnd('\n')
+            writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
+        }
+        writeEntryUsageLocked(usage.copy(migrated = true))
+        kept.size != lines.size
+    }
+
+    /**
+     * 注入用投影：用户画像 + 按 EI 降序的活跃条目（不超过 budgetChars）+ 一行档案统计。
+     * 超预算只截断条目，画像与档案行始终保留。
+     */
+    fun coreProjection(budgetChars: Int): String = synchronized(lock) {
+        val profile = readText(userFile).trimEnd('\n')
+        val files = files()
+        val head = buildString {
+            append(PROFILE_HEADING).append('\n')
+            if (profile.isNotEmpty()) append(profile).append('\n')
+            append('\n').append(WORKING_HEADING).append('\n')
+        }
+        val tail = buildString {
+            append('\n').append(ARCHIVE_HEADING).append('\n')
+            if (files.isEmpty()) {
+                append("暂无档案。")
+            } else {
+                append("共 ").append(files.size).append(" 个档案")
+                val warm = files.count { file -> !file.cold }
+                if (warm in 1 until files.size) append("（").append(warm).append(" 个活跃）")
+                append("；细节用 memory_get query=<关键词> 或 archive=<名字> 读取。")
+            }
+        }
+        val room = (budgetChars - head.length - tail.length).coerceAtLeast(0)
+        val selected = mutableListOf<String>()
+        var used = 0
+        var skipped = 0
+        entriesLocked().forEach { entry ->
+            val line = "- (${entry.importance}) ${entry.text}"
+            if (used + line.length + 1 > room) {
+                skipped++
+                return@forEach
+            }
+            selected += line
+            used += line.length + 1
+        }
+        buildString {
+            append(head)
+            if (selected.isEmpty()) {
+                append("（暂无活跃条目；用 memory_write target=entry 记一条）")
+            } else {
+                append(selected.joinToString("\n"))
+                if (skipped > 0) {
+                    append("\n（另有 ").append(skipped).append(" 条低 EI 条目未注入，需要时用 memory_get query= 检索）")
+                }
+            }
+            append(tail)
+        }.trimEnd('\n')
+    }
+
+    /** 登记条目首次写入时间（已有记录不动）。 */
+    private fun registerEntryWritten(
+        stats: MutableMap<String, AgentMemoryUsageEntry>,
+        key: String,
+    ): AgentMemoryUsageEntry {
+        val previous = stats[key] ?: AgentMemoryUsageEntry()
+        return if (previous.writtenAtMillis > 0L) {
+            previous
+        } else {
+            previous.copy(writtenAtMillis = System.currentTimeMillis())
+        }
+    }
+
+    private fun entryUsageLocked(): AgentMemoryEntryUsage {
+        val raw = readText(entryFile)
+        if (raw.isBlank()) return AgentMemoryEntryUsage()
+        return runCatching {
+            val json = JSONObject(raw)
+            val stats = mutableMapOf<String, AgentMemoryUsageEntry>()
+            json.optJSONObject(FIELD_ENTRIES)?.let { statsJson ->
+                statsJson.keys().forEach { key ->
+                    val entry = statsJson.optJSONObject(key) ?: return@forEach
+                    stats[key] = AgentMemoryUsageEntry(
+                        hitCount = entry.optInt(FIELD_HIT_COUNT, 0),
+                        lastHitAtMillis = entry.optLong(FIELD_LAST_HIT, 0L),
+                        writtenAtMillis = entry.optLong(FIELD_WRITTEN_AT, 0L),
+                    )
+                }
+            }
+            AgentMemoryEntryUsage(
+                entries = stats,
+                migrated = json.optBoolean(FIELD_ENTRIES_MIGRATED, false),
+            )
+        }.getOrDefault(AgentMemoryEntryUsage())
+    }
+
+    private fun writeEntryUsageLocked(usage: AgentMemoryEntryUsage) {
+        runCatching {
+            val stats = JSONObject()
+            usage.entries.forEach { (key, entry) ->
+                stats.put(
+                    key,
+                    JSONObject()
+                        .put(FIELD_HIT_COUNT, entry.hitCount)
+                        .put(FIELD_LAST_HIT, entry.lastHitAtMillis)
+                        .put(FIELD_WRITTEN_AT, entry.writtenAtMillis),
+                )
+            }
+            val json = JSONObject()
+                .put(FIELD_VERSION, USAGE_SCHEMA_VERSION)
+                .put(FIELD_ENTRIES_MIGRATED, usage.migrated)
+                .put(FIELD_ENTRIES, stats)
+            writeText(entryFile, json.toString())
+        }
     }
 
     /**
@@ -1306,6 +1569,8 @@ internal class AgentMemoryStore(
         const val MAX_READ_CHARS = 32_000
         const val MIN_READ_CHARS = 1
         const val MAX_WRITE_CONTENT_CHARS = 3_500
+        /** 单条工作记忆条目的字符上限：条目要能一眼扫完，长内容进档案。 */
+        const val MAX_ENTRY_CHARS = 500
         const val DEFAULT_COLD_IDLE_DAYS = 60L
         const val DEFAULT_NEVER_USED_GRACE_DAYS = 30L
         const val PREVIEW_CHARS = 120
@@ -1326,6 +1591,11 @@ internal class AgentMemoryStore(
         /** 工作记忆硬上限：压缩失败时也拒绝写入，避免常驻注入被撑爆。 */
         const val WORKING_HARD_MAX_BYTES = 64 * 1024
         private const val USAGE_FILE_NAME = "usage.json"
+        /** 工作记忆条目的统计 sidecar。 */
+        private const val ENTRY_FILE_NAME = "working.json"
+        private const val FIELD_ENTRIES = "entries"
+        private const val FIELD_ENTRIES_MIGRATED = "entries_migrated"
+        private const val ARCHIVE_HEADING = "## 档案"
         private const val DEFAULT_START_LINE = 1
         private const val DUPLICATE_SKIP_THRESHOLD = 0.80
         private const val DUPLICATE_WARN_THRESHOLD = 0.50
@@ -1353,6 +1623,8 @@ internal object AgentMemoryRepository {
             runCatching { store.migrateFilesIfNeeded() }
             // 最后把 CORE.md（画像 + 工作记忆）拆成 USER.md 与 MEMORY.md，两者每轮注入。
             runCatching { store.migrateCoreFilesIfNeeded() }
+            // 工作记忆改为「条目池」后，清掉旧版逐条列档案的清单行（只做一次）。
+            runCatching { store.migrateWorkingEntriesIfNeeded() }
         }
     }
 
@@ -1481,6 +1753,33 @@ internal object AgentMemoryRepository {
     fun migrateCoreFilesIfNeeded(): Boolean {
         ensureInitialized()
         return store.migrateCoreFilesIfNeeded()
+    }
+
+    /** 工作记忆条目（按有效重要度降序）。 */
+    fun entries(): List<AgentMemoryEntry> {
+        ensureInitialized()
+        return store.entries()
+    }
+
+    fun searchEntries(query: String, maxEntries: Int = 5): List<AgentMemoryEntryHit> {
+        ensureInitialized()
+        return store.searchEntries(query, maxEntries)
+    }
+
+    fun writeEntry(content: String, importance: Int?, match: String?): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.writeEntry(content, importance, match)
+    }
+
+    fun recordEntryHit(text: String) {
+        ensureInitialized()
+        store.recordEntryHit(text)
+    }
+
+    /** 注入投影：画像 + 按 EI 排序的活跃条目 + 一行档案统计。 */
+    fun coreProjection(budgetChars: Int): String {
+        ensureInitialized()
+        return store.coreProjection(budgetChars)
     }
 
     fun migrateCoreIfNeeded(): Boolean {

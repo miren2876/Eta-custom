@@ -2,8 +2,10 @@ package io.github.mangi.eta.data.repository
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.ln
 
 class AgentMemoryScoringTest {
     private val day = 24 * 60 * 60 * 1000L
@@ -191,5 +193,37 @@ class AgentMemoryScoringTest {
 
     @Test fun stripArchiveStampLeavesPlainHeadingsAlone() {
         assertEquals("## 普通标题\n正文", AgentMemoryScoring.stripArchiveStamp("## 普通标题\n正文"))
+    }
+
+    @Test fun entryLinesParseImportanceAndFallBackToDefault() {
+        assertEquals(MemoryEntryLine(4, "记忆结构改造完成"), AgentMemoryScoring.entryLine("- (4) 记忆结构改造完成"))
+        assertEquals(MemoryEntryLine(3, "没写重要度"), AgentMemoryScoring.entryLine("- 没写重要度"))
+        assertEquals(MemoryEntryLine(5, "星号也可以"), AgentMemoryScoring.entryLine("* (5) 星号也可以"))
+        // 越界重要度夹到 1–5
+        assertEquals(5, AgentMemoryScoring.entryLine("- (9) 越界")?.importance)
+        assertEquals(1, AgentMemoryScoring.entryLine("- (0) 越界")?.importance)
+        assertNull(AgentMemoryScoring.entryLine("## 标题不是条目"))
+        assertNull(AgentMemoryScoring.entryLine("裸文本没有前缀"))
+        assertNull(AgentMemoryScoring.entryLine("- "))
+    }
+
+    @Test fun entryKeyIgnoresCaseSpacingAndPunctuation() {
+        assertEquals(
+            AgentMemoryScoring.entryKey("Memory Bank"),
+            AgentMemoryScoring.entryKey("memory  bank"),
+        )
+    }
+
+    @Test fun effectiveImportanceFollowsMnemonFormula() {
+        val now = 1_700_000_000_000L
+        // 刚写入、无引用：EI 等于基础权重
+        assertEquals(1.0, AgentMemoryScoring.effectiveImportance(5, 0, now, now), 1e-9)
+        assertEquals(0.5, AgentMemoryScoring.effectiveImportance(3, 0, now, now), 1e-9)
+        // 30 天半衰期
+        assertEquals(0.5, AgentMemoryScoring.effectiveImportance(5, 0, now - 30 * day, now), 1e-6)
+        // 引用 3 次 → 访问因子 ln(4)
+        assertEquals(ln(4.0), AgentMemoryScoring.effectiveImportance(5, 3, now, now), 1e-9)
+        // 没有时间记录时不衰减
+        assertEquals(1.0, AgentMemoryScoring.effectiveImportance(5, 0, 0L, now), 1e-9)
     }
 }

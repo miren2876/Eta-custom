@@ -29,6 +29,18 @@ data class AgentMemoryFileUi(
     val cold: Boolean = false,
 )
 
+/** 工作记忆条目：一行 `- (重要度) 内容`，附 sidecar 统计与 EI。 */
+@Immutable
+data class AgentMemoryEntryUi(
+    val text: String,
+    val importance: Int,
+    val hitCount: Int = 0,
+    /** 距离最近一次使用（命中或写入）的天数；没有记录为 null。 */
+    val idleDays: Int? = null,
+    /** 有效重要度（EI），保留两位小数。 */
+    val eiLabel: String,
+)
+
 @Immutable
 data class AgentMemoryUiState(
     val enabled: Boolean = true,
@@ -47,6 +59,8 @@ data class AgentMemoryUiState(
     val workingDraft: String = "",
     val workingSaved: String = "",
     val isSavingCore: Boolean = false,
+    /** 工作记忆条目（按 EI 降序）。 */
+    val entries: List<AgentMemoryEntryUi> = emptyList(),
     /** 记忆档案清单（memory/files/）。 */
     val files: List<AgentMemoryFileUi> = emptyList(),
     val expandedFileName: String? = null,
