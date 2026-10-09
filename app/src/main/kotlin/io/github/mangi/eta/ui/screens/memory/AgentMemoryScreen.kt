@@ -195,6 +195,8 @@ internal fun AgentMemoryScreen(
                             ),
                             expanded = filesExpanded,
                             onToggle = { filesExpanded = !filesExpanded },
+                            trailing = "${formatBytes(state.files.sumOf { it.byteSize })} / " +
+                                formatBytes(AgentMemoryStore.FILE_MAX_BYTES),
                         )
                         if (filesExpanded) {
                             EtaPreferenceDivider(hasLeading = false)
@@ -659,6 +661,7 @@ private fun ExpandableHeader(
     summary: String,
     expanded: Boolean,
     onToggle: () -> Unit,
+    trailing: String? = null,
 ) {
     Row(
         modifier = Modifier
@@ -673,6 +676,14 @@ private fun ExpandableHeader(
             style = MiuixTheme.textStyles.body2,
             modifier = Modifier.weight(1f),
         )
+        if (trailing != null) {
+            Text(
+                text = trailing,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
         Icon(
             imageVector = if (expanded) {
                 Icons.Rounded.KeyboardArrowUp
@@ -887,12 +898,6 @@ private fun FileRow(
                 style = MiuixTheme.textStyles.footnote1,
             )
         }
-        Text(
-            text = "${formatBytes(file.byteSize)} / ${formatBytes(AgentMemoryStore.FILE_MAX_BYTES)}",
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            style = MiuixTheme.textStyles.footnote1,
-        )
-        Spacer(modifier = Modifier.width(4.dp))
         if (expanded != null) {
             Icon(
                 imageVector = if (expanded) {

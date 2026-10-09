@@ -1470,7 +1470,7 @@
   <string name="state_ui_memory_core_cleared">核心记忆已清空</string>
   <string name="memory_selection_cancel">取消选择</string>
   <string name="memory_unarchive_selected">取消归档（%1$d）</string>
-  <string name="memory_unarchive_confirm_title">取消归档选中的章节？</string>
+  <string name="memory_unarchive_confirm_title">取消归档选中的档案？</string>
   <string name="memory_unarchive_confirm_message">%1$d 个档案将还原成独立档案文件。</string>
   <string name="memory_section_select_hint">长按章节可多选，然后批量归档</string>
   <string name="memory_archive_select_hint">长按已归档档案可多选，然后取消归档</string>
