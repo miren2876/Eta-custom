@@ -6,7 +6,10 @@ import io.github.mangi.eta.data.repository.AgentMemoryStore
 /** 记忆页展示用的章节信息（含引用统计）。 */
 @Immutable
 data class AgentMemorySectionUi(
+    /** 显示用标题，已去掉 `#` 前缀。 */
     val title: String,
+    /** 操作（如归档）用的原始标题行，含 `#` 前缀。 */
+    val rawTitle: String = "",
     val lines: Int,
     val hitCount: Int,
     /** 距离最近一次引用/写入的天数；null 表示从未引用。 */

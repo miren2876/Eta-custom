@@ -278,6 +278,7 @@ internal class AgentMemoryStore(
         }
         return AgentMemorySectionUi(
             title = displayTitle,
+            rawTitle = title,
             lines = lineCount,
             hitCount = hitCount,
             idleDays = idleDays,

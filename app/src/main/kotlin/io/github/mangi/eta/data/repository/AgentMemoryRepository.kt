@@ -208,7 +208,9 @@ internal class AgentMemoryStore(
         val snapshot = snapshotLocked()
         val lines = snapshot.content.memoryLines()
         val ranges = AgentMemoryScoring.sections(lines)
-        val selected = ranges.filter { it.title in titles }
+        // 调用方可能传原始标题（含 `#`）或去掉前缀的显示名，两种都接受。
+        val wanted = titles.toSet()
+        val selected = ranges.filter { it.title in wanted || it.displayTitle in wanted }
         if (selected.isEmpty()) {
             throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "要归档的章节已不存在，请刷新后重试")
         }
@@ -768,10 +770,12 @@ internal class AgentMemoryStore(
         val next = mutableMapOf<String, AgentMemoryUsageEntry>()
         titles.forEach { title ->
             val previous = current[title]
-            next[title] = if (previous == null) {
-                AgentMemoryUsageEntry(writtenAtMillis = now)
-            } else {
-                previous.copy(writtenAtMillis = now)
+            next[title] = when {
+                previous == null -> AgentMemoryUsageEntry(writtenAtMillis = now)
+                // 只在首次获知时补写入时间；不能用「最后一次写入文件」刷新已有章节，
+                // 否则长期未被引用的老章节永远等不到归档提示。
+                previous.writtenAtMillis <= 0L -> previous.copy(writtenAtMillis = now)
+                else -> previous
             }
         }
         writeUsageLocked(AgentMemoryUsage(next))

@@ -62,7 +62,7 @@ internal fun AgentMemoryScreen(
     var showArchiveDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var selectedTitles by remember(state.archiveCandidates) {
-        mutableStateOf(state.archiveCandidates.map { it.title }.toSet())
+        mutableStateOf(state.archiveCandidates.map { it.rawTitle }.toSet())
     }
 
     MiuixScaffold(
@@ -174,12 +174,12 @@ internal fun AgentMemoryScreen(
                                 if (index > 0) EtaPreferenceDivider(hasLeading = false)
                                 SectionRow(
                                     section = section,
-                                    selected = section.title in selectedTitles,
+                                    selected = section.rawTitle in selectedTitles,
                                     onClick = {
-                                        selectedTitles = if (section.title in selectedTitles) {
-                                            selectedTitles - section.title
+                                        selectedTitles = if (section.rawTitle in selectedTitles) {
+                                            selectedTitles - section.rawTitle
                                         } else {
-                                            selectedTitles + section.title
+                                            selectedTitles + section.rawTitle
                                         }
                                     },
                                 )
