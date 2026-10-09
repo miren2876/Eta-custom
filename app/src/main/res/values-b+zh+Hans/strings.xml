@@ -1454,6 +1454,10 @@
   <string name="memory_files_title">档案</string>
   <string name="memory_files_empty">还没有档案；模型可以用 memory_write archive=&lt;名字&gt; 新建</string>
   <string name="memory_file_meta">%1$d 行 · %2$s</string>
+  <string name="memory_files_select_hint">长按档案可多选，然后归档</string>
+  <string name="state_ui_memory_file_saved">档案已保存</string>
+  <string name="memory_archive_files_confirm_title">归档选中的档案？</string>
+  <string name="memory_archive_files_confirm_message">%1$d 个档案将移入 MEMORY-archive.md，原档案文件删除。</string>
   <string name="memory_profile_clear_title">清空用户画像？</string>
   <string name="memory_profile_clear_message">用户画像会被清空，之后不再常驻注入。</string>
   <string name="memory_working_clear_title">清空工作记忆？</string>

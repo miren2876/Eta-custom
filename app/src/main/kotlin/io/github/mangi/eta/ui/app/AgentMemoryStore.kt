@@ -176,13 +176,90 @@ internal class AgentMemoryStore(
         scope.launch(Dispatchers.IO) {
             val text = runCatching { AgentMemoryRepository.fileText(name) }.getOrDefault("")
             withContext(Dispatchers.Main) {
-                memoryState = memoryState.copy(expandedFileName = name, expandedFileText = text)
+                memoryState = memoryState.copy(
+                    expandedFileName = name,
+                    expandedFileText = text,
+                    fileDraft = text,
+                    fileSaved = text,
+                )
             }
         }
     }
 
     fun collapseFile() {
         memoryState = memoryState.copy(expandedFileName = null, expandedFileText = "")
+    }
+
+    /** 把选中的档案归档（移入 MEMORY-archive.md 并删除档案文件）。 */
+    fun archiveFiles(names: List<String>) {
+        if (names.isEmpty() || memoryState.isArchiving) return
+        memoryState = memoryState.copy(isArchiving = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.archiveFiles(names) }
+                .fold(
+                    onSuccess = { count ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                expandedFileName = null,
+                                notice = appContext.getString(R.string.state_ui_memory_archived, count),
+                            )
+                        }
+                        refreshMemory()
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_archive_file_failed") {
+                            "Agent memory archive file failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_archive_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
+    fun updateFileDraft(content: String) {
+        memoryState = memoryState.copy(fileDraft = content, notice = null)
+    }
+
+    /** 保存当前展开的档案。 */
+    fun saveFile() {
+        val name = memoryState.expandedFileName ?: return
+        if (memoryState.isSavingFile) return
+        val content = memoryState.fileDraft
+        memoryState = memoryState.copy(isSavingFile = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.writeFile(name, content, append = false) }
+                .fold(
+                    onSuccess = {
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingFile = false,
+                                fileSaved = content,
+                                notice = appContext.getString(R.string.state_ui_memory_file_saved),
+                            )
+                        }
+                        refreshMemory()
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_file_save_failed") {
+                            "Agent memory file save failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingFile = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_failed_to_read_memory_please_try_again_later_caeaa6),
+                            )
+                        }
+                    },
+                )
+        }
     }
 
     fun setMemoryEnabled(enabled: Boolean) {

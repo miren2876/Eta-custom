@@ -1474,6 +1474,10 @@
   <string name="memory_files_title">Archives</string>
   <string name="memory_files_empty">No archives yet — the model can create one with memory_write archive=&lt;name&gt;</string>
   <string name="memory_file_meta">%1$d lines · %2$s</string>
+  <string name="memory_files_select_hint">Long-press an archive to select several and archive them</string>
+  <string name="state_ui_memory_file_saved">Archive saved</string>
+  <string name="memory_archive_files_confirm_title">Archive selected archives?</string>
+  <string name="memory_archive_files_confirm_message">%1$d archive(s) will be moved into MEMORY-archive.md and the files deleted.</string>
   <string name="memory_profile_clear_title">Clear user profile?</string>
   <string name="memory_profile_clear_message">The user profile will be emptied and no longer injected.</string>
   <string name="memory_working_clear_title">Clear working memory?</string>

@@ -52,6 +52,7 @@ import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
+import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.ui.model.AgentMemoryAction
 import io.github.mangi.eta.ui.model.AgentMemoryFileUi
 import io.github.mangi.eta.ui.model.AgentMemorySectionUi
@@ -70,7 +71,6 @@ internal fun AgentMemoryScreen(
     state: AgentMemoryUiState,
     onAction: (AgentMemoryAction) -> Unit,
 ) {
-    var showClearDialog by remember { mutableStateOf(false) }
     var showArchiveDialog by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
     // 章节分区默认展开（最常看），归档分区默认收起。
@@ -79,6 +79,9 @@ internal fun AgentMemoryScreen(
     var selectionScope by remember { mutableStateOf<MemorySelection?>(null) }
     var sectionSelection by remember { mutableStateOf(emptySet<String>()) }
     var archiveSelection by remember { mutableStateOf(emptySet<String>()) }
+    var fileSelection by remember { mutableStateOf(emptySet<String>()) }
+    var pendingArchiveFileNames by remember { mutableStateOf(emptyList<String>()) }
+    var showArchiveFilesDialog by remember { mutableStateOf(false) }
     // 「建议归档」区块：候选默认全勾上，确认归档走同一套动作。
     var suggestedSelection by remember(state.archiveCandidates) {
         mutableStateOf(state.archiveCandidates.map { it.rawTitle }.toSet())
@@ -93,8 +96,6 @@ internal fun AgentMemoryScreen(
         sectionSelection = emptySet()
         archiveSelection = emptySet()
     }
-    // MEMORY.md 编辑器默认收起：页面主体留给章节列表，点标题行再展开编辑。
-    var editorExpanded by remember { mutableStateOf(false) }
     // 核心记忆（独立文件）同样是折叠编辑器。
     var profileExpanded by remember { mutableStateOf(false) }
     var workingExpanded by remember { mutableStateOf(false) }
@@ -154,6 +155,7 @@ internal fun AgentMemoryScreen(
                         summary = stringResource(R.string.memory_profile_summary),
                         draft = state.profileDraft,
                         saved = state.profileSaved,
+                        limitBytes = AgentMemoryStore.PROFILE_MAX_BYTES,
                         expanded = profileExpanded,
                         enabled = !state.isLoading && !state.isSavingCore,
                         saving = state.isSavingCore,
@@ -171,6 +173,7 @@ internal fun AgentMemoryScreen(
                         summary = stringResource(R.string.memory_working_summary),
                         draft = state.workingDraft,
                         saved = state.workingSaved,
+                        limitBytes = AgentMemoryStore.WORKING_MAX_BYTES,
                         expanded = workingExpanded,
                         enabled = !state.isLoading && !state.isSavingCore,
                         saving = state.isSavingCore,
@@ -193,20 +196,63 @@ internal fun AgentMemoryScreen(
                         } else {
                             state.files.forEachIndexed { index, file ->
                                 if (index > 0) EtaPreferenceDivider(hasLeading = true)
-                                val expanded = state.expandedFileName == file.name
+                                val selecting = selectionScope == MemorySelection.Files
+                                val expanded = !selecting && state.expandedFileName == file.name
                                 FileRow(
                                     file = file,
-                                    expanded = expanded,
+                                    selected = if (selecting) file.name in fileSelection else null,
+                                    expanded = if (selecting) null else expanded,
                                     onClick = {
-                                        if (expanded) {
+                                        if (selecting) {
+                                            fileSelection = fileSelection.toggle(file.name)
+                                        } else if (expanded) {
                                             onAction(AgentMemoryAction.CollapseFile)
                                         } else {
                                             onAction(AgentMemoryAction.ExpandFile(file.name))
                                         }
                                     },
+                                    onLongClick = {
+                                        selectionScope = MemorySelection.Files
+                                        fileSelection = setOf(file.name)
+                                    },
                                 )
-                                if (expanded) SectionBody(text = state.expandedFileText)
+                                if (expanded) {
+                                    FileEditor(
+                                        label = file.name,
+                                        draft = state.fileDraft,
+                                        saved = state.fileSaved,
+                                        saving = state.isSavingFile,
+                                        onDraftChange = { onAction(AgentMemoryAction.FileDraftChanged(it)) },
+                                        onSave = { onAction(AgentMemoryAction.SaveFile) },
+                                    )
+                                }
                             }
+                        }
+                        if (selectionScope == MemorySelection.Files) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_selection_cancel),
+                                    onClick = { exitSelection() },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_selected, fileSelection.size),
+                                    enabled = fileSelection.isNotEmpty() && !state.isArchiving,
+                                    onClick = {
+                                        pendingArchiveFileNames = fileSelection.toList()
+                                        showArchiveFilesDialog = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        } else if (state.files.isNotEmpty()) {
+                            SectionHint(text = stringResource(R.string.memory_files_select_hint))
                         }
                     }
                 }
@@ -443,146 +489,24 @@ internal fun AgentMemoryScreen(
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = sidePadding)
-                    .imePadding()
-                    .navigationBarsPadding(),
-            ) {
-                EtaPreferenceGroupTitle("MEMORY.md")
-                EtaCard(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 16.dp),
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { editorExpanded = !editorExpanded },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "MEMORY.md",
-                                    color = MiuixTheme.colorScheme.onSurface,
-                                    style = MiuixTheme.textStyles.body1,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (state.hasUnsavedChanges) stringResource(R.string.memory_unsaved_changes) else "",
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    style = MiuixTheme.textStyles.footnote1,
-                                )
-                            }
-                            Text(
-                                text = "${formatBytes(state.draftBytes)} / ${formatBytes(state.maxBytes)}",
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                style = MiuixTheme.textStyles.footnote1,
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = if (editorExpanded) {
-                                    Icons.Rounded.KeyboardArrowUp
-                                } else {
-                                    Icons.Rounded.KeyboardArrowDown
-                                },
-                                contentDescription = stringResource(
-                                    if (editorExpanded) {
-                                        R.string.memory_editor_collapse
-                                    } else {
-                                        R.string.memory_editor_expand
-                                    },
-                                ),
-                                modifier = Modifier.size(20.dp),
-                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                        if (editorExpanded) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            TextField(
-                            value = state.draft,
-                            onValueChange = { onAction(AgentMemoryAction.DraftChanged(it)) },
-                            label = stringResource(R.string.ui_core_memory_user_name_long_term_preferences_aa6ff9),
-                            useLabelAsPlaceholder = true,
-                            enabled = !state.isLoading && !state.isSaving,
-                            minLines = 6,
-                            maxLines = 12,
-                            textStyle = MiuixTheme.textStyles.body2.copy(fontFamily = FontFamily.Monospace),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            val overLimit = state.draftBytes > state.maxBytes
-                            Text(
-                                text = when {
-                                    overLimit -> stringResource(R.string.memory_over_limit)
-                                    state.hasUnsavedChanges -> stringResource(R.string.memory_unsaved_changes)
-                                    else -> ""
-                                },
-                                color = if (overLimit) {
-                                    MiuixTheme.colorScheme.error
-                                } else {
-                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                },
-                                style = MiuixTheme.textStyles.footnote1,
-                            )
-                            Text(
-                                text = "${formatBytes(state.draftBytes)} / 1 MiB",
-                                color = if (overLimit) {
-                                    MiuixTheme.colorScheme.error
-                                } else {
-                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                },
-                                style = MiuixTheme.textStyles.footnote1,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            EtaTextButton(
-                                text = stringResource(R.string.ui_clear_84fcd7),
-                                enabled = !state.isLoading && !state.isSaving && state.draft.isNotEmpty(),
-                                onClick = { showClearDialog = true },
-                                modifier = Modifier.weight(1f),
-                            )
-                            EtaTextButton(
-                                text = if (state.isSaving) stringResource(R.string.memory_saving) else stringResource(R.string.memory_save),
-                                enabled = state.canSave,
-                                onClick = { onAction(AgentMemoryAction.Save) },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.textButtonColorsPrimary(),
-                            )
-                        }
-                        }
-                    }
-                }
-            }
         }
     }
 
-    if (showClearDialog) {
+    if (showArchiveFilesDialog) {
         EtaWindowDialog(
             show = true,
-            title = stringResource(R.string.ui_clear_all_memory_a43bd3),
-            summary = stringResource(R.string.ui_the_entire_contents_of_memory_md_will_be_deleted_and_83a8ac),
-            onDismissRequest = { showClearDialog = false },
+            title = stringResource(R.string.memory_archive_files_confirm_title),
+            summary = stringResource(R.string.memory_archive_files_confirm_message, pendingArchiveFileNames.size),
+            onDismissRequest = { showArchiveFilesDialog = false },
         ) {
             MiuixDialogActions(
-                confirmText = stringResource(R.string.memory_clear),
-                destructive = true,
-                confirmEnabled = !state.isSaving,
-                onCancel = { showClearDialog = false },
+                confirmText = stringResource(R.string.memory_archive_selected, pendingArchiveFileNames.size),
+                confirmEnabled = pendingArchiveFileNames.isNotEmpty() && !state.isArchiving,
+                onCancel = { showArchiveFilesDialog = false },
                 onConfirm = {
-                    showClearDialog = false
-                    onAction(AgentMemoryAction.Clear)
+                    showArchiveFilesDialog = false
+                    onAction(AgentMemoryAction.ArchiveFiles(pendingArchiveFileNames))
+                    exitSelection()
                 },
             )
         }
@@ -843,7 +767,7 @@ private fun SectionHint(text: String) {
 }
 
 /** 章节列表与归档列表各自的多选范围。 */
-private enum class MemorySelection { Sections, Archive }
+private enum class MemorySelection { Sections, Archive, Files }
 
 private fun Set<String>.toggle(title: String): Set<String> = if (title in this) this - title else this + title
 
@@ -854,6 +778,7 @@ private fun CoreEditorCard(
     summary: String,
     draft: String,
     saved: String,
+    limitBytes: Int,
     expanded: Boolean,
     enabled: Boolean,
     saving: Boolean,
@@ -889,7 +814,7 @@ private fun CoreEditorCard(
                 )
             }
             Text(
-                text = formatBytes(draft.toByteArray(Charsets.UTF_8).size),
+                text = "${formatBytes(draft.toByteArray(Charsets.UTF_8).size)} / ${formatBytes(limitBytes)}",
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 style = MiuixTheme.textStyles.footnote1,
             )
@@ -953,16 +878,55 @@ private fun CoreEditorCard(
 @Composable
 private fun FileRow(
     file: AgentMemoryFileUi,
-    expanded: Boolean,
+    selected: Boolean?,
+    expanded: Boolean?,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(
+                when {
+                    onLongClick != null -> Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
+
+                    else -> Modifier.clickable(onClick = onClick)
+                },
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selected != null) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) MiuixTheme.colorScheme.primary else Color.Transparent)
+                    .border(
+                        width = 1.5.dp,
+                        color = if (selected) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        },
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.White,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = file.name,
@@ -979,15 +943,65 @@ private fun FileRow(
                 style = MiuixTheme.textStyles.footnote1,
             )
         }
-        Icon(
-            imageVector = if (expanded) {
-                Icons.Rounded.KeyboardArrowUp
-            } else {
-                Icons.Rounded.KeyboardArrowDown
-            },
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        if (expanded != null) {
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Rounded.KeyboardArrowUp
+                } else {
+                    Icons.Rounded.KeyboardArrowDown
+                },
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+/** 展开的档案：可直接编辑并保存。 */
+@Composable
+private fun FileEditor(
+    label: String,
+    draft: String,
+    saved: String,
+    saving: Boolean,
+    onDraftChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+        TextField(
+            value = draft,
+            onValueChange = onDraftChange,
+            label = label,
+            useLabelAsPlaceholder = false,
+            enabled = !saving,
+            minLines = 5,
+            maxLines = 14,
+            textStyle = MiuixTheme.textStyles.body2,
+            modifier = Modifier.fillMaxWidth(),
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (draft != saved) stringResource(R.string.memory_unsaved_changes) else "",
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                modifier = Modifier.weight(1f),
+            )
+            EtaTextButton(
+                text = if (saving) {
+                    stringResource(R.string.memory_saving)
+                } else {
+                    stringResource(R.string.memory_save)
+                },
+                enabled = !saving && draft != saved,
+                onClick = onSave,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
+        }
     }
 }

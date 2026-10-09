@@ -1413,6 +1413,10 @@
   <string name="memory_files_title">封存檔</string>
   <string name="memory_files_empty">還沒有封存檔；模型可用 memory_write archive=&lt;名稱&gt; 建立</string>
   <string name="memory_file_meta">%1$d 行 · %2$s</string>
+  <string name="memory_files_select_hint">長按封存檔可多選，然後封存</string>
+  <string name="state_ui_memory_file_saved">封存檔已儲存</string>
+  <string name="memory_archive_files_confirm_title">封存選取的封存檔？</string>
+  <string name="memory_archive_files_confirm_message">%1$d 個封存檔將移入 MEMORY-archive.md，原檔案刪除。</string>
   <string name="memory_profile_clear_title">清空使用者輪廓？</string>
   <string name="memory_profile_clear_message">使用者輪廓會被清空，之後不再常駐注入。</string>
   <string name="memory_working_clear_title">清空工作記憶？</string>

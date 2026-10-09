@@ -98,6 +98,13 @@ sealed interface AgentMemoryAction {
 
     data object CollapseFile : AgentMemoryAction
 
+    /** 档案归档与编辑保存。 */
+    data class ArchiveFiles(val names: List<String>) : AgentMemoryAction
+
+    data class FileDraftChanged(val content: String) : AgentMemoryAction
+
+    data object SaveFile : AgentMemoryAction
+
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction
 

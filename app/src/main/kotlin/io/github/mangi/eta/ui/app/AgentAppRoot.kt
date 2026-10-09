@@ -710,6 +710,9 @@ fun AgentAppRoot(
                             AgentMemoryAction.ClearWorking -> memory.clearWorking()
                             is AgentMemoryAction.ExpandFile -> memory.expandFile(action.name)
                             AgentMemoryAction.CollapseFile -> memory.collapseFile()
+                            is AgentMemoryAction.ArchiveFiles -> memory.archiveFiles(action.names)
+                            is AgentMemoryAction.FileDraftChanged -> memory.updateFileDraft(action.content)
+                            AgentMemoryAction.SaveFile -> memory.saveFile()
                             is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
                             AgentMemoryAction.CollapseSection -> memory.collapseSection()
                         }

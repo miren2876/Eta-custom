@@ -421,6 +421,39 @@ internal class AgentMemoryStore(
         true
     }
 
+    /** 把选中的档案移入归档文件（MEMORY-archive.md），并删除原档案文件。 */
+    fun archiveFiles(names: List<String>): Int = synchronized(lock) {
+        if (names.isEmpty()) return@synchronized 0
+        val stamp = archiveStamp()
+        val blocks = mutableListOf<String>()
+        val removed = mutableListOf<String>()
+        names.forEach { name ->
+            val file = fileFor(name) ?: return@forEach
+            if (!file.exists()) return@forEach
+            val body = file.readText().trimEnd('\n')
+            blocks += buildString {
+                append("## ").append(name).append("（归档于 ").append(stamp).append("）")
+                if (body.isNotBlank()) append('\n').append(body)
+            }
+            removed += name
+        }
+        if (blocks.isEmpty()) {
+            throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的档案已不存在，请刷新后重试")
+        }
+        val existing = readText(archiveFile).trimEnd('\n')
+        val merged = buildString {
+            if (existing.isNotEmpty()) append(existing).append("\n\n")
+            append(blocks.joinToString("\n\n"))
+            append('\n')
+        }
+        if (merged.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
+            throw AgentMemoryException("MEMORY_ARCHIVE_TOO_LARGE", "归档文件将超过 1 MiB，请先清理归档")
+        }
+        writeText(archiveFile, merged)
+        removed.forEach { name -> fileFor(name)?.delete() }
+        removed.size
+    }
+
     /** 核心记忆独立文件（CORE.md）的快照。 */
     fun coreSnapshot(): AgentMemorySnapshot = synchronized(lock) {
         snapshotOf(readText(coreFile).trimEnd('\n'))
@@ -1087,8 +1120,8 @@ internal class AgentMemoryStore(
         private const val FILE_SUFFIX = ".md"
         private const val PROFILE_HEADING = "## 用户画像"
         private const val WORKING_HEADING = "## 工作记忆"
-        private const val PROFILE_MAX_BYTES = 5 * 1024
-        private const val WORKING_MAX_BYTES = 10 * 1024
+        const val PROFILE_MAX_BYTES = 5 * 1024
+        const val WORKING_MAX_BYTES = 10 * 1024
         private const val USAGE_FILE_NAME = "usage.json"
         private const val DEFAULT_START_LINE = 1
         private const val DUPLICATE_SKIP_THRESHOLD = 0.80
@@ -1167,6 +1200,11 @@ internal object AgentMemoryRepository {
     fun restoreArchive(): AgentMemorySnapshot {
         ensureInitialized()
         return store.restoreArchive()
+    }
+
+    fun archiveFiles(names: List<String>): Int {
+        ensureInitialized()
+        return store.archiveFiles(names)
     }
 
     fun files(): List<AgentMemoryFileInfo> {
