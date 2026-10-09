@@ -302,8 +302,11 @@ internal class AgentMemoryStore(
         }
         val lines = readText(archiveFile).memoryLines()
         val wanted = titles.toSet()
-        val selected = AgentMemoryScoring.sections(lines)
-            .filter { AgentMemoryScoring.stripArchiveStamp(it.title) in wanted }
+        val selected = AgentMemoryScoring.sections(lines).filter { range ->
+            val stripped = AgentMemoryScoring.stripArchiveStamp(range.title)
+            val plain = stripped.trimStart('#').trim()
+            stripped in wanted || plain in wanted || range.title in wanted
+        }
         if (selected.isEmpty()) {
             throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的章节已不在归档里，请刷新后重试")
         }

@@ -70,7 +70,6 @@ internal fun AgentMemoryScreen(
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
     var showArchiveDialog by remember { mutableStateOf(false) }
-    var showRestoreDialog by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
     // 章节分区默认展开（最常看），归档分区默认收起。
     var sectionsExpanded by remember { mutableStateOf(true) }
@@ -262,16 +261,16 @@ internal fun AgentMemoryScreen(
                                     val selecting = selectionScope == MemorySelection.Archive
                                     SectionRow(
                                         section = section,
-                                        selected = if (selecting) section.title in archiveSelection else null,
+                                        selected = if (selecting) section.rawTitle in archiveSelection else null,
                                         expanded = null,
                                         onClick = {
                                             if (selecting) {
-                                                archiveSelection = archiveSelection.toggle(section.title)
+                                                archiveSelection = archiveSelection.toggle(section.rawTitle)
                                             }
                                         },
                                         onLongClick = {
                                             selectionScope = MemorySelection.Archive
-                                            archiveSelection = setOf(section.title)
+                                            archiveSelection = setOf(section.rawTitle)
                                         },
                                     )
                                 }
@@ -296,20 +295,7 @@ internal fun AgentMemoryScreen(
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
-                            } else if (state.archiveSections > 0) {
-                                EtaPreferenceDivider(hasLeading = false)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                ) {
-                                    EtaTextButton(
-                                        text = stringResource(R.string.memory_archive_restore),
-                                        enabled = !state.isArchiving,
-                                        onClick = { showRestoreDialog = true },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
+                            } else if (state.archiveList.isNotEmpty()) {
                                 SectionHint(text = stringResource(R.string.memory_archive_select_hint))
                             }
                         }
@@ -477,25 +463,6 @@ internal fun AgentMemoryScreen(
                     showArchiveDialog = false
                     onAction(AgentMemoryAction.ArchiveSections(sectionSelection.toList()))
                     exitSelection()
-                },
-            )
-        }
-    }
-
-    if (showRestoreDialog) {
-        EtaWindowDialog(
-            show = true,
-            title = stringResource(R.string.memory_restore_confirm_title),
-            summary = stringResource(R.string.memory_restore_confirm_message),
-            onDismissRequest = { showRestoreDialog = false },
-        ) {
-            MiuixDialogActions(
-                confirmText = stringResource(R.string.memory_archive_restore),
-                confirmEnabled = !state.isArchiving,
-                onCancel = { showRestoreDialog = false },
-                onConfirm = {
-                    showRestoreDialog = false
-                    onAction(AgentMemoryAction.RestoreArchive)
                 },
             )
         }
