@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.screens.memory
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,7 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.EtaCard
@@ -36,9 +42,11 @@ import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
 import io.github.mangi.eta.ui.model.AgentMemoryAction
+import io.github.mangi.eta.ui.model.AgentMemorySectionUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import java.text.NumberFormat
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -51,6 +59,11 @@ internal fun AgentMemoryScreen(
     onAction: (AgentMemoryAction) -> Unit,
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var selectedTitles by remember(state.archiveCandidates) {
+        mutableStateOf(state.archiveCandidates.map { it.title }.toSet())
+    }
 
     MiuixScaffold(
         title = stringResource(R.string.ui_memory_b55ff5),
@@ -97,6 +110,109 @@ internal fun AgentMemoryScreen(
                         )
                     }
                 }
+
+                item(key = "capacity-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_capacity_title)) }
+                item(key = "capacity-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        EtaPreference(
+                            title = stringResource(R.string.memory_capacity_total_title),
+                            summary = stringResource(
+                                R.string.memory_capacity_total_summary,
+                                formatBytes(state.draftBytes),
+                                formatBytes(state.maxBytes),
+                            ),
+                        )
+                        EtaPreferenceDivider(hasLeading = false)
+                        EtaPreference(
+                            title = stringResource(R.string.memory_capacity_core_title),
+                            summary = if (state.coreBytes > 0) {
+                                stringResource(R.string.memory_capacity_core_summary, formatBytes(state.coreBytes))
+                            } else {
+                                stringResource(R.string.memory_capacity_core_absent)
+                            },
+                        )
+                        EtaPreferenceDivider(hasLeading = false)
+                        EtaPreference(
+                            title = stringResource(R.string.memory_capacity_sections_title),
+                            summary = stringResource(
+                                R.string.memory_capacity_sections_summary,
+                                state.sections.size,
+                                state.coldSectionCount,
+                            ),
+                        )
+                        EtaPreferenceDivider(hasLeading = false)
+                        EtaPreference(
+                            title = stringResource(R.string.memory_capacity_archive_title),
+                            summary = if (state.archiveSections > 0) {
+                                stringResource(
+                                    R.string.memory_capacity_archive_summary,
+                                    state.archiveSections,
+                                    formatBytes(state.archiveBytes),
+                                )
+                            } else {
+                                stringResource(R.string.memory_archive_empty)
+                            },
+                        )
+                    }
+                }
+
+                if (state.archiveCandidates.isNotEmpty()) {
+                    item(key = "archive-title") {
+                        EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_suggest_title))
+                    }
+                    item(key = "archive-card") {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 12.dp),
+                        ) {
+                            state.archiveCandidates.forEachIndexed { index, section ->
+                                if (index > 0) EtaPreferenceDivider(hasLeading = false)
+                                SectionRow(
+                                    section = section,
+                                    selected = section.title in selectedTitles,
+                                    onClick = {
+                                        selectedTitles = if (section.title in selectedTitles) {
+                                            selectedTitles - section.title
+                                        } else {
+                                            selectedTitles + section.title
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    item(key = "archive-hint") {
+                        Text(
+                            text = stringResource(R.string.memory_archive_suggest_summary),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            style = MiuixTheme.textStyles.footnote1,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+
+                if (state.sections.isNotEmpty()) {
+                    item(key = "sections-title") {
+                        EtaPreferenceGroupTitle(stringResource(R.string.memory_sections_title))
+                    }
+                    item(key = "sections-card") {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            state.sections.forEachIndexed { index, section ->
+                                if (index > 0) EtaPreferenceDivider(hasLeading = false)
+                                SectionRow(section = section, selected = null, onClick = null)
+                            }
+                        }
+                    }
+                }
             }
 
             Column(
@@ -105,6 +221,32 @@ internal fun AgentMemoryScreen(
                     .imePadding()
                     .navigationBarsPadding(),
             ) {
+                if (state.archiveCandidates.isNotEmpty() || state.archiveSections > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (state.archiveCandidates.isNotEmpty()) {
+                            EtaTextButton(
+                                text = stringResource(R.string.memory_archive_selected, selectedTitles.size),
+                                enabled = selectedTitles.isNotEmpty() && !state.isArchiving,
+                                onClick = { showArchiveDialog = true },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (state.archiveSections > 0) {
+                            EtaTextButton(
+                                text = stringResource(R.string.memory_archive_restore),
+                                enabled = !state.isArchiving,
+                                onClick = { showRestoreDialog = true },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
                 EtaPreferenceGroupTitle("MEMORY.md")
                 EtaCard(
                     modifier = Modifier
@@ -198,6 +340,44 @@ internal fun AgentMemoryScreen(
         }
     }
 
+    if (showArchiveDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_archive_confirm_title),
+            summary = stringResource(R.string.memory_archive_confirm_message, selectedTitles.size),
+            onDismissRequest = { showArchiveDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_archive_selected, selectedTitles.size),
+                confirmEnabled = selectedTitles.isNotEmpty() && !state.isArchiving,
+                onCancel = { showArchiveDialog = false },
+                onConfirm = {
+                    showArchiveDialog = false
+                    onAction(AgentMemoryAction.ArchiveSections(selectedTitles.toList()))
+                },
+            )
+        }
+    }
+
+    if (showRestoreDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_restore_confirm_title),
+            summary = stringResource(R.string.memory_restore_confirm_message),
+            onDismissRequest = { showRestoreDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_archive_restore),
+                confirmEnabled = !state.isArchiving,
+                onCancel = { showRestoreDialog = false },
+                onConfirm = {
+                    showRestoreDialog = false
+                    onAction(AgentMemoryAction.RestoreArchive)
+                },
+            )
+        }
+    }
+
     state.notice?.let { notice ->
         EtaWindowDialog(
             show = true,
@@ -209,6 +389,55 @@ internal fun AgentMemoryScreen(
                 text = stringResource(R.string.ui_knew_cb63c6),
                 onClick = { onAction(AgentMemoryAction.DismissNotice) },
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionRow(
+    section: AgentMemorySectionUi,
+    selected: Boolean?,
+    onClick: (() -> Unit)?,
+) {
+    val usageLabel = when {
+        section.hitCount > 0 -> stringResource(R.string.memory_section_hits, section.hitCount)
+        else -> stringResource(R.string.memory_section_never_used)
+    }
+    val idleLabel = section.idleDays?.takeIf { it > 0 }
+        ?.let { days -> " · " + stringResource(R.string.memory_section_idle_days, days) }
+        .orEmpty()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = section.title,
+                color = MiuixTheme.colorScheme.onSurface,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.memory_section_meta, section.lines, usageLabel) + idleLabel,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selected == true) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MiuixTheme.colorScheme.primary,
             )
         }
     }

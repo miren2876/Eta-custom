@@ -9,7 +9,10 @@ import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.repository.AgentMemorySection
+import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.model.AgentMemorySectionUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,17 +36,35 @@ internal class AgentMemoryStore(
                 val snapshot = AgentMemoryRepository.snapshot()
                 val enabled = AgentMemoryRepository.isEnabled()
                 val contextWindow = RuntimeConfigRepository.currentRuntimeConfig()?.contextWindow
-                Triple(snapshot, enabled, AgentMemoryContextBuilder.coreBudgetChars(contextWindow))
+                val sections = AgentMemoryRepository.sections()
+                val candidates = AgentMemoryRepository.archiveCandidates()
+                val archive = AgentMemoryRepository.archiveSnapshot()
+                AgentMemorySnapshotBundle(
+                    snapshot = snapshot,
+                    enabled = enabled,
+                    coreBudget = AgentMemoryContextBuilder.coreBudgetChars(contextWindow),
+                    coreBytes = AgentMemoryContextBuilder.coreSectionBytes(snapshot.content),
+                    sections = sections,
+                    candidates = candidates,
+                    archive = archive,
+                )
             }.fold(
-                onSuccess = { (snapshot, enabled, coreBudget) ->
+                onSuccess = { bundle ->
+                    val now = System.currentTimeMillis()
+                    val coldTitles = bundle.candidates.map { it.title }.toSet()
                     withContext(Dispatchers.Main) {
                         memoryState = AgentMemoryUiState(
-                            enabled = enabled,
+                            enabled = bundle.enabled,
                             isLoading = false,
-                            draft = snapshot.content,
-                            savedContent = snapshot.content,
-                            draftBytes = snapshot.byteSize,
-                            coreBudgetChars = coreBudget,
+                            draft = bundle.snapshot.content,
+                            savedContent = bundle.snapshot.content,
+                            draftBytes = bundle.snapshot.byteSize,
+                            coreBudgetChars = bundle.coreBudget,
+                            coreBytes = bundle.coreBytes,
+                            sections = bundle.sections.map { it.toUi(now, coldTitles) },
+                            archiveCandidates = bundle.candidates.map { it.toUi(now, coldTitles) },
+                            archiveBytes = bundle.archive.byteSize,
+                            archiveSections = bundle.archive.sectionCount,
                         )
                     }
                 },
@@ -112,6 +133,7 @@ internal class AgentMemoryStore(
                                 notice = appContext.getString(R.string.state_ui_memory_saved_a2c61c),
                             )
                         }
+                        refreshMemory()
                     },
                     onFailure = { throwable ->
                         AndroidAgentLogger.warnThrottled("agent_memory_ui_save_failed") {
@@ -144,6 +166,7 @@ internal class AgentMemoryStore(
                                 notice = appContext.getString(R.string.state_ui_memory_cleared_b415bb),
                             )
                         }
+                        refreshMemory()
                     },
                     onFailure = { throwable ->
                         AndroidAgentLogger.warnThrottled("agent_memory_ui_clear_failed") {
@@ -160,7 +183,110 @@ internal class AgentMemoryStore(
         }
     }
 
+    /** 归档冷章节：正文移除、原文移入 MEMORY-archive.md，可整体恢复。 */
+    fun archiveSections(titles: List<String>) {
+        if (titles.isEmpty() || memoryState.isArchiving) return
+        memoryState = memoryState.copy(isArchiving = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.archive(titles) }
+                .fold(
+                    onSuccess = { result ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                draft = result.snapshot.content,
+                                savedContent = result.snapshot.content,
+                                draftBytes = result.snapshot.byteSize,
+                                notice = appContext.getString(
+                                    R.string.state_ui_memory_archived,
+                                    result.archivedTitles.size,
+                                ),
+                            )
+                        }
+                        refreshMemory()
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_archive_failed") {
+                            "Agent memory archive failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_archive_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
+    fun restoreArchive() {
+        if (memoryState.isArchiving) return
+        memoryState = memoryState.copy(isArchiving = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.restoreArchive() }
+                .fold(
+                    onSuccess = { snapshot ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                draft = snapshot.content,
+                                savedContent = snapshot.content,
+                                draftBytes = snapshot.byteSize,
+                                notice = appContext.getString(R.string.state_ui_memory_archive_restored),
+                            )
+                        }
+                        refreshMemory()
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_restore_failed") {
+                            "Agent memory archive restore failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_archive_restore_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
     fun dismissMemoryNotice() {
         memoryState = memoryState.copy(notice = null)
+    }
+
+    private data class AgentMemorySnapshotBundle(
+        val snapshot: io.github.mangi.eta.data.repository.AgentMemorySnapshot,
+        val enabled: Boolean,
+        val coreBudget: Int,
+        val coreBytes: Int,
+        val sections: List<AgentMemorySection>,
+        val candidates: List<AgentMemorySection>,
+        val archive: io.github.mangi.eta.data.repository.AgentMemoryArchiveSnapshot,
+    )
+
+    private fun AgentMemorySection.toUi(nowMillis: Long, coldTitles: Set<String>): AgentMemorySectionUi {
+        val lastTouched = maxOf(lastHitAtMillis, writtenAtMillis)
+        val idleDays = if (lastTouched <= 0L) {
+            null
+        } else {
+            ((nowMillis - lastTouched) / DAY_MILLIS).toInt()
+        }
+        return AgentMemorySectionUi(
+            title = displayTitle,
+            lines = lineCount,
+            hitCount = hitCount,
+            idleDays = idleDays,
+            cold = title in coldTitles,
+            preview = preview,
+        )
+    }
+
+    private companion object {
+        const val DAY_MILLIS = 24L * 60 * 60 * 1000
     }
 }

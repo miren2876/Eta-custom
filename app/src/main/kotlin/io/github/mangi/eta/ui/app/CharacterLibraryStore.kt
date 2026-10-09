@@ -244,6 +244,9 @@ internal class CharacterLibraryStore(
                     memorySnapshot = result.snapshot
                     notice = "剧情记忆已保存"
                 }
+                is AgentMemoryWriteResult.Rejected -> {
+                    notice = "剧情记忆未保存：" + result.notice
+                }
                 is AgentMemoryWriteResult.Conflict -> {
                     notice = "剧情记忆已被对话更新。当前草稿仍保留，请复制需要的内容后重新载入，再合并保存。"
                 }

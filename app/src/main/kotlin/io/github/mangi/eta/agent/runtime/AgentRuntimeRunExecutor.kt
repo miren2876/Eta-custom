@@ -123,6 +123,7 @@ internal class AgentRuntimeRunExecutor(
                 runCatching {
                     AgentMemoryContextBuilder.build(
                         snapshot = AgentMemoryRepository.snapshot(),
+                        sections = AgentMemoryRepository.sections(),
                         contextWindow = request.config.contextWindow,
                     )
                 }.getOrElse { throwable ->

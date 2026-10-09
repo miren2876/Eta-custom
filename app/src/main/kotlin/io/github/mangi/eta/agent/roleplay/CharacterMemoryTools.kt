@@ -50,6 +50,9 @@ internal class CharacterMemoryTools(
                         is AgentMemoryWriteResult.Success -> JSONObject().put("ok", true)
                             .put("revision", written.snapshot.revision).put("bytes", written.snapshot.byteSize)
                             .put("line_count", written.snapshot.lineCount)
+                            .apply { written.notice?.let { notice -> put("notice", notice) } }
+                        is AgentMemoryWriteResult.Rejected -> error("MEMORY_DUPLICATE", written.notice)
+                            .put("revision", written.snapshot.revision)
                         is AgentMemoryWriteResult.Conflict -> error(
                             "MEMORY_CONFLICT", "剧情记忆已发生变化，请先调用 character_memory_get 获取最新内容",
                         ).put("revision", written.snapshot.revision)

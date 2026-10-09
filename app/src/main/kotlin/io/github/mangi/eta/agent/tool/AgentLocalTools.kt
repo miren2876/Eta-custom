@@ -54,6 +54,7 @@ import io.github.mangi.eta.core.AgentLogger
 import io.github.mangi.eta.core.HookSupport
 import io.github.mangi.eta.data.repository.AgentMemoryException
 import io.github.mangi.eta.data.repository.AgentMemoryMutation
+import io.github.mangi.eta.data.repository.AgentMemoryReadMode
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
@@ -426,11 +427,39 @@ internal class AgentLocalTools(
     }
 
     private fun memoryGet(args: JSONObject): String = try {
+        val mode = args.optString("mode").takeIf(String::isNotBlank)?.let { raw ->
+            when (raw.lowercase()) {
+                "excerpts" -> AgentMemoryReadMode.Excerpts
+                "sections" -> AgentMemoryReadMode.Sections
+                "section" -> AgentMemoryReadMode.Section
+                "range" -> AgentMemoryReadMode.Range
+                else -> null
+            }
+        }
         val result = AgentMemoryRepository.read(
             query = args.optString("query").takeIf(String::isNotBlank),
             startLine = args.optInt("start_line", 1),
             maxChars = args.optInt("max_chars", 12_000),
+            mode = mode ?: AgentMemoryReadMode.Range,
+            section = args.optString("section").takeIf(String::isNotBlank),
         )
+        val sections = JSONArray()
+        result.sections.forEach { section ->
+            sections.put(
+                JSONObject()
+                    .put("title", section.displayTitle)
+                    .put("level", section.level)
+                    .put("start_line", section.startLine)
+                    .put("end_line", section.endLine)
+                    .put("lines", section.lineCount)
+                    .put("matched_lines", section.matchedLines)
+                    .put("score", section.score)
+                    .put("hit_count", section.hitCount)
+                    .put("last_hit_at", section.lastHitAtMillis)
+                    .put("written_at", section.writtenAtMillis)
+                    .put("preview", section.preview),
+            )
+        }
         JSONObject()
             .put("ok", true)
             .put("revision", result.snapshot.revision)
@@ -440,6 +469,7 @@ internal class AgentLocalTools(
             .put("end_line", result.endLine ?: JSONObject.NULL)
             .put("matched_lines", result.matchedLines)
             .put("has_more", result.hasMore)
+            .put("sections", sections)
             .put("content", result.content)
             .toString()
     } catch (failure: AgentMemoryException) {
@@ -465,6 +495,16 @@ internal class AgentLocalTools(
         when (val result = AgentMemoryRepository.mutate(mutation)) {
             is AgentMemoryWriteResult.Success -> JSONObject()
                 .put("ok", true)
+                .put("revision", result.snapshot.revision)
+                .put("bytes", result.snapshot.byteSize)
+                .put("line_count", result.snapshot.lineCount)
+                .apply { result.notice?.let { notice -> put("notice", notice) } }
+                .toString()
+            is AgentMemoryWriteResult.Rejected -> JSONObject()
+                .put("ok", false)
+                .put("code", "MEMORY_DUPLICATE")
+                .put("message", result.notice)
+                .put("hint", "请先 memory_get（mode=sections 或 section）读取该节，再用 mode=replace_range 合并")
                 .put("revision", result.snapshot.revision)
                 .put("bytes", result.snapshot.byteSize)
                 .put("line_count", result.snapshot.lineCount)

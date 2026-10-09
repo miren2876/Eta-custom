@@ -64,4 +64,10 @@ sealed interface AgentMemoryAction {
     data object Save : AgentMemoryAction
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
+
+    /** 把选中的冷章节移入 MEMORY-archive.md。 */
+    data class ArchiveSections(val titles: List<String>) : AgentMemoryAction
+
+    /** 把归档内容整体追加回 MEMORY.md 并清空归档。 */
+    data object RestoreArchive : AgentMemoryAction
 }
