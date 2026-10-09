@@ -1457,7 +1457,7 @@
   <string name="memory_section_idle_days">unread for %1$d d</string>
   <string name="memory_archive_suggest_title">Suggested archive</string>
   <string name="memory_archive_suggest_summary">These sections have not been read for a long time. Archiving moves them verbatim into MEMORY-archive.md (removed from the body) and can be restored below at any time.</string>
-  <string name="memory_archive_selected">Archive selected (%1$d)</string>
+  <string name="memory_archive_selected">Archive (%1$d)</string>
   <string name="memory_archive_restore">Restore archive</string>
   <string name="memory_editor_expand">Expand</string>
   <string name="memory_editor_collapse">Collapse</string>
@@ -1489,7 +1489,7 @@
   <string name="memory_core_clear_message">The core memory file will be emptied and no longer injected.</string>
   <string name="state_ui_memory_core_saved">Core memory saved</string>
   <string name="state_ui_memory_core_cleared">Core memory cleared</string>
-  <string name="memory_selection_cancel">Clear selection</string>
+  <string name="memory_selection_cancel">Cancel</string>
   <string name="memory_selection_start">Select</string>
   <string name="memory_merge_selected">Merge (%1$d)</string>
   <string name="memory_merge_confirm_title">Merge selected archives?</string>
