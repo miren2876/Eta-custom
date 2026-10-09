@@ -1400,6 +1400,14 @@
   <string name="memory_archive_restore">還原封存</string>
   <string name="memory_editor_expand">展開</string>
   <string name="memory_editor_collapse">收合</string>
+  <string name="memory_selection_cancel">取消選取</string>
+  <string name="memory_unarchive_selected">取消封存（%1$d）</string>
+  <string name="memory_unarchive_confirm_title">取消封存選取的章節？</string>
+  <string name="memory_unarchive_confirm_message">%1$d 個章節將移回 MEMORY.md 末段。</string>
+  <string name="memory_section_select_hint">長按章節可多選，然後批次封存</string>
+  <string name="memory_archive_select_hint">長按已封存章節可多選，然後取消封存</string>
+  <string name="memory_sections_empty">還沒有章節</string>
+  <string name="state_ui_memory_unarchived">已取消封存 %1$d 個章節</string>
   <string name="memory_archive_empty">尚無封存</string>
   <string name="memory_archive_confirm_title">封存選取的章節？</string>
   <string name="memory_archive_confirm_message">共 %1$d 個章節將從 MEMORY.md 移入 MEMORY-archive.md，原文完整保留，可整體還原。</string>

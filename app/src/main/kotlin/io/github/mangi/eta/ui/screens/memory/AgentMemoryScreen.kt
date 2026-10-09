@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
@@ -70,8 +71,17 @@ internal fun AgentMemoryScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     var showArchiveDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
-    var selectedTitles by remember(state.archiveCandidates) {
-        mutableStateOf(state.archiveCandidates.map { it.rawTitle }.toSet())
+    var showUnarchiveDialog by remember { mutableStateOf(false) }
+    // 章节分区默认展开（最常看），归档分区默认收起。
+    var sectionsExpanded by remember { mutableStateOf(true) }
+    var archiveExpanded by remember { mutableStateOf(false) }
+    var selectionScope by remember { mutableStateOf<MemorySelection?>(null) }
+    var sectionSelection by remember { mutableStateOf(emptySet<String>()) }
+    var archiveSelection by remember { mutableStateOf(emptySet<String>()) }
+    val exitSelection = {
+        selectionScope = null
+        sectionSelection = emptySet()
+        archiveSelection = emptySet()
     }
     // MEMORY.md 编辑器默认收起：页面主体留给章节列表，点标题行再展开编辑。
     var editorExpanded by remember { mutableStateOf(false) }
@@ -146,18 +156,90 @@ internal fun AgentMemoryScreen(
                                 stringResource(R.string.memory_capacity_core_absent)
                             },
                         )
-                        EtaPreferenceDivider(hasLeading = false)
-                        EtaPreference(
-                            title = stringResource(R.string.memory_capacity_sections_title),
+                    }
+                }
+
+                item(key = "sections-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_sections_title)) }
+                item(key = "sections-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        ExpandableHeader(
                             summary = stringResource(
                                 R.string.memory_capacity_sections_summary,
                                 state.sections.size,
                                 state.coldSectionCount,
                             ),
+                            expanded = sectionsExpanded,
+                            onToggle = { sectionsExpanded = !sectionsExpanded },
                         )
-                        EtaPreferenceDivider(hasLeading = false)
-                        EtaPreference(
-                            title = stringResource(R.string.memory_capacity_archive_title),
+                        if (sectionsExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            if (state.sections.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_sections_empty))
+                            } else {
+                                state.sections.forEachIndexed { index, section ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    val selecting = selectionScope == MemorySelection.Sections
+                                    val expanded = !selecting && state.expandedSectionTitle == section.rawTitle
+                                    SectionRow(
+                                        section = section,
+                                        selected = if (selecting) section.rawTitle in sectionSelection else null,
+                                        expanded = if (selecting) null else expanded,
+                                        onClick = {
+                                            if (selecting) {
+                                                sectionSelection = sectionSelection.toggle(section.rawTitle)
+                                            } else if (expanded) {
+                                                onAction(AgentMemoryAction.CollapseSection)
+                                            } else {
+                                                onAction(AgentMemoryAction.ExpandSection(section.rawTitle))
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectionScope = MemorySelection.Sections
+                                            sectionSelection = setOf(section.rawTitle)
+                                        },
+                                    )
+                                    if (expanded) SectionBody(text = state.expandedSectionText)
+                                }
+                            }
+                            if (selectionScope == MemorySelection.Sections) {
+                                EtaPreferenceDivider(hasLeading = false)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_cancel),
+                                        onClick = { exitSelection() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_archive_selected, sectionSelection.size),
+                                        enabled = sectionSelection.isNotEmpty() && !state.isArchiving,
+                                        onClick = { showArchiveDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            } else {
+                                SectionHint(text = stringResource(R.string.memory_section_select_hint))
+                            }
+                        }
+                    }
+                }
+
+                item(key = "archive-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_capacity_archive_title)) }
+                item(key = "archive-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        ExpandableHeader(
                             summary = if (state.archiveSections > 0) {
                                 stringResource(
                                     R.string.memory_capacity_archive_summary,
@@ -167,109 +249,68 @@ internal fun AgentMemoryScreen(
                             } else {
                                 stringResource(R.string.memory_archive_empty)
                             },
+                            expanded = archiveExpanded,
+                            onToggle = { archiveExpanded = !archiveExpanded },
                         )
-                    }
-                }
-
-                if (state.archiveCandidates.isNotEmpty()) {
-                    item(key = "archive-title") {
-                        EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_suggest_title))
-                    }
-                    item(key = "archive-card") {
-                        EtaPreferenceGroup(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .padding(bottom = 12.dp),
-                        ) {
-                            state.archiveCandidates.forEachIndexed { index, section ->
-                                if (index > 0) EtaPreferenceDivider(hasLeading = false)
-                                SectionRow(
-                                    section = section,
-                                    selected = section.rawTitle in selectedTitles,
-                                    expanded = null,
-                                    onClick = {
-                                        selectedTitles = if (section.rawTitle in selectedTitles) {
-                                            selectedTitles - section.rawTitle
-                                        } else {
-                                            selectedTitles + section.rawTitle
-                                        }
-                                    },
-                                )
-                            }
+                        if (archiveExpanded) {
                             EtaPreferenceDivider(hasLeading = false)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                            ) {
-                                EtaTextButton(
-                                    text = stringResource(R.string.memory_archive_selected, selectedTitles.size),
-                                    enabled = selectedTitles.isNotEmpty() && !state.isArchiving,
-                                    onClick = { showArchiveDialog = true },
-                                    modifier = Modifier.weight(1f),
-                                )
+                            if (state.archiveList.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_archive_empty))
+                            } else {
+                                state.archiveList.forEachIndexed { index, section ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    val selecting = selectionScope == MemorySelection.Archive
+                                    SectionRow(
+                                        section = section,
+                                        selected = if (selecting) section.title in archiveSelection else null,
+                                        expanded = null,
+                                        onClick = {
+                                            if (selecting) {
+                                                archiveSelection = archiveSelection.toggle(section.title)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectionScope = MemorySelection.Archive
+                                            archiveSelection = setOf(section.title)
+                                        },
+                                    )
+                                }
                             }
-                        }
-                    }
-                    item(key = "archive-hint") {
-                        Text(
-                            text = stringResource(R.string.memory_archive_suggest_summary),
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            style = MiuixTheme.textStyles.footnote1,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-
-                if (state.sections.isNotEmpty()) {
-                    item(key = "sections-title") {
-                        EtaPreferenceGroupTitle(stringResource(R.string.memory_sections_title))
-                    }
-                    item(key = "sections-card") {
-                        EtaPreferenceGroup(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .padding(bottom = 16.dp),
-                        ) {
-                            state.sections.forEachIndexed { index, section ->
-                                if (index > 0) EtaPreferenceDivider(hasLeading = false)
-                                val expanded = state.expandedSectionTitle == section.rawTitle
-                                SectionRow(
-                                    section = section,
-                                    selected = null,
-                                    expanded = expanded,
-                                    onClick = {
-                                        if (expanded) {
-                                            onAction(AgentMemoryAction.CollapseSection)
-                                        } else {
-                                            onAction(AgentMemoryAction.ExpandSection(section.rawTitle))
-                                        }
-                                    },
-                                )
-                                if (expanded) SectionBody(text = state.expandedSectionText)
-                            }
-                        }
-                    }
-                }
-
-                if (state.archiveSections > 0) {
-                    item(key = "restore-card") {
-                        EtaPreferenceGroup(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .padding(bottom = 16.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                            ) {
-                                EtaTextButton(
-                                    text = stringResource(R.string.memory_archive_restore),
-                                    enabled = !state.isArchiving,
-                                    onClick = { showRestoreDialog = true },
-                                    modifier = Modifier.weight(1f),
-                                )
+                            if (selectionScope == MemorySelection.Archive) {
+                                EtaPreferenceDivider(hasLeading = false)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_cancel),
+                                        onClick = { exitSelection() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_unarchive_selected, archiveSelection.size),
+                                        enabled = archiveSelection.isNotEmpty() && !state.isArchiving,
+                                        onClick = { showUnarchiveDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            } else if (state.archiveSections > 0) {
+                                EtaPreferenceDivider(hasLeading = false)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_archive_restore),
+                                        enabled = !state.isArchiving,
+                                        onClick = { showRestoreDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                SectionHint(text = stringResource(R.string.memory_archive_select_hint))
                             }
                         }
                     }
@@ -425,16 +466,17 @@ internal fun AgentMemoryScreen(
         EtaWindowDialog(
             show = true,
             title = stringResource(R.string.memory_archive_confirm_title),
-            summary = stringResource(R.string.memory_archive_confirm_message, selectedTitles.size),
+            summary = stringResource(R.string.memory_archive_confirm_message, sectionSelection.size),
             onDismissRequest = { showArchiveDialog = false },
         ) {
             MiuixDialogActions(
-                confirmText = stringResource(R.string.memory_archive_selected, selectedTitles.size),
-                confirmEnabled = selectedTitles.isNotEmpty() && !state.isArchiving,
+                confirmText = stringResource(R.string.memory_archive_selected, sectionSelection.size),
+                confirmEnabled = sectionSelection.isNotEmpty() && !state.isArchiving,
                 onCancel = { showArchiveDialog = false },
                 onConfirm = {
                     showArchiveDialog = false
-                    onAction(AgentMemoryAction.ArchiveSections(selectedTitles.toList()))
+                    onAction(AgentMemoryAction.ArchiveSections(sectionSelection.toList()))
+                    exitSelection()
                 },
             )
         }
@@ -454,6 +496,26 @@ internal fun AgentMemoryScreen(
                 onConfirm = {
                     showRestoreDialog = false
                     onAction(AgentMemoryAction.RestoreArchive)
+                },
+            )
+        }
+    }
+
+    if (showUnarchiveDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_unarchive_confirm_title),
+            summary = stringResource(R.string.memory_unarchive_confirm_message, archiveSelection.size),
+            onDismissRequest = { showUnarchiveDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_unarchive_selected, archiveSelection.size),
+                confirmEnabled = archiveSelection.isNotEmpty() && !state.isArchiving,
+                onCancel = { showUnarchiveDialog = false },
+                onConfirm = {
+                    showUnarchiveDialog = false
+                    onAction(AgentMemoryAction.UnarchiveSections(archiveSelection.toList()))
+                    exitSelection()
                 },
             )
         }
@@ -481,6 +543,7 @@ private fun SectionRow(
     selected: Boolean?,
     expanded: Boolean?,
     onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val usageLabel = when {
         section.hitCount > 0 -> stringResource(R.string.memory_section_hits, section.hitCount)
@@ -492,7 +555,17 @@ private fun SectionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                when {
+                    onClick != null && onLongClick != null -> Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
+
+                    onClick != null -> Modifier.clickable(onClick = onClick)
+                    else -> Modifier
+                },
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -577,3 +650,52 @@ private fun formatBytes(bytes: Int): String = when {
 }
 
 private fun formatNumber(value: Int): String = NumberFormat.getIntegerInstance().format(value)
+
+/** 分区标题行：点一下展开 / 收起该分区内容。 */
+@Composable
+private fun ExpandableHeader(
+    summary: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = summary,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.body2,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = if (expanded) {
+                Icons.Rounded.KeyboardArrowUp
+            } else {
+                Icons.Rounded.KeyboardArrowDown
+            },
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+    }
+}
+
+/** 区块内的小字提示。 */
+@Composable
+private fun SectionHint(text: String) {
+    Text(
+        text = text,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        style = MiuixTheme.textStyles.footnote1,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+    )
+}
+
+/** 章节列表与归档列表各自的多选范围。 */
+private enum class MemorySelection { Sections, Archive }
+
+private fun Set<String>.toggle(title: String): Set<String> = if (title in this) this - title else this + title

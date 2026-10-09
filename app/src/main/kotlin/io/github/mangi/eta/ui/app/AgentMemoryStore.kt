@@ -38,6 +38,7 @@ internal class AgentMemoryStore(
                 val contextWindow = RuntimeConfigRepository.currentRuntimeConfig()?.contextWindow
                 val sections = AgentMemoryRepository.sections()
                 val candidates = AgentMemoryRepository.archiveCandidates()
+                val archivedSections = AgentMemoryRepository.archiveSections()
                 val archive = AgentMemoryRepository.archiveSnapshot()
                 AgentMemorySnapshotBundle(
                     snapshot = snapshot,
@@ -46,6 +47,7 @@ internal class AgentMemoryStore(
                     coreBytes = AgentMemoryContextBuilder.coreSectionBytes(snapshot.content),
                     sections = sections,
                     candidates = candidates,
+                    archivedSections = archivedSections,
                     archive = archive,
                 )
             }.fold(
@@ -65,6 +67,7 @@ internal class AgentMemoryStore(
                             archiveCandidates = bundle.candidates.map { it.toUi(now, coldTitles) },
                             archiveBytes = bundle.archive.byteSize,
                             archiveSections = bundle.archive.sectionCount,
+                            archiveList = bundle.archivedSections.map { it.toUi(now, coldTitles) },
                         )
                     }
                 },
@@ -221,6 +224,41 @@ internal class AgentMemoryStore(
         }
     }
 
+    /** 取消归档：把选中的归档章节移回 MEMORY.md 末尾。 */
+    fun unarchiveSections(titles: List<String>) {
+        if (titles.isEmpty() || memoryState.isArchiving) return
+        memoryState = memoryState.copy(isArchiving = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.unarchive(titles) }
+                .fold(
+                    onSuccess = { snapshot ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                draft = snapshot.content,
+                                savedContent = snapshot.content,
+                                draftBytes = snapshot.byteSize,
+                                notice = appContext.getString(R.string.state_ui_memory_unarchived, titles.size),
+                            )
+                        }
+                        refreshMemory()
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_unarchive_failed") {
+                            "Agent memory unarchive failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isArchiving = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_archive_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
     fun restoreArchive() {
         if (memoryState.isArchiving) return
         memoryState = memoryState.copy(isArchiving = true, notice = null)
@@ -281,6 +319,7 @@ internal class AgentMemoryStore(
         val coreBytes: Int,
         val sections: List<AgentMemorySection>,
         val candidates: List<AgentMemorySection>,
+        val archivedSections: List<AgentMemorySection>,
         val archive: io.github.mangi.eta.data.repository.AgentMemoryArchiveSnapshot,
     )
 

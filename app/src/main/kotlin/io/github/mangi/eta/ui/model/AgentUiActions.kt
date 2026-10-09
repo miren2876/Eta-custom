@@ -71,6 +71,9 @@ sealed interface AgentMemoryAction {
     /** 把归档内容整体追加回 MEMORY.md 并清空归档。 */
     data object RestoreArchive : AgentMemoryAction
 
+    /** 把选中的归档章节移回 MEMORY.md（取消归档）。 */
+    data class UnarchiveSections(val titles: List<String>) : AgentMemoryAction
+
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction
 

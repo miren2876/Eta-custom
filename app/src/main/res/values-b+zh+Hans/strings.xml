@@ -1441,6 +1441,14 @@
   <string name="memory_archive_restore">恢复归档</string>
   <string name="memory_editor_expand">展开</string>
   <string name="memory_editor_collapse">收起</string>
+  <string name="memory_selection_cancel">取消选择</string>
+  <string name="memory_unarchive_selected">取消归档（%1$d）</string>
+  <string name="memory_unarchive_confirm_title">取消归档选中的章节？</string>
+  <string name="memory_unarchive_confirm_message">%1$d 个章节将移回 MEMORY.md 末尾。</string>
+  <string name="memory_section_select_hint">长按章节可多选，然后批量归档</string>
+  <string name="memory_archive_select_hint">长按已归档章节可多选，然后取消归档</string>
+  <string name="memory_sections_empty">还没有章节</string>
+  <string name="state_ui_memory_unarchived">已取消归档 %1$d 个章节</string>
   <string name="memory_archive_empty">暂无归档</string>
   <string name="memory_archive_confirm_title">归档选中的章节？</string>
   <string name="memory_archive_confirm_message">共 %1$d 个章节将从 MEMORY.md 移入 MEMORY-archive.md，原文完整保留，可整体恢复。</string>

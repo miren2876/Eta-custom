@@ -275,6 +275,64 @@ internal class AgentMemoryStore(
 
     private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
 
+    /** 列出归档文件里的章节（标题已去掉「（归档于 …）」标记）。 */
+    fun archiveSections(): List<AgentMemorySection> = synchronized(lock) {
+        val lines = readText(archiveFile).memoryLines()
+        AgentMemoryScoring.sections(lines).map { range ->
+            AgentMemorySection(
+                title = AgentMemoryScoring.stripArchiveStamp(range.title),
+                level = range.level,
+                startLine = range.startIndex + 1,
+                endLine = range.endIndex,
+                lineCount = range.lineCount,
+                preview = lines.drop(range.startIndex + 1)
+                    .takeWhile { !it.trimStart().startsWith("#") }
+                    .firstOrNull { it.isNotBlank() }
+                    ?.trim()
+                    ?.take(PREVIEW_CHARS)
+                    .orEmpty(),
+            )
+        }
+    }
+
+    /** 把选中的归档章节移回 MEMORY.md 末尾，并从归档文件里移除它们。 */
+    fun unarchive(titles: List<String>): AgentMemorySnapshot = synchronized(lock) {
+        if (titles.isEmpty()) {
+            throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "没有选中要取消归档的章节")
+        }
+        val lines = readText(archiveFile).memoryLines()
+        val wanted = titles.toSet()
+        val selected = AgentMemoryScoring.sections(lines)
+            .filter { AgentMemoryScoring.stripArchiveStamp(it.title) in wanted }
+        if (selected.isEmpty()) {
+            throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的章节已不在归档里，请刷新后重试")
+        }
+        val removed = HashSet<Int>()
+        val restoredBlocks = mutableListOf<String>()
+        selected.forEach { range ->
+            for (index in range.startIndex until range.endIndex) removed += index
+            restoredBlocks += AgentMemoryScoring.stripArchiveStamp(
+                lines.subList(range.startIndex, range.endIndex).joinToString("\n").trimEnd('\n'),
+            )
+        }
+        val remainingArchive = lines.filterIndexed { index, _ -> index !in removed }
+            .joinToString("\n")
+            .trim('\n')
+        val snapshot = snapshotLocked()
+        val content = buildString {
+            if (snapshot.content.isNotBlank()) append(snapshot.content.trimEnd('\n')).append("\n\n")
+            append(restoredBlocks.joinToString("\n\n").trimEnd('\n'))
+        }.trimEnd('\n')
+        if (content.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
+            throw AgentMemoryException("MEMORY_TOO_LARGE", "记忆文件将超过 1 MiB 上限，请先清理内容")
+        }
+        writeLocked(content)
+        writeText(archiveFile, if (remainingArchive.isEmpty()) "" else "$remainingArchive\n")
+        val refreshed = snapshotOf(content)
+        syncUsageLocked(refreshed)
+        refreshed
+    }
+
     /** 读取某一节的完整文本（含标题行），供记忆页点击展开。 */
     fun sectionText(title: String): String = synchronized(lock) {
         val lines = snapshotLocked().content.memoryLines()
@@ -904,6 +962,16 @@ internal object AgentMemoryRepository {
     fun restoreArchive(): AgentMemorySnapshot {
         ensureInitialized()
         return store.restoreArchive()
+    }
+
+    fun archiveSections(): List<AgentMemorySection> {
+        ensureInitialized()
+        return store.archiveSections()
+    }
+
+    fun unarchive(titles: List<String>): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.unarchive(titles)
     }
 
     fun sectionText(title: String): String {

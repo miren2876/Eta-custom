@@ -34,6 +34,7 @@ data class AgentMemoryUiState(
     val archiveCandidates: List<AgentMemorySectionUi> = emptyList(),
     val archiveBytes: Int = 0,
     val archiveSections: Int = 0,
+    val archiveList: List<AgentMemorySectionUi> = emptyList(),
     /** 当前展开的章节（原始标题行）；null 表示没有展开。 */
     val expandedSectionTitle: String? = null,
     val expandedSectionText: String = "",

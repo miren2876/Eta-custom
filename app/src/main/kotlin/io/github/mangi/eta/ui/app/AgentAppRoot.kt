@@ -699,6 +699,7 @@ fun AgentAppRoot(
                             AgentMemoryAction.DismissNotice -> memory.dismissMemoryNotice()
                             is AgentMemoryAction.ArchiveSections -> memory.archiveSections(action.titles)
                             AgentMemoryAction.RestoreArchive -> memory.restoreArchive()
+                            is AgentMemoryAction.UnarchiveSections -> memory.unarchiveSections(action.titles)
                             is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
                             AgentMemoryAction.CollapseSection -> memory.collapseSection()
                         }

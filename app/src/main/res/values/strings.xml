@@ -1461,6 +1461,14 @@
   <string name="memory_archive_restore">Restore archive</string>
   <string name="memory_editor_expand">Expand</string>
   <string name="memory_editor_collapse">Collapse</string>
+  <string name="memory_selection_cancel">Clear selection</string>
+  <string name="memory_unarchive_selected">Unarchive (%1$d)</string>
+  <string name="memory_unarchive_confirm_title">Unarchive selected sections?</string>
+  <string name="memory_unarchive_confirm_message">%1$d section(s) will be moved back to the end of MEMORY.md.</string>
+  <string name="memory_section_select_hint">Long-press a section to select several and archive them</string>
+  <string name="memory_archive_select_hint">Long-press an archived section to select several and unarchive them</string>
+  <string name="memory_sections_empty">No sections yet</string>
+  <string name="state_ui_memory_unarchived">Unarchived %1$d section(s)</string>
   <string name="memory_archive_empty">Nothing archived yet</string>
   <string name="memory_archive_confirm_title">Archive selected sections?</string>
   <string name="memory_archive_confirm_message">%1$d sections will move from MEMORY.md into MEMORY-archive.md. The original text is kept and can be restored at once.</string>
