@@ -238,22 +238,40 @@ internal class AgentTraceFormatter {
             if (arguments.optString("query").isNotBlank()) "检索记忆" else "读取记忆"
         }.getOrDefault("读取记忆")
 
+    /** 记忆写入的调用摘要：按 target / archive / match 说明这次做了什么，避免只显示 0 行 0 字节。 */
     private fun summarizeMemoryWriteArguments(argumentsJson: String): String =
         runCatching {
             val arguments = JSONObject(argumentsJson)
-            val mode = when (arguments.optString("mode")) {
-                "replace_range" -> "替换片段"
-                "append" -> "追加"
-                "clear" -> "清空"
-                else -> null
-            }
+            val target = arguments.optString("target").lowercase()
+            val archive = arguments.optString("archive")
+            val match = arguments.optString("match")
             val content = arguments.optString("content")
             val lines = if (content.isEmpty()) 0 else content.count { it == '\n' } + 1
+            val bytes = content.toByteArray(Charsets.UTF_8).size
             buildList {
-                add("更新记忆")
-                mode?.let(::add)
-                add("$lines 行")
-                add("${content.toByteArray(Charsets.UTF_8).size} 字节")
+                when {
+                    archive.isNotBlank() -> {
+                        add(if (arguments.optString("mode") == "replace") "覆盖档案" else "更新档案")
+                        add(archive)
+                    }
+
+                    target == "entry" -> add(
+                        when {
+                            content.isEmpty() -> "删除条目"
+                            match.isNotBlank() -> "改写条目"
+                            else -> "追加条目"
+                        },
+                    )
+
+                    target == "profile" -> add("覆盖用户画像")
+                    target == "working" -> add("覆盖工作记忆")
+                    else -> add("更新记忆")
+                }
+                if (match.isNotBlank()) add("匹配 ${match.take(20)}")
+                if (content.isNotEmpty()) {
+                    add("$lines 行")
+                    add("$bytes 字节")
+                }
             }.joinToString(" · ")
         }.getOrDefault("更新记忆")
 

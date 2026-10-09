@@ -473,6 +473,8 @@ internal class AgentLocalTools(
             .put("ok", true)
             .put("mode", "overview")
             .put("core", core)
+            .put("line_count", entries.length())
+            .put("bytes", core.toByteArray(Charsets.UTF_8).size)
             .put("entries", entries)
             .put("files", index)
             .put("content", buildString {
@@ -588,9 +590,10 @@ internal class AgentLocalTools(
         errorResult("MEMORY_ARGUMENT_INVALID", "缺少 content 或参数格式不对")
     }
 
-    /** 条目写入回执：顺带回报条目数与工作记忆字节数。 */
+    /** 条目写入回执：回报条目数、工作记忆行数与字节数（行数/字节也用于聊天里的结果摘要）。 */
     private fun entryWriteResult(replaced: Boolean, content: String): String {
         val entries = AgentMemoryRepository.entries()
+        val workingBytes = AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size
         return JSONObject()
             .put("ok", true)
             .put("target", "entry")
@@ -600,7 +603,9 @@ internal class AgentLocalTools(
                 else -> "appended"
             })
             .put("entry_count", entries.size)
-            .put("working_bytes", AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size)
+            .put("line_count", entries.size)
+            .put("bytes", workingBytes)
+            .put("working_bytes", workingBytes)
             .toString()
     }
 
@@ -610,6 +615,7 @@ internal class AgentLocalTools(
             .put("ok", true)
             .put("target", target)
             .put("bytes", core.byteSize)
+            .put("line_count", core.lineCount)
             .put("working_bytes", AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size)
             .toString()
     }
