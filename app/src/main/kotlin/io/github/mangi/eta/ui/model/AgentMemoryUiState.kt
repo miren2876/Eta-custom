@@ -54,6 +54,7 @@ data class AgentMemoryUiState(
     val fileDraft: String = "",
     val fileSaved: String = "",
     val isSavingFile: Boolean = false,
+    val isMerging: Boolean = false,
     val sections: List<AgentMemorySectionUi> = emptyList(),
     val archiveCandidates: List<AgentMemorySectionUi> = emptyList(),
     val archiveBytes: Int = 0,

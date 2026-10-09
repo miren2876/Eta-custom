@@ -713,6 +713,7 @@ fun AgentAppRoot(
                             is AgentMemoryAction.ArchiveFiles -> memory.archiveFiles(action.names)
                             is AgentMemoryAction.FileDraftChanged -> memory.updateFileDraft(action.content)
                             AgentMemoryAction.SaveFile -> memory.saveFile()
+                            is AgentMemoryAction.MergeFiles -> memory.mergeFiles(action.names)
                             is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
                             AgentMemoryAction.CollapseSection -> memory.collapseSection()
                         }

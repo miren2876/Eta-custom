@@ -1491,6 +1491,13 @@
   <string name="state_ui_memory_core_cleared">Core memory cleared</string>
   <string name="memory_selection_cancel">Clear selection</string>
   <string name="memory_selection_start">Select</string>
+  <string name="memory_merge_selected">Merge (%1$d)</string>
+  <string name="memory_merge_confirm_title">Merge selected archives?</string>
+  <string name="memory_merge_confirm_message">%1$d archives will be merged into "%2$s"; the others are deleted and working memory is updated.</string>
+  <string name="state_ui_memory_merged">Merged %1$d archives</string>
+  <string name="state_ui_memory_merge_failed">Merge failed; archives unchanged</string>
+  <string name="state_ui_memory_working_compressed">Working memory compressed</string>
+  <string name="state_ui_memory_working_compress_failed">Failed to compress working memory</string>
   <string name="memory_unarchive_selected">Unarchive (%1$d)</string>
   <string name="memory_unarchive_confirm_title">Unarchive selected archives?</string>
   <string name="memory_unarchive_confirm_message">%1$d archive(s) will be restored as standalone files.</string>

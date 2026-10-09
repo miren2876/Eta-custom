@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
+import io.github.mangi.eta.agent.memory.AgentMemoryModelTasks
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
@@ -167,6 +168,7 @@ internal class AgentMemoryStore(
                         )
                     }
                     refreshMemory()
+                    if (!profile) maybeCompressWorking()
                 },
                 onFailure = { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_core_write_failed") {
@@ -202,6 +204,87 @@ internal class AgentMemoryStore(
 
     fun collapseFile() {
         memoryState = memoryState.copy(expandedFileName = null, expandedFileText = "")
+    }
+
+    /**
+     * 把选中的档案合并成一个：用当前模型合并正文，写回第一个档案名，
+     * 其余档案文件删除，并同步「工作记忆」里的档案清单。
+     */
+    fun mergeFiles(names: List<String>) {
+        if (names.size < 2 || memoryState.isMerging) return
+        val target = names.first()
+        val others = names.filter { it != target }
+        memoryState = memoryState.copy(isMerging = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val blocks = names.map { name -> AgentMemoryRepository.fileText(name) }
+                    .filter { it.isNotBlank() }
+                val merged = AgentMemoryModelTasks().mergeFiles(blocks)
+                AgentMemoryRepository.writeFile(target, merged, append = false)
+                others.forEach { name -> AgentMemoryRepository.deleteFile(name) }
+                AgentMemoryRepository.syncWorkingIndex(removed = others, added = target)
+            }.fold(
+                onSuccess = {
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            isMerging = false,
+                            expandedFileName = null,
+                            notice = appContext.getString(R.string.state_ui_memory_merged, names.size),
+                        )
+                    }
+                    maybeCompressWorking()
+                    refreshMemory()
+                },
+                onFailure = { throwable ->
+                    AndroidAgentLogger.warnThrottled("agent_memory_ui_merge_failed") {
+                        "Agent memory merge failed: type=${throwable.safeLogType()}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            isMerging = false,
+                            notice = throwable.message
+                                ?: appContext.getString(R.string.state_ui_memory_merge_failed),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /** 工作记忆超过上限（10 KiB）时自动调用模型压缩；失败就保持原样并提示。 */
+    private fun maybeCompressWorking() {
+        scope.launch(Dispatchers.IO) {
+            val working = runCatching { AgentMemoryRepository.coreWorking() }.getOrNull().orEmpty()
+            val bytes = working.toByteArray(Charsets.UTF_8).size
+            if (bytes <= AgentMemoryStore.WORKING_MAX_BYTES) return@launch
+            if (memoryState.isSavingCore) return@launch
+            val maxChars = (working.length.toLong() * AgentMemoryStore.WORKING_MAX_BYTES / bytes).toInt()
+                .coerceAtLeast(200)
+            runCatching {
+                val compressed = AgentMemoryModelTasks().compressWorking(working, maxChars)
+                AgentMemoryRepository.replaceCoreWorking(compressed)
+            }.fold(
+                onSuccess = {
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            notice = appContext.getString(R.string.state_ui_memory_working_compressed),
+                        )
+                    }
+                    refreshMemory()
+                },
+                onFailure = { throwable ->
+                    AndroidAgentLogger.warnThrottled("agent_memory_ui_working_compress_failed") {
+                        "Agent working memory compress failed: type=${throwable.safeLogType()}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            notice = throwable.message
+                                ?: appContext.getString(R.string.state_ui_memory_working_compress_failed),
+                        )
+                    }
+                },
+            )
+        }
     }
 
     /** 把选中的档案归档（移入 MEMORY-archive.md 并删除档案文件）。 */

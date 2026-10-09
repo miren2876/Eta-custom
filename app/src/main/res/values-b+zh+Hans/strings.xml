@@ -1471,6 +1471,13 @@
   <string name="state_ui_memory_core_cleared">核心记忆已清空</string>
   <string name="memory_selection_cancel">取消选择</string>
   <string name="memory_selection_start">选择</string>
+  <string name="memory_merge_selected">合并所选（%1$d）</string>
+  <string name="memory_merge_confirm_title">合并选中的档案？</string>
+  <string name="memory_merge_confirm_message">%1$d 个档案将合并进「%2$s」，其余文件删除，并同步工作记忆。</string>
+  <string name="state_ui_memory_merged">已合并 %1$d 个档案</string>
+  <string name="state_ui_memory_merge_failed">合并失败，档案未改动</string>
+  <string name="state_ui_memory_working_compressed">工作记忆已自动压缩</string>
+  <string name="state_ui_memory_working_compress_failed">工作记忆压缩失败</string>
   <string name="memory_unarchive_selected">取消归档（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消归档选中的档案？</string>
   <string name="memory_unarchive_confirm_message">%1$d 个档案将还原成独立档案文件。</string>

@@ -82,6 +82,7 @@ internal fun AgentMemoryScreen(
     var fileSelection by remember { mutableStateOf(emptySet<String>()) }
     var pendingArchiveFileNames by remember { mutableStateOf(emptyList<String>()) }
     var showArchiveFilesDialog by remember { mutableStateOf(false) }
+    var showMergeDialog by remember { mutableStateOf(false) }
     // 「建议归档」区块：候选默认全勾上，确认归档走同一套动作。
     var suggestedSelection by remember(state.coldFiles) {
         mutableStateOf(state.coldFiles.map { it.name }.toSet())
@@ -260,23 +261,14 @@ internal fun AgentMemoryScreen(
                                         },
                                         modifier = Modifier.weight(1f),
                                     )
-                                }
-                            } else if (state.files.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                ) {
                                     EtaTextButton(
-                                        text = stringResource(R.string.memory_selection_start),
-                                        enabled = !state.isArchiving,
-                                        onClick = {
-                                            selectionScope = MemorySelection.Files
-                                            fileSelection = emptySet()
-                                        },
+                                        text = stringResource(R.string.memory_merge_selected, fileSelection.size),
+                                        enabled = fileSelection.size >= 2 && !state.isMerging,
+                                        onClick = { showMergeDialog = true },
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
+                            } else if (state.files.isNotEmpty()) {
                                 SectionHint(text = stringResource(R.string.memory_files_select_hint))
                             }
                         }
@@ -432,21 +424,6 @@ internal fun AgentMemoryScreen(
                                     )
                                 }
                             } else if (state.archiveList.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                ) {
-                                    EtaTextButton(
-                                        text = stringResource(R.string.memory_selection_start),
-                                        enabled = !state.isArchiving,
-                                        onClick = {
-                                            selectionScope = MemorySelection.Archive
-                                            archiveSelection = emptySet()
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
                                 SectionHint(text = stringResource(R.string.memory_archive_select_hint))
                             }
                         }
@@ -454,6 +431,31 @@ internal fun AgentMemoryScreen(
                 }
             }
 
+        }
+    }
+
+    if (showMergeDialog) {
+        val mergeNames = state.files.filter { it.name in fileSelection }.map { it.name }
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_merge_confirm_title),
+            summary = stringResource(
+                R.string.memory_merge_confirm_message,
+                mergeNames.size,
+                mergeNames.firstOrNull().orEmpty(),
+            ),
+            onDismissRequest = { showMergeDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_merge_selected, mergeNames.size),
+                confirmEnabled = mergeNames.size >= 2 && !state.isMerging,
+                onCancel = { showMergeDialog = false },
+                onConfirm = {
+                    showMergeDialog = false
+                    onAction(AgentMemoryAction.MergeFiles(mergeNames))
+                    exitSelection()
+                },
+            )
         }
     }
 

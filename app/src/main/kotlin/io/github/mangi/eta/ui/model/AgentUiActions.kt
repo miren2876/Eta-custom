@@ -105,6 +105,9 @@ sealed interface AgentMemoryAction {
 
     data object SaveFile : AgentMemoryAction
 
+    /** 把选中的档案合并成一个（用当前模型），并同步工作记忆。 */
+    data class MergeFiles(val names: List<String>) : AgentMemoryAction
+
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction
 

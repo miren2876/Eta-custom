@@ -322,6 +322,35 @@ internal class AgentMemoryStore(
             .orEmpty()
     }
 
+    /** 删除一个档案文件（同时清掉它的用量记录）；返回是否真的删掉了。 */
+    fun deleteFile(name: String): Boolean = synchronized(lock) {
+        val file = fileFor(name) ?: return@synchronized false
+        val deleted = file.exists() && file.delete()
+        if (deleted) {
+            val remaining = usageLocked().sections.filterKeys { it != name }
+            writeUsageLocked(AgentMemoryUsage(remaining))
+        }
+        deleted
+    }
+
+    /** 档案变动后同步「工作记忆」里的档案清单：删掉 removed 里的行，补上 added。 */
+    fun syncWorkingIndex(removed: List<String>, added: String?): AgentMemorySnapshot = synchronized(lock) {
+        val (profile, working) = splitCore(readText(coreFile))
+        val removedSet = removed.toSet()
+        val lines = working.memoryLines()
+            .filter { it.isNotBlank() }
+            .filter { line ->
+                val item = line.trim().removePrefix("-").trim()
+                item.isEmpty() || item !in removedSet
+            }
+            .toMutableList()
+        if (added != null) {
+            val exists = lines.any { it.trim().removePrefix("-").trim() == added }
+            if (!exists) lines += "- $added"
+        }
+        writeCore(profile = profile, working = lines.joinToString("\n"))
+    }
+
     /** 读档案时记一次命中，供「引用次数 / 冷档案」使用。 */
     fun recordFileHit(name: String) = synchronized(lock) {
         if (name.isBlank()) return@synchronized
@@ -1296,6 +1325,16 @@ internal object AgentMemoryRepository {
     fun unarchive(titles: List<String>): Int {
         ensureInitialized()
         return store.unarchive(titles)
+    }
+
+    fun deleteFile(name: String): Boolean {
+        ensureInitialized()
+        return store.deleteFile(name)
+    }
+
+    fun syncWorkingIndex(removed: List<String>, added: String?): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.syncWorkingIndex(removed, added)
     }
 
     fun recordFileHit(name: String) {
