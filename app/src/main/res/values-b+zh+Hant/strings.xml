@@ -1406,6 +1406,17 @@
   <string name="memory_core_title">核心記憶</string>
   <string name="memory_core_summary">每輪固定注入，最多 %1$s 字元</string>
   <string name="memory_core_size">%1$s / %2$s 字元</string>
+  <string name="memory_profile_title">使用者輪廓</string>
+  <string name="memory_profile_summary">每輪固定注入，上限 5 KB</string>
+  <string name="memory_working_title">工作記憶</string>
+  <string name="memory_working_summary">封存檔索引與目前進度，上限 10 KB</string>
+  <string name="memory_files_title">封存檔</string>
+  <string name="memory_files_empty">還沒有封存檔；模型可用 memory_write archive=&lt;名稱&gt; 建立</string>
+  <string name="memory_file_meta">%1$d 行 · %2$s</string>
+  <string name="memory_profile_clear_title">清空使用者輪廓？</string>
+  <string name="memory_profile_clear_message">使用者輪廓會被清空，之後不再常駐注入。</string>
+  <string name="memory_working_clear_title">清空工作記憶？</string>
+  <string name="memory_working_clear_message">工作記憶會被清空，封存檔本身不受影響。</string>
   <string name="memory_core_clear_title">清空核心記憶？</string>
   <string name="memory_core_clear_message">核心記憶檔案會被清空，之後不再常駐注入。</string>
   <string name="state_ui_memory_core_saved">核心記憶已儲存</string>

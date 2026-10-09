@@ -1467,6 +1467,17 @@
   <string name="memory_core_title">Core memory</string>
   <string name="memory_core_summary">Injected on every turn, up to %1$s characters</string>
   <string name="memory_core_size">%1$s / %2$s chars</string>
+  <string name="memory_profile_title">User profile</string>
+  <string name="memory_profile_summary">Injected every turn, up to 5 KB</string>
+  <string name="memory_working_title">Working memory</string>
+  <string name="memory_working_summary">Archive index and current progress, up to 10 KB</string>
+  <string name="memory_files_title">Archives</string>
+  <string name="memory_files_empty">No archives yet — the model can create one with memory_write archive=&lt;name&gt;</string>
+  <string name="memory_file_meta">%1$d lines · %2$s</string>
+  <string name="memory_profile_clear_title">Clear user profile?</string>
+  <string name="memory_profile_clear_message">The user profile will be emptied and no longer injected.</string>
+  <string name="memory_working_clear_title">Clear working memory?</string>
+  <string name="memory_working_clear_message">Working memory will be emptied; the archives themselves stay.</string>
   <string name="memory_core_clear_title">Clear core memory?</string>
   <string name="memory_core_clear_message">The core memory file will be emptied and no longer injected.</string>
   <string name="state_ui_memory_core_saved">Core memory saved</string>

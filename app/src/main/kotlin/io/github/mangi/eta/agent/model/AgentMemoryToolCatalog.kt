@@ -11,12 +11,19 @@ internal object AgentMemoryToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "memory_get",
-                    description = "Read persistent cross-conversation memory from MEMORY.md. Core memory and the heading index are already provided at run start, so call this only to inspect details, answer what is remembered, or refresh after a conflict. Use query for just-in-time retrieval instead of reading the whole file: hits are ranked by relevance and matched lines are marked 'n*:' so you can target replace_range precisely. On a large file prefer mode=sections first, then mode=section to read the chosen section.",
+                    description = "Read persistent memory. Core memory (user profile + working memory) and the archive index are already provided at run start, so call this only to inspect details. Pass archive=<name> to read one memory archive file (memory/files/<name>.md); the archive index lists available names. Without archive it reads MEMORY.md: use query for just-in-time retrieval (hits ranked by relevance, matched lines marked 'n*:'), or mode=sections then mode=section on a large file.",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
                             "properties",
                             JSONObject()
+                                .put(
+                                    "archive",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 120)
+                                        .put("description", "Name of a memory archive file to read (see the archive index)."),
+                                )
                                 .put(
                                     "query",
                                     JSONObject()
@@ -73,12 +80,19 @@ internal object AgentMemoryToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "memory_write",
-                    description = "Atomically update persistent MEMORY.md. Store only durable cross-conversation facts, preferences, relationships, and ongoing project context; never store secrets, credentials, verification codes, or transient requests. Keep '# 核心记忆' concise, correct stale facts, and prefer replacing an existing section over blindly appending duplicates. Near-duplicate appends are rejected with code MEMORY_DUPLICATE plus a hint to merge via replace_range; a successful append may return a notice recommending a merge next time. Use the revision supplied in the run-start memory context or the latest memory_get result.",
+                    description = "Write persistent memory. Pass archive=<name> to create or update one memory archive file (mode=append adds to it, mode=replace overwrites it) — prefer one archive per topic instead of piling everything into MEMORY.md. Without archive it atomically updates MEMORY.md (mode=replace_range/append/clear, needs revision). Store only durable cross-conversation facts, preferences, relationships and ongoing project context; never secrets, credentials, verification codes, or transient requests. Near-duplicate appends are rejected with MEMORY_DUPLICATE plus a hint to merge via replace_range.",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
                             "properties",
                             JSONObject()
+                                .put(
+                                    "archive",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 120)
+                                        .put("description", "Archive file name; when set, mode=append/replace writes that file instead of MEMORY.md."),
+                                )
                                 .put(
                                     "mode",
                                     JSONObject()

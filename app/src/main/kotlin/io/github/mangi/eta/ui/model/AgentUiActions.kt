@@ -80,12 +80,23 @@ sealed interface AgentMemoryAction {
     /** 离开记忆页时清掉撤销入口。 */
     data object ClearUndo : AgentMemoryAction
 
-    /** 核心记忆（独立文件）编辑与保存。 */
-    data class CoreDraftChanged(val content: String) : AgentMemoryAction
+    /** 核心记忆：用户画像 / 工作记忆各自的编辑与保存。 */
+    data class ProfileDraftChanged(val content: String) : AgentMemoryAction
 
-    data object SaveCore : AgentMemoryAction
+    data class WorkingDraftChanged(val content: String) : AgentMemoryAction
 
-    data object ClearCore : AgentMemoryAction
+    data object SaveProfile : AgentMemoryAction
+
+    data object SaveWorking : AgentMemoryAction
+
+    data object ClearProfile : AgentMemoryAction
+
+    data object ClearWorking : AgentMemoryAction
+
+    /** 展开 / 收起一个记忆档案（按需读取内容）。 */
+    data class ExpandFile(val name: String) : AgentMemoryAction
+
+    data object CollapseFile : AgentMemoryAction
 
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction

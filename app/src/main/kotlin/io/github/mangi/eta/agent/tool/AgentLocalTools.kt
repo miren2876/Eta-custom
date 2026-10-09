@@ -426,7 +426,26 @@ internal class AgentLocalTools(
         )
     }
 
-    private fun memoryGet(args: JSONObject): String = try {
+    private fun memoryGet(args: JSONObject): String {
+        val archiveName = args.optString("archive").takeIf(String::isNotBlank)
+        return if (archiveName != null) memoryGetArchive(archiveName) else memoryGetContent(args)
+    }
+
+    /** 读取一个独立记忆档案（memory/files/<name>.md）。 */
+    private fun memoryGetArchive(name: String): String = try {
+        val text = AgentMemoryRepository.fileText(name)
+        JSONObject()
+            .put("ok", true)
+            .put("archive", name)
+            .put("bytes", text.toByteArray(Charsets.UTF_8).size)
+            .put("line_count", if (text.isEmpty()) 0 else text.split('\n').size)
+            .put("content", text)
+            .toString()
+    } catch (failure: AgentMemoryException) {
+        errorResult(failure.code, failure.message ?: "档案读取失败")
+    }
+
+    private fun memoryGetContent(args: JSONObject): String = try {
         val mode = args.optString("mode").takeIf(String::isNotBlank)?.let { raw ->
             when (raw.lowercase()) {
                 "excerpts" -> AgentMemoryReadMode.Excerpts
@@ -476,7 +495,27 @@ internal class AgentLocalTools(
         errorResult(failure.code, failure.message ?: "记忆读取失败")
     }
 
-    private fun memoryWrite(args: JSONObject): String = try {
+    private fun memoryWrite(args: JSONObject): String {
+        val archiveName = args.optString("archive").takeIf(String::isNotBlank)
+        return if (archiveName != null) memoryWriteArchive(args, archiveName) else memoryWriteMemory(args)
+    }
+
+    /** 写独立档案：mode=append 追加，mode=replace 整体替换（不存在则创建）。 */
+    private fun memoryWriteArchive(args: JSONObject, name: String): String = try {
+        val content = args.getString("content")
+        val append = args.optString("mode", "append") != "replace"
+        val info = AgentMemoryRepository.writeFile(name, content, append)
+        JSONObject()
+            .put("ok", true)
+            .put("archive", info.name)
+            .put("bytes", info.byteSize)
+            .put("line_count", info.lineCount)
+            .toString()
+    } catch (failure: AgentMemoryException) {
+        errorResult(failure.code, failure.message ?: "档案写入失败")
+    }
+
+    private fun memoryWriteMemory(args: JSONObject): String = try {
         val revision = args.getString("revision")
         val mutation = when (args.getString("mode")) {
             "replace_range" -> AgentMemoryMutation.ReplaceRange(

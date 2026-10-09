@@ -17,6 +17,13 @@ internal data class AgentMemorySnapshot(
     val lineCount: Int,
 )
 
+/** 一个记忆档案（memory/files/<name>.md）的元信息。 */
+internal data class AgentMemoryFileInfo(
+    val name: String,
+    val lineCount: Int,
+    val byteSize: Int,
+)
+
 /** 章节视图：供检索结果、用量统计与归档候选共用。 */
 internal data class AgentMemorySection(
     val title: String,
@@ -133,6 +140,7 @@ internal class AgentMemoryStore(
     private val archiveFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
     private val usageFile = AtomicFile(File(memoryDir, USAGE_FILE_NAME))
     private val coreFile = AtomicFile(File(memoryDir, CORE_FILE_NAME))
+    private val filesDir = File(memoryDir, FILES_DIR_NAME)
     private val lock = Any()
 
     fun snapshot(): AgentMemorySnapshot = synchronized(lock) {
@@ -276,6 +284,142 @@ internal class AgentMemoryStore(
     }
 
     private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
+
+    /** 记忆档案清单：memory/files/ 下的独立文件。 */
+    fun files(): List<AgentMemoryFileInfo> = synchronized(lock) {
+        filesDir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
+            ?.sortedBy { it.name }
+            ?.map { file ->
+                val text = file.readText()
+                AgentMemoryFileInfo(
+                    name = file.name.removeSuffix(FILE_SUFFIX),
+                    lineCount = text.memoryLines().size,
+                    byteSize = text.toByteArray(Charsets.UTF_8).size,
+                )
+            }
+            .orEmpty()
+    }
+
+    /** 读某个档案的全文。 */
+    fun fileText(name: String): String = synchronized(lock) {
+        val file = fileFor(name) ?: return@synchronized ""
+        if (!file.exists()) return@synchronized ""
+        file.readText()
+    }
+
+    /** 写某个档案：append=true 追加，否则整体替换（不存在就创建）。 */
+    fun writeFile(name: String, content: String, append: Boolean): AgentMemoryFileInfo = synchronized(lock) {
+        val file = fileFor(name) ?: throw AgentMemoryException("MEMORY_FILE_NAME_INVALID", "档案名不合法")
+        val merged = if (append && file.exists()) {
+            val existing = file.readText().trimEnd('\n')
+            if (existing.isEmpty()) content.trim() else existing + "\n\n" + content.trim()
+        } else {
+            content.trim()
+        }
+        if (merged.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
+            throw AgentMemoryException("MEMORY_TOO_LARGE", "档案超过 1 MiB 安全上限")
+        }
+        filesDir.mkdirs()
+        file.writeText(if (merged.isEmpty()) "" else "$merged\n")
+        AgentMemoryFileInfo(
+            name = name.trim(),
+            lineCount = merged.memoryLines().size,
+            byteSize = merged.toByteArray(Charsets.UTF_8).size,
+        )
+    }
+
+    private fun fileFor(name: String): File? {
+        val safe = name.trim()
+            .replace('/', '_')
+            .replace('\\', '_')
+            .replace("..", "_")
+        if (safe.isBlank()) return null
+        return File(filesDir, safe + FILE_SUFFIX)
+    }
+
+    /** 核心记忆的「用户画像」部分。 */
+    fun coreProfile(): String = synchronized(lock) { splitCore(readText(coreFile)).first }
+
+    /** 核心记忆的「工作记忆」部分。 */
+    fun coreWorking(): String = synchronized(lock) { splitCore(readText(coreFile)).second }
+
+    fun replaceCoreProfile(text: String): AgentMemorySnapshot = synchronized(lock) {
+        val (_, working) = splitCore(readText(coreFile))
+        writeCore(profile = text.trim(), working = working)
+    }
+
+    fun replaceCoreWorking(text: String): AgentMemorySnapshot = synchronized(lock) {
+        val (profile, _) = splitCore(readText(coreFile))
+        writeCore(profile = profile, working = text.trim())
+    }
+
+    private fun writeCore(profile: String, working: String): AgentMemorySnapshot {
+        if (profile.toByteArray(Charsets.UTF_8).size > PROFILE_MAX_BYTES) {
+            throw AgentMemoryException("MEMORY_PROFILE_TOO_LARGE", "用户画像超过 5 KB，请先精简")
+        }
+        val content = buildString {
+            append(PROFILE_HEADING).append('\n')
+            if (profile.isNotEmpty()) append(profile).append('\n')
+            append('\n').append(WORKING_HEADING).append('\n')
+            if (working.isNotEmpty()) append(working).append('\n')
+        }.trimEnd('\n')
+        writeText(coreFile, "$content\n")
+        return snapshotOf(content)
+    }
+
+    /** 解析 CORE.md 的两节；旧格式（没有标题）整体算用户画像。 */
+    private fun splitCore(content: String): Pair<String, String> {
+        val lines = content.memoryLines()
+        val profileStart = lines.indexOfFirst { it.trim() == PROFILE_HEADING }
+        val workingStart = lines.indexOfFirst { it.trim() == WORKING_HEADING }
+        if (profileStart < 0 && workingStart < 0) return content.trim() to ""
+        val profile = if (profileStart >= 0) {
+            val end = if (workingStart > profileStart) workingStart else lines.size
+            lines.subList(profileStart + 1, end).joinToString("\n").trim()
+        } else {
+            ""
+        }
+        val working = if (workingStart >= 0) {
+            lines.subList(workingStart + 1, lines.size).joinToString("\n").trim()
+        } else {
+            ""
+        }
+        return profile to working
+    }
+
+    /**
+     * 首次使用时把 MEMORY.md 里的每个 `##` 章节拆成 memory/files/<标题>.md，
+     * 档案清单补进核心记忆的「工作记忆」，原文件另存为 MEMORY.md.bak 后清空。
+     */
+    fun migrateFilesIfNeeded(): Boolean = synchronized(lock) {
+        val snapshot = snapshotLocked()
+        if (snapshot.content.isBlank()) return@synchronized false
+        if (filesDir.listFiles()?.any { it.isFile } == true) return@synchronized false
+        val lines = snapshot.content.memoryLines()
+        val ranges = AgentMemoryScoring.sections(lines).filter { it.level == 2 }
+        if (ranges.isEmpty()) return@synchronized false
+        filesDir.mkdirs()
+        val index = mutableListOf<String>()
+        ranges.forEach { range ->
+            val name = range.displayTitle.ifBlank { "未命名" }
+            val file = fileFor(name) ?: return@forEach
+            val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim()
+            file.writeText(if (body.isEmpty()) "" else "$body\n")
+            index += "- $name"
+        }
+        writeText(AtomicFile(File(memoryDir, "$FILE_NAME.bak")), snapshot.content)
+        writeLocked("")
+        val (profile, working) = splitCore(readText(coreFile))
+        val merged = if (working.isBlank()) {
+            index.joinToString("\n")
+        } else {
+            working + "\n" + index.joinToString("\n")
+        }
+        runCatching { writeCore(profile = profile, working = merged) }
+        syncUsageLocked(snapshotOf(""))
+        true
+    }
 
     /** 核心记忆独立文件（CORE.md）的快照。 */
     fun coreSnapshot(): AgentMemorySnapshot = synchronized(lock) {
@@ -939,6 +1083,12 @@ internal class AgentMemoryStore(
         private const val ARCHIVE_FILE_NAME = "MEMORY-archive.md"
         private const val CORE_FILE_NAME = "CORE.md"
         private const val CORE_HEADING_LINE = "# 核心记忆"
+        private const val FILES_DIR_NAME = "files"
+        private const val FILE_SUFFIX = ".md"
+        private const val PROFILE_HEADING = "## 用户画像"
+        private const val WORKING_HEADING = "## 工作记忆"
+        private const val PROFILE_MAX_BYTES = 5 * 1024
+        private const val WORKING_MAX_BYTES = 10 * 1024
         private const val USAGE_FILE_NAME = "usage.json"
         private const val DEFAULT_START_LINE = 1
         private const val DUPLICATE_SKIP_THRESHOLD = 0.80
@@ -963,6 +1113,8 @@ internal object AgentMemoryRepository {
             store = AgentMemoryStore(context.applicationContext.filesDir)
             // 首次运行把 MEMORY.md 里的「# 核心记忆」节搬到独立文件；失败不影响启动。
             runCatching { store.migrateCoreIfNeeded() }
+            // 再把每个 `##` 章节拆成独立档案，并把清单写进「工作记忆」。
+            runCatching { store.migrateFilesIfNeeded() }
         }
     }
 
@@ -1015,6 +1167,46 @@ internal object AgentMemoryRepository {
     fun restoreArchive(): AgentMemorySnapshot {
         ensureInitialized()
         return store.restoreArchive()
+    }
+
+    fun files(): List<AgentMemoryFileInfo> {
+        ensureInitialized()
+        return store.files()
+    }
+
+    fun fileText(name: String): String {
+        ensureInitialized()
+        return store.fileText(name)
+    }
+
+    fun writeFile(name: String, content: String, append: Boolean): AgentMemoryFileInfo {
+        ensureInitialized()
+        return store.writeFile(name, content, append)
+    }
+
+    fun coreProfile(): String {
+        ensureInitialized()
+        return store.coreProfile()
+    }
+
+    fun coreWorking(): String {
+        ensureInitialized()
+        return store.coreWorking()
+    }
+
+    fun replaceCoreProfile(text: String): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.replaceCoreProfile(text)
+    }
+
+    fun replaceCoreWorking(text: String): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.replaceCoreWorking(text)
+    }
+
+    fun migrateFilesIfNeeded(): Boolean {
+        ensureInitialized()
+        return store.migrateFilesIfNeeded()
     }
 
     fun coreSnapshot(): AgentMemorySnapshot {

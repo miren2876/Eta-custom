@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.memory
 
+import io.github.mangi.eta.data.repository.AgentMemoryFileInfo
 import io.github.mangi.eta.data.repository.AgentMemorySection
 import io.github.mangi.eta.data.repository.AgentMemorySnapshot
 
@@ -42,9 +43,10 @@ internal object AgentMemoryContextBuilder {
         sections: List<AgentMemorySection> = emptyList(),
         nowMillis: Long = System.currentTimeMillis(),
         core: String = "",
+        files: List<AgentMemoryFileInfo> = emptyList(),
     ): AgentMemoryContext {
         val coreBudget = coreBudgetChars(contextWindow)
-        val headings = headingIndex(snapshot, sections, nowMillis)
+        val headings = if (files.isNotEmpty()) fileIndex(files) else headingIndex(snapshot, sections, nowMillis)
         return AgentMemoryContext(
             enabled = true,
             revision = snapshot.revision,
@@ -55,6 +57,11 @@ internal object AgentMemoryContextBuilder {
             coreBudgetChars = coreBudget,
         )
     }
+
+    /** 档案清单：模型据此用 `memory_get archive=<name>` 取具体档案。 */
+    private fun fileIndex(files: List<AgentMemoryFileInfo>): String =
+        files.joinToString("\n") { file -> "- ${file.name}（${file.lineCount} 行 / ${file.byteSize} 字节）" }
+            .take(MAX_HEADING_INDEX_CHARS)
 
     /**
      * 章节索引：带上条目数、引用次数与最近使用时间；长期未引用的章节折叠成一段清单，

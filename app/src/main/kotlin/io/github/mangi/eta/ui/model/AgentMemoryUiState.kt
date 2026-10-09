@@ -19,6 +19,13 @@ data class AgentMemorySectionUi(
 )
 
 @Immutable
+data class AgentMemoryFileUi(
+    val name: String,
+    val lineCount: Int,
+    val byteSize: Int,
+)
+
+@Immutable
 data class AgentMemoryUiState(
     val enabled: Boolean = true,
     val isLoading: Boolean = true,
@@ -30,10 +37,16 @@ data class AgentMemoryUiState(
     val maxBytes: Int = AgentMemoryStore.MAX_FILE_BYTES,
     val coreBudgetChars: Int = 8_000,
     val coreBytes: Int = 0,
-    /** 核心记忆独立文件的编辑草稿与已保存内容。 */
-    val coreDraft: String = "",
-    val coreSaved: String = "",
+    /** 核心记忆：用户画像与工作记忆各自的草稿 / 已保存内容。 */
+    val profileDraft: String = "",
+    val profileSaved: String = "",
+    val workingDraft: String = "",
+    val workingSaved: String = "",
     val isSavingCore: Boolean = false,
+    /** 记忆档案清单（memory/files/）。 */
+    val files: List<AgentMemoryFileUi> = emptyList(),
+    val expandedFileName: String? = null,
+    val expandedFileText: String = "",
     val sections: List<AgentMemorySectionUi> = emptyList(),
     val archiveCandidates: List<AgentMemorySectionUi> = emptyList(),
     val archiveBytes: Int = 0,

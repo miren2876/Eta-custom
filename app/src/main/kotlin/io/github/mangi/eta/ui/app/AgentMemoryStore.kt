@@ -12,6 +12,7 @@ import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentMemorySection
 import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.model.AgentMemoryFileUi
 import io.github.mangi.eta.ui.model.AgentMemorySectionUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +41,9 @@ internal class AgentMemoryStore(
                 val candidates = AgentMemoryRepository.archiveCandidates()
                 val archivedSections = AgentMemoryRepository.archiveSections()
                 val core = AgentMemoryRepository.coreSnapshot()
+                val profile = AgentMemoryRepository.coreProfile()
+                val working = AgentMemoryRepository.coreWorking()
+                val files = AgentMemoryRepository.files()
                 val archive = AgentMemoryRepository.archiveSnapshot()
                 AgentMemorySnapshotBundle(
                     snapshot = snapshot,
@@ -50,6 +54,9 @@ internal class AgentMemoryStore(
                     candidates = candidates,
                     archivedSections = archivedSections,
                     core = core,
+                    profile = profile,
+                    working = working,
+                    files = files,
                     archive = archive,
                 )
             }.fold(
@@ -65,8 +72,11 @@ internal class AgentMemoryStore(
                             draftBytes = bundle.snapshot.byteSize,
                             coreBudgetChars = bundle.coreBudget,
                             coreBytes = bundle.coreBytes,
-                            coreDraft = bundle.core.content,
-                            coreSaved = bundle.core.content,
+                            profileDraft = bundle.profile,
+                            profileSaved = bundle.profile,
+                            workingDraft = bundle.working,
+                            workingSaved = bundle.working,
+                            files = bundle.files.map { AgentMemoryFileUi(it.name, it.lineCount, it.byteSize) },
                             sections = bundle.sections.map { it.toUi(now, coldTitles) },
                             archiveCandidates = bundle.candidates.map { it.toUi(now, coldTitles) },
                             archiveBytes = bundle.archive.byteSize,
@@ -100,76 +110,79 @@ internal class AgentMemoryStore(
         )
     }
 
-    fun updateCoreDraft(content: String) {
-        memoryState = memoryState.copy(coreDraft = content, notice = null)
+    fun updateProfileDraft(content: String) {
+        memoryState = memoryState.copy(profileDraft = content, notice = null)
     }
 
-    /** 保存核心记忆（独立文件 CORE.md）。 */
-    fun saveCore() {
-        if (memoryState.isSavingCore) return
-        val content = memoryState.coreDraft
-        memoryState = memoryState.copy(isSavingCore = true, notice = null)
-        scope.launch(Dispatchers.IO) {
-            runCatching { AgentMemoryRepository.replaceCore(content) }
-                .fold(
-                    onSuccess = { snapshot ->
-                        withContext(Dispatchers.Main) {
-                            memoryState = memoryState.copy(
-                                isSavingCore = false,
-                                coreSaved = snapshot.content,
-                                coreBytes = snapshot.byteSize,
-                                notice = appContext.getString(R.string.state_ui_memory_core_saved),
-                            )
-                        }
-                    },
-                    onFailure = { throwable ->
-                        AndroidAgentLogger.warnThrottled("agent_memory_core_save_failed") {
-                            "Agent core memory save failed: type=${throwable.safeLogType()}"
-                        }
-                        withContext(Dispatchers.Main) {
-                            memoryState = memoryState.copy(
-                                isSavingCore = false,
-                                notice = throwable.message
-                                    ?: appContext.getString(R.string.state_ui_failed_to_read_memory_please_try_again_later_caeaa6),
-                            )
-                        }
-                    },
-                )
-        }
+    fun updateWorkingDraft(content: String) {
+        memoryState = memoryState.copy(workingDraft = content, notice = null)
     }
 
-    /** 清空核心记忆文件。 */
-    fun clearCore() {
+    /** 保存用户画像（核心记忆第一节）。 */
+    fun saveProfile() = writeCorePart(profile = true, content = memoryState.profileDraft)
+
+    /** 保存工作记忆（核心记忆第二节）。 */
+    fun saveWorking() = writeCorePart(profile = false, content = memoryState.workingDraft)
+
+    fun clearProfile() = writeCorePart(profile = true, content = "")
+
+    fun clearWorking() = writeCorePart(profile = false, content = "")
+
+    private fun writeCorePart(profile: Boolean, content: String) {
         if (memoryState.isSavingCore) return
         memoryState = memoryState.copy(isSavingCore = true, notice = null)
         scope.launch(Dispatchers.IO) {
-            runCatching { AgentMemoryRepository.replaceCore("") }
-                .fold(
-                    onSuccess = { snapshot ->
-                        withContext(Dispatchers.Main) {
-                            memoryState = memoryState.copy(
-                                isSavingCore = false,
-                                coreDraft = snapshot.content,
-                                coreSaved = snapshot.content,
-                                coreBytes = snapshot.byteSize,
-                                notice = appContext.getString(R.string.state_ui_memory_core_cleared),
-                            )
-                        }
-                    },
-                    onFailure = { throwable ->
-                        AndroidAgentLogger.warnThrottled("agent_memory_core_clear_failed") {
-                            "Agent core memory clear failed: type=${throwable.safeLogType()}"
-                        }
-                        withContext(Dispatchers.Main) {
-                            memoryState = memoryState.copy(
-                                isSavingCore = false,
-                                notice = throwable.message
-                                    ?: appContext.getString(R.string.state_ui_failed_to_read_memory_please_try_again_later_caeaa6),
-                            )
-                        }
-                    },
-                )
+            runCatching {
+                if (profile) {
+                    AgentMemoryRepository.replaceCoreProfile(content)
+                } else {
+                    AgentMemoryRepository.replaceCoreWorking(content)
+                }
+            }.fold(
+                onSuccess = {
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            isSavingCore = false,
+                            notice = appContext.getString(
+                                if (content.isEmpty()) {
+                                    R.string.state_ui_memory_core_cleared
+                                } else {
+                                    R.string.state_ui_memory_core_saved
+                                },
+                            ),
+                        )
+                    }
+                    refreshMemory()
+                },
+                onFailure = { throwable ->
+                    AndroidAgentLogger.warnThrottled("agent_memory_core_write_failed") {
+                        "Agent core memory write failed: type=${throwable.safeLogType()}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            isSavingCore = false,
+                            notice = throwable.message
+                                ?: appContext.getString(R.string.state_ui_failed_to_read_memory_please_try_again_later_caeaa6),
+                        )
+                    }
+                },
+            )
         }
+    }
+
+    /** 展开档案时按需读取内容。 */
+    fun expandFile(name: String) {
+        if (name.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            val text = runCatching { AgentMemoryRepository.fileText(name) }.getOrDefault("")
+            withContext(Dispatchers.Main) {
+                memoryState = memoryState.copy(expandedFileName = name, expandedFileText = text)
+            }
+        }
+    }
+
+    fun collapseFile() {
+        memoryState = memoryState.copy(expandedFileName = null, expandedFileText = "")
     }
 
     fun setMemoryEnabled(enabled: Boolean) {
@@ -414,6 +427,9 @@ internal class AgentMemoryStore(
         val candidates: List<AgentMemorySection>,
         val archivedSections: List<AgentMemorySection>,
         val core: io.github.mangi.eta.data.repository.AgentMemorySnapshot,
+        val profile: String,
+        val working: String,
+        val files: List<io.github.mangi.eta.data.repository.AgentMemoryFileInfo>,
         val archive: io.github.mangi.eta.data.repository.AgentMemoryArchiveSnapshot,
     )
 
