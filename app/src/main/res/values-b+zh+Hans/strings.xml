@@ -1451,7 +1451,8 @@
   <string name="memory_profile_summary">每轮固定注入，上限 5 KB</string>
   <string name="memory_working_title">工作记忆</string>
   <string name="memory_working_summary">档案索引与当前进度，上限 10 KB</string>
-  <string name="memory_files_title">档案</string>
+  <string name="memory_files_title">工作档案</string>
+  <string name="memory_archive_files_title">归档档案</string>
   <string name="memory_files_empty">还没有档案；模型可以用 memory_write archive=&lt;名字&gt; 新建</string>
   <string name="memory_file_meta">%1$d 行 · %2$s</string>
   <string name="memory_file_lines">%1$d 行</string>

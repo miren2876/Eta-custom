@@ -99,7 +99,7 @@ internal fun AgentMemoryScreen(
     // 核心记忆（独立文件）同样是折叠编辑器。
     var profileExpanded by remember { mutableStateOf(false) }
     var workingExpanded by remember { mutableStateOf(false) }
-    var filesExpanded by remember { mutableStateOf(true) }
+    var filesExpanded by remember { mutableStateOf(false) }
     var showClearProfileDialog by remember { mutableStateOf(false) }
     var showClearWorkingDialog by remember { mutableStateOf(false) }
 
@@ -188,6 +188,7 @@ internal fun AgentMemoryScreen(
                             .padding(bottom = 16.dp),
                     ) {
                         ExpandableHeader(
+                            title = stringResource(R.string.memory_files_title),
                             summary = stringResource(
                                 R.string.memory_files_summary,
                                 state.files.size,
@@ -358,6 +359,7 @@ internal fun AgentMemoryScreen(
                             .padding(bottom = 16.dp),
                     ) {
                         ExpandableHeader(
+                            title = stringResource(R.string.memory_archive_files_title),
                             summary = if (state.archiveSections > 0) {
                                 stringResource(
                                     R.string.memory_capacity_archive_summary,
@@ -656,8 +658,10 @@ private fun formatBytes(bytes: Int): String = when {
 private fun formatNumber(value: Int): String = NumberFormat.getIntegerInstance().format(value)
 
 /** 分区标题行：点一下展开 / 收起该分区内容。 */
+/** 分区标题：两行布局（标题 + 说明），右侧可带占用与展开箭头。 */
 @Composable
 private fun ExpandableHeader(
+    title: String,
     summary: String,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -670,12 +674,20 @@ private fun ExpandableHeader(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = summary,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            style = MiuixTheme.textStyles.body2,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = MiuixTheme.colorScheme.onSurface,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = summary,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+            )
+        }
         if (trailing != null) {
             Text(
                 text = trailing,

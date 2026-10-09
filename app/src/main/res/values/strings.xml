@@ -1471,7 +1471,8 @@
   <string name="memory_profile_summary">Injected every turn, up to 5 KB</string>
   <string name="memory_working_title">Working memory</string>
   <string name="memory_working_summary">Archive index and current progress, up to 10 KB</string>
-  <string name="memory_files_title">Archives</string>
+  <string name="memory_files_title">Work archives</string>
+  <string name="memory_archive_files_title">Archived archives</string>
   <string name="memory_files_empty">No archives yet — the model can create one with memory_write archive=&lt;name&gt;</string>
   <string name="memory_file_meta">%1$d lines · %2$s</string>
   <string name="memory_file_lines">%1$d lines</string>
