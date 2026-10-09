@@ -455,7 +455,10 @@ internal class AgentMemoryStore(
      * - `match` 非空：替换匹配到的第一条（归一化后包含匹配）；`content` 为空表示删除该条
      */
     fun writeEntry(content: String, importance: Int?, match: String?): AgentMemorySnapshot = synchronized(lock) {
-        val text = content.replace('\n', ' ').trim()
+        // 容错：模型可能把整行 `- (3) 事实` 当 content 传进来，这里剥掉前缀，避免写出 `- (3) - (3) 事实`。
+        val parsedContent = AgentMemoryScoring.entryLine(content)
+        val text = (parsedContent?.text ?: content.replace('\n', ' ')).trim()
+        val entryImportance = importance ?: parsedContent?.importance
         if (text.length > MAX_ENTRY_CHARS) {
             throw AgentMemoryException(
                 "MEMORY_ENTRY_TOO_LONG",
@@ -469,7 +472,7 @@ internal class AgentMemoryStore(
         val matchKey = match?.let { value -> AgentMemoryScoring.entryKey(value) }
         if (matchKey == null) {
             if (text.isEmpty()) throw AgentMemoryException("MEMORY_ENTRY_EMPTY", "条目内容不能为空")
-            val value = (importance ?: AgentMemoryScoring.DEFAULT_ENTRY_IMPORTANCE).coerceIn(1, 5)
+            val value = (entryImportance ?: AgentMemoryScoring.DEFAULT_ENTRY_IMPORTANCE).coerceIn(1, 5)
             lines += "- ($value) $text"
             val key = AgentMemoryScoring.entryKey(text)
             stats[key] = registerEntryWritten(stats, key)
@@ -490,7 +493,7 @@ internal class AgentMemoryStore(
                 lines.removeAt(index)
                 if (oldKey != null) stats.remove(oldKey)
             } else {
-                val value = (importance ?: previous?.importance ?: AgentMemoryScoring.DEFAULT_ENTRY_IMPORTANCE)
+                val value = (entryImportance ?: previous?.importance ?: AgentMemoryScoring.DEFAULT_ENTRY_IMPORTANCE)
                     .coerceIn(1, 5)
                 lines[index] = "- ($value) $text"
                 val newKey = AgentMemoryScoring.entryKey(text)
