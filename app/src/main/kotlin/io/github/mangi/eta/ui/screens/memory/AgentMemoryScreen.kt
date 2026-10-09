@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +78,15 @@ internal fun AgentMemoryScreen(
     var selectionScope by remember { mutableStateOf<MemorySelection?>(null) }
     var sectionSelection by remember { mutableStateOf(emptySet<String>()) }
     var archiveSelection by remember { mutableStateOf(emptySet<String>()) }
+    // 「建议归档」区块：候选默认全勾上，确认归档走同一套动作。
+    var suggestedSelection by remember(state.archiveCandidates) {
+        mutableStateOf(state.archiveCandidates.map { it.rawTitle }.toSet())
+    }
+    var pendingArchiveTitles by remember { mutableStateOf(emptyList<String>()) }
+    // 离开记忆页（含退出设置）时收起「撤销归档」入口。
+    DisposableEffect(Unit) {
+        onDispose { onAction(AgentMemoryAction.ClearUndo) }
+    }
     val exitSelection = {
         selectionScope = null
         sectionSelection = emptySet()
@@ -158,6 +168,38 @@ internal fun AgentMemoryScreen(
                     }
                 }
 
+                if (state.lastArchivedTitles.isNotEmpty()) {
+                    item(key = "undo-card") {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.memory_archive_undo_hint,
+                                        state.lastArchivedTitles.size,
+                                    ),
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    style = MiuixTheme.textStyles.body2,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_undo),
+                                    enabled = !state.isArchiving,
+                                    onClick = { onAction(AgentMemoryAction.UndoArchive) },
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item(key = "sections-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_sections_title)) }
                 item(key = "sections-card") {
                     EtaPreferenceGroup(
@@ -220,12 +262,68 @@ internal fun AgentMemoryScreen(
                                     EtaTextButton(
                                         text = stringResource(R.string.memory_archive_selected, sectionSelection.size),
                                         enabled = sectionSelection.isNotEmpty() && !state.isArchiving,
-                                        onClick = { showArchiveDialog = true },
+                                        onClick = {
+                                            pendingArchiveTitles = sectionSelection.toList()
+                                            showArchiveDialog = true
+                                        },
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
                             } else {
                                 SectionHint(text = stringResource(R.string.memory_section_select_hint))
+                            }
+                        }
+                    }
+                }
+
+                if (state.archiveCandidates.isNotEmpty()) {
+                    item(key = "suggest-title") {
+                        EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_suggest_title))
+                    }
+                    item(key = "suggest-card") {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            state.archiveCandidates.forEachIndexed { index, section ->
+                                if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                SectionRow(
+                                    section = section,
+                                    selected = section.rawTitle in suggestedSelection,
+                                    expanded = null,
+                                    onClick = {
+                                        suggestedSelection = suggestedSelection.toggle(section.rawTitle)
+                                    },
+                                )
+                            }
+                            EtaPreferenceDivider(hasLeading = false)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_selected, suggestedSelection.size),
+                                    enabled = suggestedSelection.isNotEmpty() && !state.isArchiving,
+                                    onClick = {
+                                        pendingArchiveTitles = suggestedSelection.toList()
+                                        showArchiveDialog = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_all),
+                                    enabled = !state.isArchiving,
+                                    onClick = {
+                                        val all = state.archiveCandidates.map { it.rawTitle }
+                                        suggestedSelection = all.toSet()
+                                        pendingArchiveTitles = all
+                                        showArchiveDialog = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
                         }
                     }
@@ -452,16 +550,16 @@ internal fun AgentMemoryScreen(
         EtaWindowDialog(
             show = true,
             title = stringResource(R.string.memory_archive_confirm_title),
-            summary = stringResource(R.string.memory_archive_confirm_message, sectionSelection.size),
+            summary = stringResource(R.string.memory_archive_confirm_message, pendingArchiveTitles.size),
             onDismissRequest = { showArchiveDialog = false },
         ) {
             MiuixDialogActions(
-                confirmText = stringResource(R.string.memory_archive_selected, sectionSelection.size),
-                confirmEnabled = sectionSelection.isNotEmpty() && !state.isArchiving,
+                confirmText = stringResource(R.string.memory_archive_selected, pendingArchiveTitles.size),
+                confirmEnabled = pendingArchiveTitles.isNotEmpty() && !state.isArchiving,
                 onCancel = { showArchiveDialog = false },
                 onConfirm = {
                     showArchiveDialog = false
-                    onAction(AgentMemoryAction.ArchiveSections(sectionSelection.toList()))
+                    onAction(AgentMemoryAction.ArchiveSections(pendingArchiveTitles))
                     exitSelection()
                 },
             )

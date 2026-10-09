@@ -68,6 +68,8 @@ internal class AgentMemoryStore(
                             archiveBytes = bundle.archive.byteSize,
                             archiveSections = bundle.archive.sectionCount,
                             archiveList = bundle.archivedSections.map { it.toUi(now, coldTitles) },
+                            // 刷新时保留「撤销归档」入口，只有离开记忆页才清掉。
+                            lastArchivedTitles = memoryState.lastArchivedTitles,
                         )
                     }
                 },
@@ -200,6 +202,7 @@ internal class AgentMemoryStore(
                                 draft = result.snapshot.content,
                                 savedContent = result.snapshot.content,
                                 draftBytes = result.snapshot.byteSize,
+                                lastArchivedTitles = result.archivedTitles,
                                 notice = appContext.getString(
                                     R.string.state_ui_memory_archived,
                                     result.archivedTitles.size,
@@ -257,6 +260,20 @@ internal class AgentMemoryStore(
                     },
                 )
         }
+    }
+
+    /** 撤销刚归档的章节：移回正文；这是一次性入口，点过就收起。 */
+    fun undoArchive() {
+        val titles = memoryState.lastArchivedTitles
+        if (titles.isEmpty()) return
+        unarchiveSections(titles)
+        clearUndo()
+    }
+
+    /** 离开记忆页时收起撤销入口。 */
+    fun clearUndo() {
+        if (memoryState.lastArchivedTitles.isEmpty()) return
+        memoryState = memoryState.copy(lastArchivedTitles = emptyList())
     }
 
     fun restoreArchive() {

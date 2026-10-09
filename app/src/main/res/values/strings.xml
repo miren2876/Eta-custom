@@ -1461,6 +1461,9 @@
   <string name="memory_archive_restore">Restore archive</string>
   <string name="memory_editor_expand">Expand</string>
   <string name="memory_editor_collapse">Collapse</string>
+  <string name="memory_archive_all">Archive all</string>
+  <string name="memory_archive_undo_hint">Archived %1$d section(s)</string>
+  <string name="memory_archive_undo">Undo</string>
   <string name="memory_selection_cancel">Clear selection</string>
   <string name="memory_unarchive_selected">Unarchive (%1$d)</string>
   <string name="memory_unarchive_confirm_title">Unarchive selected sections?</string>

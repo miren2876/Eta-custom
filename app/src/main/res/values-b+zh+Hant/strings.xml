@@ -1400,6 +1400,9 @@
   <string name="memory_archive_restore">還原封存</string>
   <string name="memory_editor_expand">展開</string>
   <string name="memory_editor_collapse">收合</string>
+  <string name="memory_archive_all">全部封存</string>
+  <string name="memory_archive_undo_hint">已封存 %1$d 個章節</string>
+  <string name="memory_archive_undo">復原</string>
   <string name="memory_selection_cancel">取消選取</string>
   <string name="memory_unarchive_selected">取消封存（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消封存選取的章節？</string>

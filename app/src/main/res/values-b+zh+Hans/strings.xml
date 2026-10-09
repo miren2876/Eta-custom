@@ -1441,6 +1441,9 @@
   <string name="memory_archive_restore">恢复归档</string>
   <string name="memory_editor_expand">展开</string>
   <string name="memory_editor_collapse">收起</string>
+  <string name="memory_archive_all">全部归档</string>
+  <string name="memory_archive_undo_hint">已归档 %1$d 个章节</string>
+  <string name="memory_archive_undo">撤销</string>
   <string name="memory_selection_cancel">取消选择</string>
   <string name="memory_unarchive_selected">取消归档（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消归档选中的章节？</string>

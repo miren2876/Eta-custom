@@ -700,6 +700,8 @@ fun AgentAppRoot(
                             is AgentMemoryAction.ArchiveSections -> memory.archiveSections(action.titles)
                             AgentMemoryAction.RestoreArchive -> memory.restoreArchive()
                             is AgentMemoryAction.UnarchiveSections -> memory.unarchiveSections(action.titles)
+                            AgentMemoryAction.UndoArchive -> memory.undoArchive()
+                            AgentMemoryAction.ClearUndo -> memory.clearUndo()
                             is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
                             AgentMemoryAction.CollapseSection -> memory.collapseSection()
                         }

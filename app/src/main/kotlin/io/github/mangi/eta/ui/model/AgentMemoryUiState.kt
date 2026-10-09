@@ -35,6 +35,8 @@ data class AgentMemoryUiState(
     val archiveBytes: Int = 0,
     val archiveSections: Int = 0,
     val archiveList: List<AgentMemorySectionUi> = emptyList(),
+    /** 刚归档的章节（显示名），用于「撤销归档」的一次性入口；离开记忆页即清空。 */
+    val lastArchivedTitles: List<String> = emptyList(),
     /** 当前展开的章节（原始标题行）；null 表示没有展开。 */
     val expandedSectionTitle: String? = null,
     val expandedSectionText: String = "",
