@@ -70,4 +70,10 @@ sealed interface AgentMemoryAction {
 
     /** 把归档内容整体追加回 MEMORY.md 并清空归档。 */
     data object RestoreArchive : AgentMemoryAction
+
+    /** 展开某一节的正文（点击章节行）。 */
+    data class ExpandSection(val title: String) : AgentMemoryAction
+
+    /** 收起已展开的章节正文。 */
+    data object CollapseSection : AgentMemoryAction
 }

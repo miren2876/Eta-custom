@@ -1459,6 +1459,8 @@
   <string name="memory_archive_suggest_summary">These sections have not been read for a long time. Archiving moves them verbatim into MEMORY-archive.md (removed from the body) and can be restored below at any time.</string>
   <string name="memory_archive_selected">Archive selected (%1$d)</string>
   <string name="memory_archive_restore">Restore archive</string>
+  <string name="memory_editor_expand">Expand</string>
+  <string name="memory_editor_collapse">Collapse</string>
   <string name="memory_archive_empty">Nothing archived yet</string>
   <string name="memory_archive_confirm_title">Archive selected sections?</string>
   <string name="memory_archive_confirm_message">%1$d sections will move from MEMORY.md into MEMORY-archive.md. The original text is kept and can be restored at once.</string>

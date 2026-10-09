@@ -1398,6 +1398,8 @@
   <string name="memory_archive_suggest_summary">以下章節長期未被引用。封存會把原文完整移入 MEMORY-archive.md（正文中移除），隨時可在下方整體還原。</string>
   <string name="memory_archive_selected">封存選取（%1$d）</string>
   <string name="memory_archive_restore">還原封存</string>
+  <string name="memory_editor_expand">展開</string>
+  <string name="memory_editor_collapse">收合</string>
   <string name="memory_archive_empty">尚無封存</string>
   <string name="memory_archive_confirm_title">封存選取的章節？</string>
   <string name="memory_archive_confirm_message">共 %1$d 個章節將從 MEMORY.md 移入 MEMORY-archive.md，原文完整保留，可整體還原。</string>

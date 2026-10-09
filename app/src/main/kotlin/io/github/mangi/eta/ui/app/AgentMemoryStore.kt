@@ -255,6 +255,21 @@ internal class AgentMemoryStore(
         }
     }
 
+    /** 点击章节行时按需读取该节正文（失败就给空文本，页面照常展开）。 */
+    fun expandSection(title: String) {
+        if (title.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            val text = runCatching { AgentMemoryRepository.sectionText(title) }.getOrDefault("")
+            withContext(Dispatchers.Main) {
+                memoryState = memoryState.copy(expandedSectionTitle = title, expandedSectionText = text)
+            }
+        }
+    }
+
+    fun collapseSection() {
+        memoryState = memoryState.copy(expandedSectionTitle = null, expandedSectionText = "")
+    }
+
     fun dismissMemoryNotice() {
         memoryState = memoryState.copy(notice = null)
     }

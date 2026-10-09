@@ -275,6 +275,15 @@ internal class AgentMemoryStore(
 
     private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
 
+    /** 读取某一节的完整文本（含标题行），供记忆页点击展开。 */
+    fun sectionText(title: String): String = synchronized(lock) {
+        val lines = snapshotLocked().content.memoryLines()
+        val range = AgentMemoryScoring.sections(lines)
+            .firstOrNull { it.title == title || it.displayTitle == title }
+            ?: return@synchronized ""
+        lines.subList(range.startIndex, range.endIndex).joinToString("\n")
+    }
+
     /** 备份恢复时整体写回归档文件；空内容即清空归档。 */
     fun replaceArchive(content: String): AgentMemoryArchiveSnapshot = synchronized(lock) {
         writeText(archiveFile, content)
@@ -895,6 +904,11 @@ internal object AgentMemoryRepository {
     fun restoreArchive(): AgentMemorySnapshot {
         ensureInitialized()
         return store.restoreArchive()
+    }
+
+    fun sectionText(title: String): String {
+        ensureInitialized()
+        return store.sectionText(title)
     }
 
     fun replaceArchive(content: String): AgentMemoryArchiveSnapshot {

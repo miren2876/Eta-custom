@@ -1439,6 +1439,8 @@
   <string name="memory_archive_suggest_summary">以下章节长期未被引用。归档会把原文完整移入 MEMORY-archive.md（正文中移除），随时可在下方整体恢复。</string>
   <string name="memory_archive_selected">归档选中（%1$d）</string>
   <string name="memory_archive_restore">恢复归档</string>
+  <string name="memory_editor_expand">展开</string>
+  <string name="memory_editor_collapse">收起</string>
   <string name="memory_archive_empty">暂无归档</string>
   <string name="memory_archive_confirm_title">归档选中的章节？</string>
   <string name="memory_archive_confirm_message">共 %1$d 个章节将从 MEMORY.md 移入 MEMORY-archive.md，原文完整保留，可整体恢复。</string>
