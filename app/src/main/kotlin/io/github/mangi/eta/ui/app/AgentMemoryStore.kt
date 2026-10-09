@@ -305,7 +305,7 @@ internal class AgentMemoryStore(
         }
     }
 
-    /** 把选中的档案归档（移入 MEMORY-archive.md 并删除档案文件）。 */
+    /** 把选中的档案归档（移入 memory/archive/ 并删除档案文件）。 */
     fun archiveFiles(names: List<String>) {
         if (names.isEmpty() || memoryState.isArchiving) return
         memoryState = memoryState.copy(isArchiving = true, notice = null)
@@ -470,7 +470,7 @@ internal class AgentMemoryStore(
         }
     }
 
-    /** 归档冷章节：正文移除、原文移入 MEMORY-archive.md，可整体恢复。 */
+    /** 归档冷章节：原文移入 memory/archive/，可整体恢复。 */
     fun archiveSections(titles: List<String>) {
         if (titles.isEmpty() || memoryState.isArchiving) return
         memoryState = memoryState.copy(isArchiving = true, notice = null)
@@ -509,7 +509,7 @@ internal class AgentMemoryStore(
         }
     }
 
-    /** 取消归档：把选中的归档章节移回 MEMORY.md 末尾。 */
+    /** 取消归档：把选中的归档档案移回 memory/files/。 */
     fun unarchiveSections(titles: List<String>) {
         if (titles.isEmpty() || memoryState.isArchiving) return
         memoryState = memoryState.copy(isArchiving = true, notice = null)

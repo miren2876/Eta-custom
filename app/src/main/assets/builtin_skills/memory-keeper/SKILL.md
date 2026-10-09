@@ -10,7 +10,7 @@ description: 维护 Eta 的持久记忆：工作记忆 MEMORY.md 的条目池（
 | `memory/USER.md` | 用户画像：稳定偏好、关系、长期事实 | 硬上限 5 KB |
 | `memory/MEMORY.md` | 工作记忆条目池：一条一行 `- (重要度 1-5) 事实 [YYYY-MM-DD]`，每轮按 EI 排序注入 | 软 10 KB / 硬 64 KB，单条 ≤ 500 字符 |
 | `memory/files/<名字>.md` | 主题档案：具体细节，按需读取 | 单档 ≤ 10 MiB |
-| `memory/MEMORY-archive.md` | 冷档案归档，可在记忆页还原 | 不限 |
+| `memory/archive/<名字>.md` | 冷档案归档：一档一文件，可在记忆页还原 | 不限 |
 | `memory/working.json` | 条目统计（引用次数、写入时间），EI 用 | — |
 | `memory/usage.json` | 档案统计（引用次数、写入时间、冷标记） | — |
 

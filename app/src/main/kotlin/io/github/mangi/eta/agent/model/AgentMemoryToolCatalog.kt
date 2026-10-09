@@ -9,7 +9,7 @@ import org.json.JSONObject
  * - 用户画像 `memory/USER.md`（稳定偏好、关系、长期事实，每轮注入）
  * - 工作记忆 `memory/MEMORY.md`（档案清单 + 当前进度，每轮注入）
  * - 档案 `memory/files/<name>.md`（一档一主题，按需读取）
- * - 归档 `memory/MEMORY-archive.md`（冷档案迁入，可在记忆页还原）
+ * - 归档 `memory/archive/<名字>.md`（冷档案迁入，一档一文件，可在记忆页还原）
  */
 internal object AgentMemoryToolCatalog {
     fun appendTo(tools: JSONArray, writable: Boolean = true) {

@@ -168,6 +168,13 @@ internal sealed interface AgentMemoryWriteResult {
     data class Conflict(val snapshot: AgentMemorySnapshot) : AgentMemoryWriteResult
 }
 
+/** 归档目录里的一个档案（memory/archive/<名字>.md）在迁移与备份文本里的中间形态。 */
+internal data class AgentMemoryArchivedEntry(
+    val name: String,
+    val body: String,
+    val archivedAtMillis: Long,
+)
+
 internal class AgentMemoryException(
     val code: String,
     message: String,
@@ -180,7 +187,8 @@ internal class AgentMemoryStore(
 ) {
     private val memoryDir = File(rootDir, DIRECTORY_NAME)
     private val atomicFile = AtomicFile(File(memoryDir, FILE_NAME))
-    private val archiveFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
+    /** 旧版单文件归档（memory/MEMORY-archive.md）：只在迁移时读写。 */
+    private val legacyArchiveFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
     private val usageFile = AtomicFile(File(memoryDir, USAGE_FILE_NAME))
     /** 工作记忆条目的统计 sidecar（引用次数 / 写入时间）。 */
     private val entryFile = AtomicFile(File(memoryDir, ENTRY_FILE_NAME))
@@ -189,6 +197,8 @@ internal class AgentMemoryStore(
     private val userFile = AtomicFile(File(memoryDir, USER_FILE_NAME))
     private val workingFile = AtomicFile(File(memoryDir, FILE_NAME))
     private val filesDir = File(memoryDir, FILES_DIR_NAME)
+    /** 归档目录（memory/archive/）：一个归档档案一个文件。 */
+    private val archiveDir = File(memoryDir, ARCHIVE_DIR_NAME)
     private val lock = Any()
 
     fun snapshot(): AgentMemorySnapshot = synchronized(lock) {
@@ -260,16 +270,53 @@ internal class AgentMemoryStore(
             .orEmpty()
     }
 
-    fun archiveSnapshot(): AgentMemoryArchiveSnapshot = synchronized(lock) {
-        val content = readText(archiveFile)
-        AgentMemoryArchiveSnapshot(
+    /** 归档内容汇总：把 memory/archive/ 下的独立档案拼成一份文本（备份与体积统计用）。 */
+    fun archiveSnapshot(): AgentMemoryArchiveSnapshot = synchronized(lock) { archiveSnapshotLocked() }
+
+    private fun archiveSnapshotLocked(): AgentMemoryArchiveSnapshot {
+        val files = archivedFilesLocked()
+        val content = mergedArchiveText(files)
+        return AgentMemoryArchiveSnapshot(
             content = content,
             byteSize = content.toByteArray(Charsets.UTF_8).size,
-            sectionCount = AgentMemoryScoring.sections(content.memoryLines()).size,
+            sectionCount = files.size,
         )
     }
 
-    /** 把指定章节移入 MEMORY-archive.md；正文其余部分保持不变。 */
+    /** 归档目录下的档案文件，最近归档的在前。 */
+    private fun archivedFilesLocked(): List<File> =
+        archiveDir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
+            ?.sortedWith(compareByDescending<File> { archivedAt(it) }.thenBy { it.name })
+            .orEmpty()
+
+    /** 把归档档案拼成旧版单文件格式（`## 名字（归档于 …）` 章节），备份与外发共用。 */
+    private fun mergedArchiveText(files: List<File>): String = files.joinToString("\n\n") { file ->
+        val body = file.readText().trimEnd('\n')
+        buildString {
+            append("## ").append(file.name.removeSuffix(FILE_SUFFIX))
+                .append("（归档于 ").append(stampOf(archivedAt(file))).append("）")
+            if (body.isNotBlank()) append('\n').append(body)
+        }
+    }
+
+    /** 归档落盘：正文原样保存，归档时间记在文件 mtime 上，不往正文里塞元信息。 */
+    private fun writeArchived(target: File, content: String, archivedAtMillis: Long): Boolean {
+        archiveDir.mkdirs()
+        val trimmed = content.trimEnd('\n')
+        return runCatching {
+            target.writeText(if (trimmed.isEmpty()) "" else "$trimmed\n")
+            target.setLastModified(archivedAtMillis)
+        }.isSuccess
+    }
+
+    private fun archivedAt(file: File): Long = file.lastModified().takeIf { it > 0L } ?: 0L
+
+    private fun stampOf(millis: Long): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date(if (millis > 0L) millis else System.currentTimeMillis()))
+
+    /** 把指定章节各写成一个 memory/archive/<标题>.md；正文其余部分保持不变。 */
     fun archive(titles: List<String>): AgentMemoryArchiveResult = synchronized(lock) {
         if (titles.isEmpty()) {
             throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "没有需要归档的章节")
@@ -284,65 +331,40 @@ internal class AgentMemoryStore(
             throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "要归档的章节已不存在，请刷新后重试")
         }
         val removed = HashSet<Int>()
-        val archivedBlocks = mutableListOf<String>()
-        val stamp = archiveStamp()
+        val archivedTitles = mutableListOf<String>()
+        val now = System.currentTimeMillis()
         selected.forEach { range ->
             for (index in range.startIndex until range.endIndex) removed += index
-            val body = lines.subList(range.startIndex, range.endIndex)
+            val name = range.displayTitle.ifBlank { "未命名" }
+            val body = lines.subList(range.startIndex + 1, range.endIndex)
                 .joinToString("\n")
-                .trimEnd('\n')
-            archivedBlocks += buildString {
-                append("#".repeat(range.level.coerceAtLeast(2))).append(' ')
-                    .append(range.displayTitle).append("（归档于 ").append(stamp).append("）")
-                val bodyWithoutHeading = body.substringAfter('\n', "")
-                if (bodyWithoutHeading.isNotBlank()) append('\n').append(bodyWithoutHeading)
-            }
+                .trim('\n')
+            val target = archivedFileFor(name) ?: return@forEach
+            writeArchived(target, body, now)
+            archivedTitles += name
         }
         val remaining = lines.filterIndexed { index, _ -> index !in removed }
             .joinToString("\n")
             .trimEnd('\n')
-        val archiveContent = buildString {
-            val existing = readText(archiveFile).trimEnd('\n')
-            if (existing.isNotEmpty()) append(existing).append("\n\n")
-            append(archivedBlocks.joinToString("\n\n"))
-            append('\n')
-        }
         writeLocked(remaining)
-        writeText(archiveFile, archiveContent)
         val refreshedUsage = usageLocked().sections.filterKeys { title -> title !in titles }
         writeUsageLocked(AgentMemoryUsage(refreshedUsage))
         val updated = snapshotOf(remaining)
         AgentMemoryArchiveResult(
             snapshot = updated,
-            archivedTitles = selected.map { it.displayTitle },
-            archiveByteSize = archiveContent.toByteArray(Charsets.UTF_8).size,
+            archivedTitles = archivedTitles,
+            archiveByteSize = archiveSnapshotLocked().byteSize,
         )
     }
 
-    /** 把归档内容整体追加回 MEMORY.md，并清空归档文件（用户显式操作，可逆）。 */
-    /** 把归档内容全部还原成档案文件，并清空归档文件；返回还原数量。 */
+    /** 取消全部归档：把 archive/ 下的档案逐个移回 files/，返回还原数量。 */
     fun restoreArchive(): Int = synchronized(lock) {
-        val lines = readText(archiveFile).memoryLines()
-        val selected = AgentMemoryScoring.sections(lines)
-        if (selected.isEmpty()) {
+        val names = archivedFilesLocked().map { file -> file.name.removeSuffix(FILE_SUFFIX) }
+        if (names.isEmpty()) {
             throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "归档是空的")
         }
-        filesDir.mkdirs()
-        var restored = 0
-        selected.forEach { range ->
-            val plain = AgentMemoryScoring.stripArchiveStamp(range.title).trimStart('#').trim()
-            val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim('\n')
-            fileFor(plain)?.let { file ->
-                file.writeText(if (body.isBlank()) "" else "$body\n")
-                recordFileWritten(plain)
-                restored++
-            }
-        }
-        writeText(archiveFile, "")
-        restored
+        unarchiveLocked(names)
     }
-
-    private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
 
     /** 记忆档案清单：memory/files/ 下的独立文件。 */
     fun files(): List<AgentMemoryFileInfo> = synchronized(lock) {
@@ -745,14 +767,21 @@ internal class AgentMemoryStore(
         )
     }
 
-    private fun fileFor(name: String): File? {
+    /** 档案名 → 文件名（目录分隔符与 `..` 替换掉，避免越出档案目录）。 */
+    private fun sanitizeName(name: String): String? {
         val safe = name.trim()
             .replace('/', '_')
             .replace('\\', '_')
             .replace("..", "_")
-        if (safe.isBlank()) return null
-        return File(filesDir, safe + FILE_SUFFIX)
+        return safe.ifBlank { null }
     }
+
+    private fun fileFor(name: String): File? =
+        sanitizeName(name)?.let { safe -> File(filesDir, safe + FILE_SUFFIX) }
+
+    /** 归档目录里的同名档案文件。 */
+    private fun archivedFileFor(name: String): File? =
+        sanitizeName(name)?.let { safe -> File(archiveDir, safe + FILE_SUFFIX) }
 
     /** 用户画像（USER.md）。 */
     fun coreProfile(): String = synchronized(lock) { readText(userFile).trimEnd('\n') }
@@ -874,34 +903,94 @@ internal class AgentMemoryStore(
         true
     }
 
-    /** 把选中的档案移入归档文件（MEMORY-archive.md），并删除原档案文件。 */
+    /**
+     * 旧版单文件归档 MEMORY-archive.md → memory/archive/<名字>.md（一档一文件），
+     * 原文件另存为 MEMORY-archive.md.bak 后删除；拆不出章节时保持原样，避免丢内容。
+     */
+    fun migrateArchiveIfNeeded(): Boolean = synchronized(lock) {
+        val legacy = legacyArchiveFile.baseFile
+        if (!legacy.exists()) return@synchronized false
+        val content = readText(legacyArchiveFile)
+        if (content.isBlank()) {
+            runCatching { legacy.delete() }
+            return@synchronized true
+        }
+        val entries = splitArchiveSections(content)
+        if (entries.isEmpty()) return@synchronized false
+        val fallbackMillis = legacy.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
+        entries.forEach { entry ->
+            val target = archivedFileFor(entry.name) ?: return@forEach
+            if (!target.exists()) {
+                writeArchived(target, entry.body, entry.archivedAtMillis.takeIf { it > 0L } ?: fallbackMillis)
+            }
+        }
+        writeText(AtomicFile(File(memoryDir, "$ARCHIVE_FILE_NAME.bak")), content)
+        runCatching { legacy.delete() }
+        true
+    }
+
+    /** 把 `## 名字（归档于 2026-10-09）` 章节文本拆成一条条归档记录（旧文件与备份文本共用）。 */
+    private fun splitArchiveSections(content: String): List<AgentMemoryArchivedEntry> {
+        val result = mutableListOf<AgentMemoryArchivedEntry>()
+        var name: String? = null
+        var archivedAtMillis = 0L
+        var body = mutableListOf<String>()
+        fun flush() {
+            val current = name
+            if (current != null) {
+                result += AgentMemoryArchivedEntry(current, body.joinToString("\n").trim('\n'), archivedAtMillis)
+            }
+            name = null
+            archivedAtMillis = 0L
+            body = mutableListOf()
+        }
+        content.memoryLines().forEach { line ->
+            val heading = archiveHeading(line)
+            if (heading == null) {
+                if (name != null) body += line
+            } else {
+                flush()
+                name = heading.first
+                archivedAtMillis = heading.second
+            }
+        }
+        flush()
+        return result
+    }
+
+    /** 只认带归档戳的标题行，避免把正文里的普通标题当成新档案拆开。 */
+    private fun archiveHeading(line: String): Pair<String, Long>? {
+        val match = ARCHIVE_STAMP_LINE.matchEntire(line.trim()) ?: return null
+        if (match.groupValues[1].length < 2) return null
+        val name = match.groupValues[2].trim()
+        if (name.isBlank()) return null
+        val millis = runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                .apply { isLenient = false }
+                .parse(match.groupValues[3])
+                ?.time
+        }.getOrNull() ?: 0L
+        return name to millis
+    }
+
+    /** 把选中的档案移入 memory/archive/（一档一文件），并删除原档案文件。 */
     fun archiveFiles(names: List<String>): Int = synchronized(lock) {
         if (names.isEmpty()) return@synchronized 0
-        val stamp = archiveStamp()
-        val blocks = mutableListOf<String>()
-        val removed = mutableListOf<String>()
+        val now = System.currentTimeMillis()
+        var moved = 0
         names.forEach { name ->
-            val file = fileFor(name) ?: return@forEach
-            if (!file.exists()) return@forEach
-            val body = file.readText().trimEnd('\n')
-            blocks += buildString {
-                append("## ").append(name).append("（归档于 ").append(stamp).append("）")
-                if (body.isNotBlank()) append('\n').append(body)
+            val source = fileFor(name) ?: return@forEach
+            if (!source.exists()) return@forEach
+            val target = archivedFileFor(name) ?: return@forEach
+            if (writeArchived(target, source.readText(), now)) {
+                source.delete()
+                moved++
             }
-            removed += name
         }
-        if (blocks.isEmpty()) {
+        if (moved == 0) {
             throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的档案已不存在，请刷新后重试")
         }
-        val existing = readText(archiveFile).trimEnd('\n')
-        val merged = buildString {
-            if (existing.isNotEmpty()) append(existing).append("\n\n")
-            append(blocks.joinToString("\n\n"))
-            append('\n')
-        }
-        writeText(archiveFile, merged)
-        removed.forEach { name -> fileFor(name)?.delete() }
-        removed.size
+        moved
     }
 
     /** 整体替换全部档案（备份恢复用）：先清空目录再写回，并重置用量记录。 */
@@ -964,60 +1053,57 @@ internal class AgentMemoryStore(
             .trim('\n')
     }
 
-    /** 列出归档文件里的章节（标题已去掉「（归档于 …）」标记）。 */
+    /** 归档清单：memory/archive/ 下的独立档案文件。 */
     fun archiveSections(): List<AgentMemorySection> = synchronized(lock) {
-        val lines = readText(archiveFile).memoryLines()
-        AgentMemoryScoring.sections(lines).map { range ->
+        val usage = usageLocked().sections
+        archivedFilesLocked().map { file ->
+            val lines = file.readText().memoryLines()
+            val name = file.name.removeSuffix(FILE_SUFFIX)
+            val entry = usage[name]
             AgentMemorySection(
-                title = AgentMemoryScoring.stripArchiveStamp(range.title),
-                level = range.level,
-                startLine = range.startIndex + 1,
-                endLine = range.endIndex,
-                lineCount = range.lineCount,
-                preview = lines.drop(range.startIndex + 1)
-                    .takeWhile { !it.trimStart().startsWith("#") }
-                    .firstOrNull { it.isNotBlank() }
-                    ?.trim()
-                    ?.take(PREVIEW_CHARS)
-                    .orEmpty(),
+                title = name,
+                level = 2,
+                startLine = 0,
+                endLine = lines.size,
+                lineCount = lines.size,
+                hitCount = entry?.hitCount ?: 0,
+                lastHitAtMillis = entry?.lastHitAtMillis ?: 0L,
+                writtenAtMillis = archivedAt(file),
+                preview = lines.firstOrNull { it.isNotBlank() }?.trim()?.take(PREVIEW_CHARS).orEmpty(),
             )
         }
     }
 
-    /** 把选中的归档章节移回 MEMORY.md 末尾，并从归档文件里移除它们。 */
-    /** 取消归档：把归档条目还原成档案文件（memory/files/<名字>.md），返回还原数量。 */
+    /** 取消归档：把 memory/archive/<名字>.md 移回 memory/files/。 */
     fun unarchive(titles: List<String>): Int = synchronized(lock) {
         if (titles.isEmpty()) {
             throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "没有选中要取消归档的档案")
         }
-        val lines = readText(archiveFile).memoryLines()
-        val wanted = titles.toSet()
-        val selected = AgentMemoryScoring.sections(lines).filter { range ->
-            val stripped = AgentMemoryScoring.stripArchiveStamp(range.title)
-            val plain = stripped.trimStart('#').trim()
-            stripped in wanted || plain in wanted || range.title in wanted
+        val names = titles.map { title ->
+            AgentMemoryScoring.stripArchiveStamp(title).trimStart('#').trim()
+        }.filter { it.isNotBlank() }
+        unarchiveLocked(names)
+    }
+
+    /** 逐个把归档档案移回档案目录；一个都没命中时报 MEMORY_ARCHIVE_MISSING。 */
+    private fun unarchiveLocked(names: List<String>): Int {
+        filesDir.mkdirs()
+        var restored = 0
+        names.forEach { name ->
+            val source = archivedFileFor(name) ?: return@forEach
+            if (!source.exists()) return@forEach
+            val target = fileFor(name) ?: return@forEach
+            val content = source.readText().trimEnd('\n')
+            target.writeText(if (content.isBlank()) "" else "$content\n")
+            runCatching { target.setLastModified(System.currentTimeMillis()) }
+            source.delete()
+            recordFileWritten(name)
+            restored++
         }
-        if (selected.isEmpty()) {
+        if (restored == 0) {
             throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的档案已不在归档里，请刷新后重试")
         }
-        filesDir.mkdirs()
-        val removed = HashSet<Int>()
-        var restored = 0
-        selected.forEach { range ->
-            for (index in range.startIndex until range.endIndex) removed += index
-            val plain = AgentMemoryScoring.stripArchiveStamp(range.title).trimStart('#').trim()
-            val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim('\n')
-            fileFor(plain)?.let { file ->
-                file.writeText(if (body.isBlank()) "" else "$body\n")
-                recordFileWritten(plain)
-                restored++
-            }
-        }
-        val remaining = lines.filterIndexed { index, _ -> index !in removed }
-            .joinToString("\n")
-            .trim('\n')
-        writeText(archiveFile, if (remaining.isEmpty()) "" else "$remaining\n")
-        restored
+        return restored
     }
 
     /** 读取某一节的完整文本（含标题行），供记忆页点击展开。 */
@@ -1029,15 +1115,16 @@ internal class AgentMemoryStore(
         lines.subList(range.startIndex, range.endIndex).joinToString("\n")
     }
 
-    /** 备份恢复时整体写回归档文件；空内容即清空归档。 */
+    /** 备份恢复时整体写回归档目录（按 `## 名字（归档于 …）` 拆成一档一文件）；空内容即清空归档。 */
     fun replaceArchive(content: String): AgentMemoryArchiveSnapshot = synchronized(lock) {
-        writeText(archiveFile, content)
-        val text = readText(archiveFile)
-        AgentMemoryArchiveSnapshot(
-            content = text,
-            byteSize = text.toByteArray(Charsets.UTF_8).size,
-            sectionCount = AgentMemoryScoring.sections(text.memoryLines()).size,
-        )
+        archiveDir.mkdirs()
+        archiveDir.listFiles()?.forEach { file -> if (file.isFile) file.delete() }
+        val now = System.currentTimeMillis()
+        splitArchiveSections(content).forEach { entry ->
+            val target = archivedFileFor(entry.name) ?: return@forEach
+            writeArchived(target, entry.body, entry.archivedAtMillis.takeIf { it > 0L } ?: now)
+        }
+        archiveSnapshotLocked()
     }
 
     fun mutate(mutation: AgentMemoryMutation): AgentMemoryWriteResult = synchronized(lock) {
@@ -1560,8 +1647,8 @@ internal class AgentMemoryStore(
                 (byte.toInt() and 0xff).toString(16).padStart(2, '0')
             }
 
-    private fun archiveStamp(): String =
-        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+
 
     companion object {
         const val MAX_FILE_BYTES = 1024 * 1024
@@ -1579,7 +1666,12 @@ internal class AgentMemoryStore(
         const val PREVIEW_CHARS = 120
         private const val DIRECTORY_NAME = "memory"
         private const val FILE_NAME = "MEMORY.md"
+        /** 归档目录名：一个归档档案一个文件。 */
+        private const val ARCHIVE_DIR_NAME = "archive"
+
+        /** 旧版单文件归档名；现在只在迁移时读。 */
         private const val ARCHIVE_FILE_NAME = "MEMORY-archive.md"
+
         private const val LEGACY_CORE_FILE_NAME = "CORE.md"
         private const val USER_FILE_NAME = "USER.md"
         private const val CORE_HEADING_LINE = "# 核心记忆"
@@ -1610,6 +1702,10 @@ internal class AgentMemoryStore(
         private const val FIELD_HIT_COUNT = "hitCount"
         private const val FIELD_LAST_HIT = "lastHitAt"
         private const val FIELD_WRITTEN_AT = "writtenAt"
+
+        /** 旧格式归档标题：`## 名字（归档于 2026-10-09）`；只认这种带戳的标题。 */
+        private val ARCHIVE_STAMP_LINE = Regex("^(#{2,6})\\s+(.*?)（归档于 ([^）]*)）$")
+
     }
 }
 
@@ -1628,6 +1724,9 @@ internal object AgentMemoryRepository {
             runCatching { store.migrateCoreFilesIfNeeded() }
             // 工作记忆改为「条目池」后，清掉旧版逐条列档案的清单行（只做一次）。
             runCatching { store.migrateWorkingEntriesIfNeeded() }
+            // 旧版单文件归档 MEMORY-archive.md 拆成 memory/archive/ 下的一档一文件。
+            runCatching { store.migrateArchiveIfNeeded() }
+
         }
     }
 

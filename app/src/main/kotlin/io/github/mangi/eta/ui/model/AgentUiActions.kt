@@ -65,16 +65,16 @@ sealed interface AgentMemoryAction {
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
 
-    /** 把选中的冷章节移入 MEMORY-archive.md。 */
+    /** 把选中的冷章节移入 memory/archive/（一档一文件）。 */
     data class ArchiveSections(val titles: List<String>) : AgentMemoryAction
 
-    /** 把归档内容整体追加回 MEMORY.md 并清空归档。 */
+    /** 把归档档案全部移回档案目录。 */
     data object RestoreArchive : AgentMemoryAction
 
-    /** 把选中的归档章节移回 MEMORY.md（取消归档）。 */
+    /** 把选中的归档档案移回档案目录（取消归档）。 */
     data class UnarchiveSections(val titles: List<String>) : AgentMemoryAction
 
-    /** 撤销刚刚这一次归档（把这次归档的章节移回正文）。 */
+    /** 撤销刚刚这一次归档（把这次归档的档案移回档案目录）。 */
     data object UndoArchive : AgentMemoryAction
 
     /** 离开记忆页时清掉撤销入口。 */

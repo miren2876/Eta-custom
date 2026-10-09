@@ -48,7 +48,7 @@ internal data class EtaBackupDocument(
     val memoryCoreMd: String = "",
     /** 记忆档案：档案名 → 正文（memory/files/<name>.md）。 */
     val memoryFiles: Map<String, String> = emptyMap(),
-    /** 归档文件（MEMORY-archive.md）内容；旧备份缺省为空，导入时不覆盖本机归档。 */
+    /** 归档内容（旧版单文件格式，导入时按标题拆回 memory/archive/）；旧备份缺省为空，导入时不覆盖本机归档。 */
     val memoryArchiveMd: String = "",
     val roleplay: CharacterBackupData? = null,
 ) {

@@ -1456,7 +1456,7 @@
   <string name="memory_section_never_used">never read</string>
   <string name="memory_section_idle_days">unread for %1$d d</string>
   <string name="memory_archive_suggest_title">Suggested archive</string>
-  <string name="memory_archive_suggest_summary">These sections have not been read for a long time. Archiving moves them verbatim into MEMORY-archive.md (removed from the body) and can be restored below at any time.</string>
+  <string name="memory_archive_suggest_summary">These archives have not been read for a long time. Archiving moves each one verbatim into memory/archive/ (one file per archive) and can be restored below at any time.</string>
   <string name="memory_archive_selected">Archive (%1$d)</string>
   <string name="memory_archive_restore">Restore archive</string>
   <string name="memory_editor_expand">Expand</string>
@@ -1486,7 +1486,7 @@
   <string name="memory_files_select_hint">Long-press an archive to select several and archive them</string>
   <string name="state_ui_memory_file_saved">Archive saved</string>
   <string name="memory_archive_files_confirm_title">Archive selected archives?</string>
-  <string name="memory_archive_files_confirm_message">%1$d archive(s) will be moved into MEMORY-archive.md and the files deleted.</string>
+  <string name="memory_archive_files_confirm_message">%1$d archive(s) will move into memory/archive/ (one file each).</string>
   <string name="memory_profile_clear_title">Clear user profile?</string>
   <string name="memory_profile_clear_message">The user profile will be emptied and no longer injected.</string>
   <string name="memory_working_clear_title">Clear working memory?</string>
@@ -1510,13 +1510,13 @@
   <string name="memory_section_select_hint">Long-press a section to select several and archive them</string>
   <string name="memory_archive_select_hint">Long-press an archived item to select several and unarchive them</string>
   <string name="memory_sections_empty">No sections yet</string>
-  <string name="state_ui_memory_unarchived">Unarchived %1$d section(s)</string>
+  <string name="state_ui_memory_unarchived">Unarchived %1$d archive(s)</string>
   <string name="memory_archive_empty">Nothing archived yet</string>
   <string name="memory_archive_confirm_title">Archive selected sections?</string>
-  <string name="memory_archive_confirm_message">%1$d sections will move from MEMORY.md into MEMORY-archive.md. The original text is kept and can be restored at once.</string>
+  <string name="memory_archive_confirm_message">%1$d section(s) will move into memory/archive/ (one file each). The original text is kept and can be restored at once.</string>
   <string name="memory_restore_confirm_title">Restore all archived content?</string>
   <string name="memory_restore_confirm_message">Archived content is appended to the end of MEMORY.md and the archive file is cleared.</string>
-  <string name="state_ui_memory_archived">Archived %1$d sections</string>
+  <string name="state_ui_memory_archived">Archived %1$d archive(s)</string>
   <string name="state_ui_memory_archive_failed">Archive failed</string>
   <string name="state_ui_memory_archive_restored">Archive restored</string>
   <string name="state_ui_memory_archive_restore_failed">Restoring the archive failed</string>
