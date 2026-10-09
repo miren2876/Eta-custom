@@ -83,8 +83,8 @@ internal fun AgentMemoryScreen(
     var pendingArchiveFileNames by remember { mutableStateOf(emptyList<String>()) }
     var showArchiveFilesDialog by remember { mutableStateOf(false) }
     // 「建议归档」区块：候选默认全勾上，确认归档走同一套动作。
-    var suggestedSelection by remember(state.archiveCandidates) {
-        mutableStateOf(state.archiveCandidates.map { it.rawTitle }.toSet())
+    var suggestedSelection by remember(state.coldFiles) {
+        mutableStateOf(state.coldFiles.map { it.name }.toSet())
     }
     var pendingArchiveTitles by remember { mutableStateOf(emptyList<String>()) }
     // 离开记忆页（含退出设置）时收起「撤销归档」入口。
@@ -99,6 +99,7 @@ internal fun AgentMemoryScreen(
     // 核心记忆（独立文件）同样是折叠编辑器。
     var profileExpanded by remember { mutableStateOf(false) }
     var workingExpanded by remember { mutableStateOf(false) }
+    var filesExpanded by remember { mutableStateOf(true) }
     var showClearProfileDialog by remember { mutableStateOf(false) }
     var showClearWorkingDialog by remember { mutableStateOf(false) }
 
@@ -191,68 +192,80 @@ internal fun AgentMemoryScreen(
                             .padding(horizontal = 16.dp)
                             .padding(bottom = 16.dp),
                     ) {
-                        if (state.files.isEmpty()) {
-                            SectionHint(text = stringResource(R.string.memory_files_empty))
-                        } else {
-                            state.files.forEachIndexed { index, file ->
-                                if (index > 0) EtaPreferenceDivider(hasLeading = true)
-                                val selecting = selectionScope == MemorySelection.Files
-                                val expanded = !selecting && state.expandedFileName == file.name
-                                FileRow(
-                                    file = file,
-                                    selected = if (selecting) file.name in fileSelection else null,
-                                    expanded = if (selecting) null else expanded,
-                                    onClick = {
-                                        if (selecting) {
-                                            fileSelection = fileSelection.toggle(file.name)
-                                        } else if (expanded) {
-                                            onAction(AgentMemoryAction.CollapseFile)
-                                        } else {
-                                            onAction(AgentMemoryAction.ExpandFile(file.name))
-                                        }
-                                    },
-                                    onLongClick = {
-                                        selectionScope = MemorySelection.Files
-                                        fileSelection = setOf(file.name)
-                                    },
-                                )
-                                if (expanded) {
-                                    FileEditor(
-                                        label = file.name,
-                                        draft = state.fileDraft,
-                                        saved = state.fileSaved,
-                                        saving = state.isSavingFile,
-                                        onDraftChange = { onAction(AgentMemoryAction.FileDraftChanged(it)) },
-                                        onSave = { onAction(AgentMemoryAction.SaveFile) },
+                        ExpandableHeader(
+                            summary = stringResource(
+                                R.string.memory_files_summary,
+                                state.files.size,
+                                state.coldFileCount,
+                            ),
+                            expanded = filesExpanded,
+                            onToggle = { filesExpanded = !filesExpanded },
+                        )
+                        if (filesExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            if (state.files.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_files_empty))
+                            } else {
+                                state.files.forEachIndexed { index, file ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    val selecting = selectionScope == MemorySelection.Files
+                                    val expanded = !selecting && state.expandedFileName == file.name
+                                    FileRow(
+                                        file = file,
+                                        selected = if (selecting) file.name in fileSelection else null,
+                                        expanded = if (selecting) null else expanded,
+                                        onClick = {
+                                            if (selecting) {
+                                                fileSelection = fileSelection.toggle(file.name)
+                                            } else if (expanded) {
+                                                onAction(AgentMemoryAction.CollapseFile)
+                                            } else {
+                                                onAction(AgentMemoryAction.ExpandFile(file.name))
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectionScope = MemorySelection.Files
+                                            fileSelection = setOf(file.name)
+                                        },
                                     )
+                                    if (expanded) {
+                                        FileEditor(
+                                            label = file.name,
+                                            draft = state.fileDraft,
+                                            saved = state.fileSaved,
+                                            saving = state.isSavingFile,
+                                            onDraftChange = { onAction(AgentMemoryAction.FileDraftChanged(it)) },
+                                            onSave = { onAction(AgentMemoryAction.SaveFile) },
+                                        )
+                                    }
                                 }
                             }
-                        }
-                        if (selectionScope == MemorySelection.Files) {
-                            EtaPreferenceDivider(hasLeading = false)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                EtaTextButton(
-                                    text = stringResource(R.string.memory_selection_cancel),
-                                    onClick = { exitSelection() },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                EtaTextButton(
-                                    text = stringResource(R.string.memory_archive_selected, fileSelection.size),
-                                    enabled = fileSelection.isNotEmpty() && !state.isArchiving,
-                                    onClick = {
-                                        pendingArchiveFileNames = fileSelection.toList()
-                                        showArchiveFilesDialog = true
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                )
+                            if (selectionScope == MemorySelection.Files) {
+                                EtaPreferenceDivider(hasLeading = false)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_cancel),
+                                        onClick = { exitSelection() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_archive_selected, fileSelection.size),
+                                        enabled = fileSelection.isNotEmpty() && !state.isArchiving,
+                                        onClick = {
+                                            pendingArchiveFileNames = fileSelection.toList()
+                                            showArchiveFilesDialog = true
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            } else if (state.files.isNotEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_files_select_hint))
                             }
-                        } else if (state.files.isNotEmpty()) {
-                            SectionHint(text = stringResource(R.string.memory_files_select_hint))
                         }
                     }
                 }
@@ -288,83 +301,7 @@ internal fun AgentMemoryScreen(
                     }
                 }
 
-                item(key = "sections-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_sections_title)) }
-                item(key = "sections-card") {
-                    EtaPreferenceGroup(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 16.dp),
-                    ) {
-                        ExpandableHeader(
-                            summary = stringResource(
-                                R.string.memory_capacity_sections_summary,
-                                state.sections.size,
-                                state.coldSectionCount,
-                            ),
-                            expanded = sectionsExpanded,
-                            onToggle = { sectionsExpanded = !sectionsExpanded },
-                        )
-                        if (sectionsExpanded) {
-                            EtaPreferenceDivider(hasLeading = false)
-                            if (state.sections.isEmpty()) {
-                                SectionHint(text = stringResource(R.string.memory_sections_empty))
-                            } else {
-                                state.sections.forEachIndexed { index, section ->
-                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
-                                    val selecting = selectionScope == MemorySelection.Sections
-                                    val expanded = !selecting && state.expandedSectionTitle == section.rawTitle
-                                    SectionRow(
-                                        section = section,
-                                        selected = if (selecting) section.rawTitle in sectionSelection else null,
-                                        expanded = if (selecting) null else expanded,
-                                        onClick = {
-                                            if (selecting) {
-                                                sectionSelection = sectionSelection.toggle(section.rawTitle)
-                                            } else if (expanded) {
-                                                onAction(AgentMemoryAction.CollapseSection)
-                                            } else {
-                                                onAction(AgentMemoryAction.ExpandSection(section.rawTitle))
-                                            }
-                                        },
-                                        onLongClick = {
-                                            selectionScope = MemorySelection.Sections
-                                            sectionSelection = setOf(section.rawTitle)
-                                        },
-                                    )
-                                    if (expanded) SectionBody(text = state.expandedSectionText)
-                                }
-                            }
-                            if (selectionScope == MemorySelection.Sections) {
-                                EtaPreferenceDivider(hasLeading = false)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    EtaTextButton(
-                                        text = stringResource(R.string.memory_selection_cancel),
-                                        onClick = { exitSelection() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    EtaTextButton(
-                                        text = stringResource(R.string.memory_archive_selected, sectionSelection.size),
-                                        enabled = sectionSelection.isNotEmpty() && !state.isArchiving,
-                                        onClick = {
-                                            pendingArchiveTitles = sectionSelection.toList()
-                                            showArchiveDialog = true
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                            } else {
-                                SectionHint(text = stringResource(R.string.memory_section_select_hint))
-                            }
-                        }
-                    }
-                }
-
-                if (state.archiveCandidates.isNotEmpty()) {
+                if (state.coldFiles.isNotEmpty()) {
                     item(key = "suggest-title") {
                         EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_suggest_title))
                     }
@@ -374,14 +311,14 @@ internal fun AgentMemoryScreen(
                                 .padding(horizontal = 16.dp)
                                 .padding(bottom = 16.dp),
                         ) {
-                            state.archiveCandidates.forEachIndexed { index, section ->
+                            state.coldFiles.forEachIndexed { index, file ->
                                 if (index > 0) EtaPreferenceDivider(hasLeading = true)
-                                SectionRow(
-                                    section = section,
-                                    selected = section.rawTitle in suggestedSelection,
+                                FileRow(
+                                    file = file,
+                                    selected = file.name in suggestedSelection,
                                     expanded = null,
                                     onClick = {
-                                        suggestedSelection = suggestedSelection.toggle(section.rawTitle)
+                                        suggestedSelection = suggestedSelection.toggle(file.name)
                                     },
                                 )
                             }
@@ -396,8 +333,8 @@ internal fun AgentMemoryScreen(
                                     text = stringResource(R.string.memory_archive_selected, suggestedSelection.size),
                                     enabled = suggestedSelection.isNotEmpty() && !state.isArchiving,
                                     onClick = {
-                                        pendingArchiveTitles = suggestedSelection.toList()
-                                        showArchiveDialog = true
+                                        pendingArchiveFileNames = suggestedSelection.toList()
+                                        showArchiveFilesDialog = true
                                     },
                                     modifier = Modifier.weight(1f),
                                 )
@@ -405,10 +342,10 @@ internal fun AgentMemoryScreen(
                                     text = stringResource(R.string.memory_archive_all),
                                     enabled = !state.isArchiving,
                                     onClick = {
-                                        val all = state.archiveCandidates.map { it.rawTitle }
+                                        val all = state.coldFiles.map { it.name }
                                         suggestedSelection = all.toSet()
-                                        pendingArchiveTitles = all
-                                        showArchiveDialog = true
+                                        pendingArchiveFileNames = all
+                                        showArchiveFilesDialog = true
                                     },
                                     modifier = Modifier.weight(1f),
                                 )
@@ -416,7 +353,6 @@ internal fun AgentMemoryScreen(
                         }
                     }
                 }
-
                 item(key = "archive-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_capacity_archive_title)) }
                 item(key = "archive-card") {
                     EtaPreferenceGroup(
@@ -938,7 +874,20 @@ private fun FileRow(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = stringResource(R.string.memory_file_meta, file.lineCount, formatBytes(file.byteSize)),
+                text = buildString {
+                    append(stringResource(R.string.memory_file_meta, file.lineCount, formatBytes(file.byteSize)))
+                    append(" · ")
+                    append(
+                        if (file.hitCount > 0) {
+                            stringResource(R.string.memory_section_hits, file.hitCount)
+                        } else {
+                            stringResource(R.string.memory_section_never_used)
+                        },
+                    )
+                    file.idleDays?.takeIf { it > 0 }?.let { days ->
+                        append(" · ").append(stringResource(R.string.memory_section_idle_days, days))
+                    }
+                },
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 style = MiuixTheme.textStyles.footnote1,
             )

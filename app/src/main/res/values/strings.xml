@@ -1474,6 +1474,7 @@
   <string name="memory_files_title">Archives</string>
   <string name="memory_files_empty">No archives yet — the model can create one with memory_write archive=&lt;name&gt;</string>
   <string name="memory_file_meta">%1$d lines · %2$s</string>
+  <string name="memory_files_summary">%1$d archives · %2$d cold</string>
   <string name="memory_files_select_hint">Long-press an archive to select several and archive them</string>
   <string name="state_ui_memory_file_saved">Archive saved</string>
   <string name="memory_archive_files_confirm_title">Archive selected archives?</string>

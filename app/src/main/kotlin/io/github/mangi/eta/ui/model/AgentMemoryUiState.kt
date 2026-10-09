@@ -23,6 +23,10 @@ data class AgentMemoryFileUi(
     val name: String,
     val lineCount: Int,
     val byteSize: Int,
+    val hitCount: Int = 0,
+    /** 距离最近一次引用（或写入）的天数。 */
+    val idleDays: Int? = null,
+    val cold: Boolean = false,
 )
 
 @Immutable
@@ -67,4 +71,6 @@ data class AgentMemoryUiState(
         get() = !isLoading && !isSaving && hasUnsavedChanges &&
             draftBytes <= maxBytes
     val coldSectionCount: Int get() = sections.count { it.cold }
+    val coldFileCount: Int get() = files.count { it.cold }
+    val coldFiles: List<AgentMemoryFileUi> get() = files.filter { it.cold }
 }

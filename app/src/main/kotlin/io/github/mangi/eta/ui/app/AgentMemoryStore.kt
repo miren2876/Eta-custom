@@ -76,7 +76,21 @@ internal class AgentMemoryStore(
                             profileSaved = bundle.profile,
                             workingDraft = bundle.working,
                             workingSaved = bundle.working,
-                            files = bundle.files.map { AgentMemoryFileUi(it.name, it.lineCount, it.byteSize) },
+                            files = bundle.files.map { file ->
+                                val reference = if (file.lastHitAtMillis > 0L) {
+                                    file.lastHitAtMillis
+                                } else {
+                                    file.writtenAtMillis
+                                }
+                                AgentMemoryFileUi(
+                                    name = file.name,
+                                    lineCount = file.lineCount,
+                                    byteSize = file.byteSize,
+                                    hitCount = file.hitCount,
+                                    idleDays = ((now - reference) / DAY_MILLIS).toInt(),
+                                    cold = file.cold,
+                                )
+                            },
                             sections = bundle.sections.map { it.toUi(now, coldTitles) },
                             archiveCandidates = bundle.candidates.map { it.toUi(now, coldTitles) },
                             archiveBytes = bundle.archive.byteSize,
@@ -400,14 +414,11 @@ internal class AgentMemoryStore(
         scope.launch(Dispatchers.IO) {
             runCatching { AgentMemoryRepository.unarchive(titles) }
                 .fold(
-                    onSuccess = { snapshot ->
+                    onSuccess = { count ->
                         withContext(Dispatchers.Main) {
                             memoryState = memoryState.copy(
                                 isArchiving = false,
-                                draft = snapshot.content,
-                                savedContent = snapshot.content,
-                                draftBytes = snapshot.byteSize,
-                                notice = appContext.getString(R.string.state_ui_memory_unarchived, titles.size),
+                                notice = appContext.getString(R.string.state_ui_memory_unarchived, count),
                             )
                         }
                         refreshMemory()
@@ -448,13 +459,10 @@ internal class AgentMemoryStore(
         scope.launch(Dispatchers.IO) {
             runCatching { AgentMemoryRepository.restoreArchive() }
                 .fold(
-                    onSuccess = { snapshot ->
+                    onSuccess = {
                         withContext(Dispatchers.Main) {
                             memoryState = memoryState.copy(
                                 isArchiving = false,
-                                draft = snapshot.content,
-                                savedContent = snapshot.content,
-                                draftBytes = snapshot.byteSize,
                                 notice = appContext.getString(R.string.state_ui_memory_archive_restored),
                             )
                         }

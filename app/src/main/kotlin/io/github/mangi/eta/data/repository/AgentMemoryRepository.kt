@@ -22,6 +22,11 @@ internal data class AgentMemoryFileInfo(
     val name: String,
     val lineCount: Int,
     val byteSize: Int,
+    val hitCount: Int = 0,
+    val lastHitAtMillis: Long = 0L,
+    val writtenAtMillis: Long = 0L,
+    /** 长期未引用（或被引用后长期未再命中）。 */
+    val cold: Boolean = false,
 )
 
 /** 章节视图：供检索结果、用量统计与归档候选共用。 */
@@ -264,43 +269,73 @@ internal class AgentMemoryStore(
     }
 
     /** 把归档内容整体追加回 MEMORY.md，并清空归档文件（用户显式操作，可逆）。 */
-    fun restoreArchive(): AgentMemorySnapshot = synchronized(lock) {
-        val archived = readText(archiveFile).trimEnd('\n')
-        if (archived.isBlank()) {
+    /** 把归档内容全部还原成档案文件，并清空归档文件；返回还原数量。 */
+    fun restoreArchive(): Int = synchronized(lock) {
+        val lines = readText(archiveFile).memoryLines()
+        val selected = AgentMemoryScoring.sections(lines)
+        if (selected.isEmpty()) {
             throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "归档是空的")
         }
-        val snapshot = snapshotLocked()
-        // 恢复时去掉「（归档于 …）」标记，让标题回到归档前的写法。
-        val restored = stripArchiveStamp(archived)
-        val merged = if (snapshot.content.isBlank()) {
-            restored
-        } else {
-            snapshot.content.trimEnd('\n') + "\n\n" + restored
+        filesDir.mkdirs()
+        var restored = 0
+        selected.forEach { range ->
+            val plain = AgentMemoryScoring.stripArchiveStamp(range.title).trimStart('#').trim()
+            val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim('\n')
+            fileFor(plain)?.let { file ->
+                file.writeText(if (body.isBlank()) "" else "$body\n")
+                restored++
+            }
         }
-        writeLocked(merged)
         writeText(archiveFile, "")
-        writeUsageLocked(AgentMemoryUsage())
-        snapshotOf(merged)
+        restored
     }
 
     private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
 
     /** 记忆档案清单：memory/files/ 下的独立文件。 */
     fun files(): List<AgentMemoryFileInfo> = synchronized(lock) {
+        val usage = usageLocked().sections
+        val now = System.currentTimeMillis()
         filesDir.listFiles()
             ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
             ?.sortedBy { it.name }
             ?.map { file ->
                 val text = file.readText()
+                val name = file.name.removeSuffix(FILE_SUFFIX)
+                val entry = usage[name]
+                val writtenAt = file.lastModified().takeIf { it > 0L } ?: now
+                val lastHit = entry?.lastHitAtMillis ?: 0L
+                val idleSince = if (lastHit > 0L) lastHit else writtenAt
+                val idleMillis = (now - idleSince).coerceAtLeast(0L)
+                val cold = if (lastHit > 0L) {
+                    idleMillis >= DEFAULT_COLD_IDLE_DAYS * DAY_MILLIS
+                } else {
+                    idleMillis >= DEFAULT_NEVER_USED_GRACE_DAYS * DAY_MILLIS
+                }
                 AgentMemoryFileInfo(
-                    name = file.name.removeSuffix(FILE_SUFFIX),
+                    name = name,
                     lineCount = text.memoryLines().size,
                     byteSize = text.toByteArray(Charsets.UTF_8).size,
+                    hitCount = entry?.hitCount ?: 0,
+                    lastHitAtMillis = lastHit,
+                    writtenAtMillis = writtenAt,
+                    cold = cold,
                 )
             }
             .orEmpty()
     }
 
+    /** 读档案时记一次命中，供「引用次数 / 冷档案」使用。 */
+    fun recordFileHit(name: String) = synchronized(lock) {
+        if (name.isBlank()) return@synchronized
+        val current = usageLocked().sections.toMutableMap()
+        val previous = current[name] ?: AgentMemoryUsageEntry()
+        current[name] = previous.copy(
+            hitCount = previous.hitCount + 1,
+            lastHitAtMillis = System.currentTimeMillis(),
+        )
+        writeUsageLocked(AgentMemoryUsage(current))
+    }
     /** 读某个档案的全文。 */
     fun fileText(name: String): String = synchronized(lock) {
         val file = fileFor(name) ?: return@synchronized ""
@@ -519,9 +554,10 @@ internal class AgentMemoryStore(
     }
 
     /** 把选中的归档章节移回 MEMORY.md 末尾，并从归档文件里移除它们。 */
-    fun unarchive(titles: List<String>): AgentMemorySnapshot = synchronized(lock) {
+    /** 取消归档：把归档条目还原成档案文件（memory/files/<名字>.md），返回还原数量。 */
+    fun unarchive(titles: List<String>): Int = synchronized(lock) {
         if (titles.isEmpty()) {
-            throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "没有选中要取消归档的章节")
+            throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "没有选中要取消归档的档案")
         }
         val lines = readText(archiveFile).memoryLines()
         val wanted = titles.toSet()
@@ -531,32 +567,25 @@ internal class AgentMemoryStore(
             stripped in wanted || plain in wanted || range.title in wanted
         }
         if (selected.isEmpty()) {
-            throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的章节已不在归档里，请刷新后重试")
+            throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "选中的档案已不在归档里，请刷新后重试")
         }
+        filesDir.mkdirs()
         val removed = HashSet<Int>()
-        val restoredBlocks = mutableListOf<String>()
+        var restored = 0
         selected.forEach { range ->
             for (index in range.startIndex until range.endIndex) removed += index
-            restoredBlocks += AgentMemoryScoring.stripArchiveStamp(
-                lines.subList(range.startIndex, range.endIndex).joinToString("\n").trimEnd('\n'),
-            )
+            val plain = AgentMemoryScoring.stripArchiveStamp(range.title).trimStart('#').trim()
+            val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim('\n')
+            fileFor(plain)?.let { file ->
+                file.writeText(if (body.isBlank()) "" else "$body\n")
+                restored++
+            }
         }
-        val remainingArchive = lines.filterIndexed { index, _ -> index !in removed }
+        val remaining = lines.filterIndexed { index, _ -> index !in removed }
             .joinToString("\n")
             .trim('\n')
-        val snapshot = snapshotLocked()
-        val content = buildString {
-            if (snapshot.content.isNotBlank()) append(snapshot.content.trimEnd('\n')).append("\n\n")
-            append(restoredBlocks.joinToString("\n\n").trimEnd('\n'))
-        }.trimEnd('\n')
-        if (content.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
-            throw AgentMemoryException("MEMORY_TOO_LARGE", "记忆文件将超过 1 MiB 上限，请先清理内容")
-        }
-        writeLocked(content)
-        writeText(archiveFile, if (remainingArchive.isEmpty()) "" else "$remainingArchive\n")
-        val refreshed = snapshotOf(content)
-        syncUsageLocked(refreshed)
-        refreshed
+        writeText(archiveFile, if (remaining.isEmpty()) "" else "$remaining\n")
+        restored
     }
 
     /** 读取某一节的完整文本（含标题行），供记忆页点击展开。 */
@@ -1197,7 +1226,7 @@ internal object AgentMemoryRepository {
         return store.archive(titles)
     }
 
-    fun restoreArchive(): AgentMemorySnapshot {
+    fun restoreArchive(): Int {
         ensureInitialized()
         return store.restoreArchive()
     }
@@ -1267,9 +1296,14 @@ internal object AgentMemoryRepository {
         return store.archiveSections()
     }
 
-    fun unarchive(titles: List<String>): AgentMemorySnapshot {
+    fun unarchive(titles: List<String>): Int {
         ensureInitialized()
         return store.unarchive(titles)
+    }
+
+    fun recordFileHit(name: String) {
+        ensureInitialized()
+        store.recordFileHit(name)
     }
 
     fun sectionText(title: String): String {

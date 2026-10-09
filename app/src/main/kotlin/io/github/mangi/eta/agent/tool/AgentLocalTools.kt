@@ -434,6 +434,7 @@ internal class AgentLocalTools(
     /** 读取一个独立记忆档案（memory/files/<name>.md）。 */
     private fun memoryGetArchive(name: String): String = try {
         val text = AgentMemoryRepository.fileText(name)
+        AgentMemoryRepository.recordFileHit(name)
         JSONObject()
             .put("ok", true)
             .put("archive", name)
