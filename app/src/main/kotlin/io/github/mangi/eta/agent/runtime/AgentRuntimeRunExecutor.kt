@@ -125,6 +125,7 @@ internal class AgentRuntimeRunExecutor(
                         snapshot = AgentMemoryRepository.snapshot(),
                         sections = AgentMemoryRepository.sections(),
                         contextWindow = request.config.contextWindow,
+                        core = AgentMemoryRepository.coreSnapshot().content,
                     )
                 }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_context_failed") {

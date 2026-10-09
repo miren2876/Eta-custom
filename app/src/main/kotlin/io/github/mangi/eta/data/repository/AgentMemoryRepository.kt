@@ -2,6 +2,7 @@ package io.github.mangi.eta.data.repository
 
 import android.content.Context
 import android.util.AtomicFile
+import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import java.io.File
 import java.io.IOException
@@ -131,6 +132,7 @@ internal class AgentMemoryStore(
     private val atomicFile = AtomicFile(File(memoryDir, FILE_NAME))
     private val archiveFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
     private val usageFile = AtomicFile(File(memoryDir, USAGE_FILE_NAME))
+    private val coreFile = AtomicFile(File(memoryDir, CORE_FILE_NAME))
     private val lock = Any()
 
     fun snapshot(): AgentMemorySnapshot = synchronized(lock) {
@@ -274,6 +276,50 @@ internal class AgentMemoryStore(
     }
 
     private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
+
+    /** 核心记忆独立文件（CORE.md）的快照。 */
+    fun coreSnapshot(): AgentMemorySnapshot = synchronized(lock) {
+        snapshotOf(readText(coreFile).trimEnd('\n'))
+    }
+
+    /** 整体写回核心记忆文件；空内容表示清空。 */
+    fun replaceCore(content: String): AgentMemorySnapshot = synchronized(lock) {
+        val trimmed = content.trimEnd('\n')
+        if (trimmed.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
+            throw AgentMemoryException("MEMORY_TOO_LARGE", "核心记忆超过 1 MiB 安全上限")
+        }
+        writeText(coreFile, if (trimmed.isEmpty()) "" else "$trimmed\n")
+        snapshotOf(trimmed)
+    }
+
+    /**
+     * 首次使用时把 MEMORY.md 里的 `# 核心记忆` 节搬到独立文件：
+     * 有内容就写进 CORE.md 并把该节从 MEMORY.md 删掉，返回是否发生了迁移。
+     */
+    fun migrateCoreIfNeeded(): Boolean = synchronized(lock) {
+        if (readText(coreFile).isNotBlank()) return@synchronized false
+        val snapshot = snapshotLocked()
+        val core = AgentMemoryContextBuilder.extractCore(snapshot.content)
+        if (core.isBlank()) return@synchronized false
+        val body = core.split('\n').drop(1).joinToString("\n").trim('\n')
+        writeText(coreFile, if (body.isBlank()) "" else "$body\n")
+        val remaining = removeCoreSection(snapshot.content)
+        writeLocked(remaining)
+        syncUsageLocked(snapshotOf(remaining))
+        true
+    }
+
+    /** 删掉 `# 核心记忆` 整节（含标题行），其余内容保持原样。 */
+    private fun removeCoreSection(content: String): String {
+        if (content.isEmpty()) return content
+        val lines = content.split('\n')
+        val start = lines.indexOfFirst { it.trim() == CORE_HEADING_LINE }
+        if (start < 0) return content
+        val end = ((start + 1) until lines.size).firstOrNull { lines[it].startsWith("# ") } ?: lines.size
+        return lines.filterIndexed { index, _ -> index < start || index >= end }
+            .joinToString("\n")
+            .trim('\n')
+    }
 
     /** 列出归档文件里的章节（标题已去掉「（归档于 …）」标记）。 */
     fun archiveSections(): List<AgentMemorySection> = synchronized(lock) {
@@ -891,6 +937,8 @@ internal class AgentMemoryStore(
         private const val DIRECTORY_NAME = "memory"
         private const val FILE_NAME = "MEMORY.md"
         private const val ARCHIVE_FILE_NAME = "MEMORY-archive.md"
+        private const val CORE_FILE_NAME = "CORE.md"
+        private const val CORE_HEADING_LINE = "# 核心记忆"
         private const val USAGE_FILE_NAME = "usage.json"
         private const val DEFAULT_START_LINE = 1
         private const val DUPLICATE_SKIP_THRESHOLD = 0.80
@@ -913,6 +961,8 @@ internal object AgentMemoryRepository {
     fun init(context: Context) {
         if (!::store.isInitialized) {
             store = AgentMemoryStore(context.applicationContext.filesDir)
+            // 首次运行把 MEMORY.md 里的「# 核心记忆」节搬到独立文件；失败不影响启动。
+            runCatching { store.migrateCoreIfNeeded() }
         }
     }
 
@@ -965,6 +1015,21 @@ internal object AgentMemoryRepository {
     fun restoreArchive(): AgentMemorySnapshot {
         ensureInitialized()
         return store.restoreArchive()
+    }
+
+    fun coreSnapshot(): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.coreSnapshot()
+    }
+
+    fun replaceCore(content: String): AgentMemorySnapshot {
+        ensureInitialized()
+        return store.replaceCore(content)
+    }
+
+    fun migrateCoreIfNeeded(): Boolean {
+        ensureInitialized()
+        return store.migrateCoreIfNeeded()
     }
 
     fun archiveSections(): List<AgentMemorySection> {

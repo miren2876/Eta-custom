@@ -1384,7 +1384,7 @@
   <string name="memory_capacity_total_summary">%1$s / %2$s 上限</string>
   <string name="memory_capacity_core_title">核心記憶區</string>
   <string name="memory_capacity_core_summary">%1$s（每次執行常駐注入）</string>
-  <string name="memory_capacity_core_absent">尚未設定「# 核心記憶」節，核心區為空，全部靠按需檢索</string>
+  <string name="memory_capacity_core_absent">核心記憶為空，全部靠按需檢索</string>
   <string name="memory_capacity_sections_title">章節</string>
   <string name="memory_capacity_sections_summary">共 %1$d 個 · 冷章節 %2$d 個</string>
   <string name="memory_capacity_archive_title">封存</string>
@@ -1403,6 +1403,12 @@
   <string name="memory_archive_all">全部封存</string>
   <string name="memory_archive_undo_hint">已封存 %1$d 個章節</string>
   <string name="memory_archive_undo">復原</string>
+  <string name="memory_core_title">核心記憶</string>
+  <string name="memory_core_summary">每輪固定注入，最多 %1$s 字元</string>
+  <string name="memory_core_clear_title">清空核心記憶？</string>
+  <string name="memory_core_clear_message">核心記憶檔案會被清空，之後不再常駐注入。</string>
+  <string name="state_ui_memory_core_saved">核心記憶已儲存</string>
+  <string name="state_ui_memory_core_cleared">核心記憶已清空</string>
   <string name="memory_selection_cancel">取消選取</string>
   <string name="memory_unarchive_selected">取消封存（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消封存選取的章節？</string>

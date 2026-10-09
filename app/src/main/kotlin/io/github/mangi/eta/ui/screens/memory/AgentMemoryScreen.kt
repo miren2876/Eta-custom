@@ -94,6 +94,9 @@ internal fun AgentMemoryScreen(
     }
     // MEMORY.md 编辑器默认收起：页面主体留给章节列表，点标题行再展开编辑。
     var editorExpanded by remember { mutableStateOf(false) }
+    // 核心记忆（独立文件）同样是折叠编辑器。
+    var coreExpanded by remember { mutableStateOf(false) }
+    var showClearCoreDialog by remember { mutableStateOf(false) }
 
     MiuixScaffold(
         title = stringResource(R.string.ui_memory_b55ff5),
@@ -138,6 +141,106 @@ internal fun AgentMemoryScreen(
                             title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),
                             summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),
                         )
+                    }
+                }
+
+                item(key = "core-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_core_title)) }
+                item(key = "core-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { coreExpanded = !coreExpanded }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.memory_core_title),
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                    style = MiuixTheme.textStyles.body1,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (state.coreDraft != state.coreSaved) {
+                                        stringResource(R.string.memory_unsaved_changes)
+                                    } else {
+                                        stringResource(
+                                            R.string.memory_core_summary,
+                                            formatNumber(state.coreBudgetChars),
+                                        )
+                                    },
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    style = MiuixTheme.textStyles.footnote1,
+                                )
+                            }
+                            Text(
+                                text = formatBytes(state.coreBytes),
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                style = MiuixTheme.textStyles.footnote1,
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = if (coreExpanded) {
+                                    Icons.Rounded.KeyboardArrowUp
+                                } else {
+                                    Icons.Rounded.KeyboardArrowDown
+                                },
+                                contentDescription = stringResource(
+                                    if (coreExpanded) {
+                                        R.string.memory_editor_collapse
+                                    } else {
+                                        R.string.memory_editor_expand
+                                    },
+                                ),
+                                modifier = Modifier.size(20.dp),
+                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                        if (coreExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                TextField(
+                                    value = state.coreDraft,
+                                    onValueChange = { onAction(AgentMemoryAction.CoreDraftChanged(it)) },
+                                    label = stringResource(R.string.memory_core_title),
+                                    useLabelAsPlaceholder = true,
+                                    enabled = !state.isLoading && !state.isSavingCore,
+                                    minLines = 5,
+                                    maxLines = 12,
+                                    textStyle = MiuixTheme.textStyles.body2,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.ui_clear_84fcd7),
+                                        enabled = !state.isSavingCore && state.coreDraft.isNotEmpty(),
+                                        onClick = { showClearCoreDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = if (state.isSavingCore) {
+                                            stringResource(R.string.memory_saving)
+                                        } else {
+                                            stringResource(R.string.memory_save)
+                                        },
+                                        enabled = !state.isSavingCore && state.coreDraft != state.coreSaved,
+                                        onClick = { onAction(AgentMemoryAction.SaveCore) },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -541,6 +644,26 @@ internal fun AgentMemoryScreen(
                 onConfirm = {
                     showClearDialog = false
                     onAction(AgentMemoryAction.Clear)
+                },
+            )
+        }
+    }
+
+    if (showClearCoreDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_core_clear_title),
+            summary = stringResource(R.string.memory_core_clear_message),
+            onDismissRequest = { showClearCoreDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_clear),
+                destructive = true,
+                confirmEnabled = !state.isSavingCore,
+                onCancel = { showClearCoreDialog = false },
+                onConfirm = {
+                    showClearCoreDialog = false
+                    onAction(AgentMemoryAction.ClearCore)
                 },
             )
         }

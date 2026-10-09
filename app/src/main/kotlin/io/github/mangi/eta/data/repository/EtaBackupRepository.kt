@@ -41,6 +41,8 @@ internal data class EtaBackupDocument(
     val contextCheckpoints: List<ConversationContextCheckpointEntity> = emptyList(),
     val conversationState: ConversationStateEntity? = null,
     val memoryMd: String = "",
+    /** 核心记忆独立文件（CORE.md）内容；旧备份缺省为空，导入时不覆盖本机核心记忆。 */
+    val memoryCoreMd: String = "",
     /** 归档文件（MEMORY-archive.md）内容；旧备份缺省为空，导入时不覆盖本机归档。 */
     val memoryArchiveMd: String = "",
     val roleplay: CharacterBackupData? = null,
@@ -86,6 +88,7 @@ internal object EtaBackupRepository {
                     val dao = database.conversationDao()
                     val providers = database.providerDao().providers().map { EtaBackupProvider(it.provider, it.models) }
                     val memory = AgentMemoryRepository.snapshot().content
+                    val memoryCore = AgentMemoryRepository.coreSnapshot().content
                     val memoryArchive = AgentMemoryRepository.archiveSnapshot().content
                     writer.value("format", String.serializer(), EtaBackupDocument.FORMAT)
                     writer.value("schemaVersion", Int.serializer(), EtaBackupDocument.SCHEMA_VERSION)
@@ -97,6 +100,7 @@ internal object EtaBackupRepository {
                     writer.value("conversationState", ConversationStateEntity.serializer().nullable, dao.state())
                     writer.value("memoryMd", String.serializer(), memory)
                     writer.value("memoryArchiveMd", String.serializer(), memoryArchive)
+                    writer.value("memoryCoreMd", String.serializer(), memoryCore)
                     val boundAvatars = linkedMapOf<String, String?>()
                     var conversationCount = 0
                     var messageCount = 0
@@ -148,6 +152,7 @@ internal object EtaBackupRepository {
                 val database = EtaDatabase.get(appContext)
                 val previousMemory = AgentMemoryRepository.snapshot().content
                 val previousArchive = AgentMemoryRepository.archiveSnapshot().content
+                val previousCore = AgentMemoryRepository.coreSnapshot().content
                 val previousRoleMemories = document.roleplay?.assets.orEmpty().associate {
                     it.characterId to CharacterMemoryRepository.snapshot(appContext, it.characterId).content
                 }
@@ -185,6 +190,9 @@ internal object EtaBackupRepository {
                         phase = "restore_memory"
                         memoryWriteStarted = true
                         AgentMemoryRepository.replaceAll(document.memoryMd)
+                        if (document.memoryCoreMd.isNotEmpty()) {
+                            AgentMemoryRepository.replaceCore(document.memoryCoreMd)
+                        }
                         if (document.memoryArchiveMd.isNotEmpty()) {
                             AgentMemoryRepository.replaceArchive(document.memoryArchiveMd)
                         }
@@ -196,6 +204,9 @@ internal object EtaBackupRepository {
                             failure.addSuppressed(restoreFailure)
                         }
                         try { AgentMemoryRepository.replaceArchive(previousArchive) } catch (restoreFailure: Throwable) {
+                            failure.addSuppressed(restoreFailure)
+                        }
+                        try { AgentMemoryRepository.replaceCore(previousCore) } catch (restoreFailure: Throwable) {
                             failure.addSuppressed(restoreFailure)
                         }
                         previousRoleMemories.forEach { (id, content) ->

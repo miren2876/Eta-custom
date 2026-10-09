@@ -39,15 +39,17 @@ internal class AgentMemoryStore(
                 val sections = AgentMemoryRepository.sections()
                 val candidates = AgentMemoryRepository.archiveCandidates()
                 val archivedSections = AgentMemoryRepository.archiveSections()
+                val core = AgentMemoryRepository.coreSnapshot()
                 val archive = AgentMemoryRepository.archiveSnapshot()
                 AgentMemorySnapshotBundle(
                     snapshot = snapshot,
                     enabled = enabled,
                     coreBudget = AgentMemoryContextBuilder.coreBudgetChars(contextWindow),
-                    coreBytes = AgentMemoryContextBuilder.coreSectionBytes(snapshot.content),
+                    coreBytes = core.byteSize,
                     sections = sections,
                     candidates = candidates,
                     archivedSections = archivedSections,
+                    core = core,
                     archive = archive,
                 )
             }.fold(
@@ -63,6 +65,8 @@ internal class AgentMemoryStore(
                             draftBytes = bundle.snapshot.byteSize,
                             coreBudgetChars = bundle.coreBudget,
                             coreBytes = bundle.coreBytes,
+                            coreDraft = bundle.core.content,
+                            coreSaved = bundle.core.content,
                             sections = bundle.sections.map { it.toUi(now, coldTitles) },
                             archiveCandidates = bundle.candidates.map { it.toUi(now, coldTitles) },
                             archiveBytes = bundle.archive.byteSize,
@@ -94,6 +98,78 @@ internal class AgentMemoryStore(
             draftBytes = content.toByteArray(Charsets.UTF_8).size,
             notice = null,
         )
+    }
+
+    fun updateCoreDraft(content: String) {
+        memoryState = memoryState.copy(coreDraft = content, notice = null)
+    }
+
+    /** 保存核心记忆（独立文件 CORE.md）。 */
+    fun saveCore() {
+        if (memoryState.isSavingCore) return
+        val content = memoryState.coreDraft
+        memoryState = memoryState.copy(isSavingCore = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.replaceCore(content) }
+                .fold(
+                    onSuccess = { snapshot ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingCore = false,
+                                coreSaved = snapshot.content,
+                                coreBytes = snapshot.byteSize,
+                                notice = appContext.getString(R.string.state_ui_memory_core_saved),
+                            )
+                        }
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_core_save_failed") {
+                            "Agent core memory save failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingCore = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_failed_to_read_memory_please_try_again_later_caeaa6),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
+    /** 清空核心记忆文件。 */
+    fun clearCore() {
+        if (memoryState.isSavingCore) return
+        memoryState = memoryState.copy(isSavingCore = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.replaceCore("") }
+                .fold(
+                    onSuccess = { snapshot ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingCore = false,
+                                coreDraft = snapshot.content,
+                                coreSaved = snapshot.content,
+                                coreBytes = snapshot.byteSize,
+                                notice = appContext.getString(R.string.state_ui_memory_core_cleared),
+                            )
+                        }
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_core_clear_failed") {
+                            "Agent core memory clear failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingCore = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_failed_to_read_memory_please_try_again_later_caeaa6),
+                            )
+                        }
+                    },
+                )
+        }
     }
 
     fun setMemoryEnabled(enabled: Boolean) {
@@ -337,6 +413,7 @@ internal class AgentMemoryStore(
         val sections: List<AgentMemorySection>,
         val candidates: List<AgentMemorySection>,
         val archivedSections: List<AgentMemorySection>,
+        val core: io.github.mangi.eta.data.repository.AgentMemorySnapshot,
         val archive: io.github.mangi.eta.data.repository.AgentMemoryArchiveSnapshot,
     )
 

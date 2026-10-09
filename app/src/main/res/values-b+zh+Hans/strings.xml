@@ -1425,7 +1425,7 @@
   <string name="memory_capacity_total_summary">%1$s / %2$s 上限</string>
   <string name="memory_capacity_core_title">核心记忆区</string>
   <string name="memory_capacity_core_summary">%1$s（每次运行常驻注入）</string>
-  <string name="memory_capacity_core_absent">未设置「# 核心记忆」节，核心区为空，全部靠按需检索</string>
+  <string name="memory_capacity_core_absent">核心记忆为空，全部靠按需检索</string>
   <string name="memory_capacity_sections_title">章节</string>
   <string name="memory_capacity_sections_summary">共 %1$d 个 · 冷章节 %2$d 个</string>
   <string name="memory_capacity_archive_title">归档</string>
@@ -1444,6 +1444,12 @@
   <string name="memory_archive_all">全部归档</string>
   <string name="memory_archive_undo_hint">已归档 %1$d 个章节</string>
   <string name="memory_archive_undo">撤销</string>
+  <string name="memory_core_title">核心记忆</string>
+  <string name="memory_core_summary">每轮固定注入，最多 %1$s 字符</string>
+  <string name="memory_core_clear_title">清空核心记忆？</string>
+  <string name="memory_core_clear_message">核心记忆文件会被清空，之后不再常驻注入。</string>
+  <string name="state_ui_memory_core_saved">核心记忆已保存</string>
+  <string name="state_ui_memory_core_cleared">核心记忆已清空</string>
   <string name="memory_selection_cancel">取消选择</string>
   <string name="memory_unarchive_selected">取消归档（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消归档选中的章节？</string>

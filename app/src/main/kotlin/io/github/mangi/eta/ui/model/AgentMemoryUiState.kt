@@ -30,6 +30,10 @@ data class AgentMemoryUiState(
     val maxBytes: Int = AgentMemoryStore.MAX_FILE_BYTES,
     val coreBudgetChars: Int = 8_000,
     val coreBytes: Int = 0,
+    /** 核心记忆独立文件的编辑草稿与已保存内容。 */
+    val coreDraft: String = "",
+    val coreSaved: String = "",
+    val isSavingCore: Boolean = false,
     val sections: List<AgentMemorySectionUi> = emptyList(),
     val archiveCandidates: List<AgentMemorySectionUi> = emptyList(),
     val archiveBytes: Int = 0,

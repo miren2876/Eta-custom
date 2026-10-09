@@ -41,9 +41,9 @@ internal object AgentMemoryContextBuilder {
         contextWindow: Int?,
         sections: List<AgentMemorySection> = emptyList(),
         nowMillis: Long = System.currentTimeMillis(),
+        core: String = "",
     ): AgentMemoryContext {
         val coreBudget = coreBudgetChars(contextWindow)
-        val core = extractCore(snapshot.content)
         val headings = headingIndex(snapshot, sections, nowMillis)
         return AgentMemoryContext(
             enabled = true,
@@ -107,7 +107,7 @@ internal object AgentMemoryContextBuilder {
             .coerceIn(MIN_CORE_CHARS, MAX_CORE_CHARS)
     }
 
-    private fun extractCore(content: String): String {
+    internal fun extractCore(content: String): String {
         if (content.isEmpty()) return ""
         val lines = content.split('\n')
         val start = lines.indexOfFirst { it.trim() == CORE_HEADING }
