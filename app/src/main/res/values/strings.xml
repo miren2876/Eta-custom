@@ -1449,7 +1449,7 @@
   <string name="memory_capacity_sections_title">Sections</string>
   <string name="memory_capacity_sections_summary">%1$d total · %2$d cold</string>
   <string name="memory_capacity_archive_title">Archive</string>
-  <string name="memory_capacity_archive_summary">%1$d sections · %2$s</string>
+  <string name="memory_capacity_archive_summary">%1$d archives · %2$s</string>
   <string name="memory_sections_title">Sections and read counts</string>
   <string name="memory_section_meta">%1$d lines · %2$s</string>
   <string name="memory_section_hits">read %1$d×</string>
@@ -1474,6 +1474,7 @@
   <string name="memory_files_title">Archives</string>
   <string name="memory_files_empty">No archives yet — the model can create one with memory_write archive=&lt;name&gt;</string>
   <string name="memory_file_meta">%1$d lines · %2$s</string>
+  <string name="memory_file_lines">%1$d lines</string>
   <string name="memory_files_summary">%1$d archives · %2$d cold</string>
   <string name="memory_files_select_hint">Long-press an archive to select several and archive them</string>
   <string name="state_ui_memory_file_saved">Archive saved</string>
@@ -1490,9 +1491,9 @@
   <string name="memory_selection_cancel">Clear selection</string>
   <string name="memory_unarchive_selected">Unarchive (%1$d)</string>
   <string name="memory_unarchive_confirm_title">Unarchive selected sections?</string>
-  <string name="memory_unarchive_confirm_message">%1$d section(s) will be moved back to the end of MEMORY.md.</string>
+  <string name="memory_unarchive_confirm_message">%1$d archive(s) will be restored as standalone files.</string>
   <string name="memory_section_select_hint">Long-press a section to select several and archive them</string>
-  <string name="memory_archive_select_hint">Long-press an archived section to select several and unarchive them</string>
+  <string name="memory_archive_select_hint">Long-press an archived item to select several and unarchive them</string>
   <string name="memory_sections_empty">No sections yet</string>
   <string name="state_ui_memory_unarchived">Unarchived %1$d section(s)</string>
   <string name="memory_archive_empty">Nothing archived yet</string>

@@ -253,9 +253,6 @@ internal class AgentMemoryStore(
             append(archivedBlocks.joinToString("\n\n"))
             append('\n')
         }
-        if (archiveContent.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
-            throw AgentMemoryException("MEMORY_ARCHIVE_TOO_LARGE", "归档文件将超过 1 MiB，请先清理归档")
-        }
         writeLocked(remaining)
         writeText(archiveFile, archiveContent)
         val refreshedUsage = usageLocked().sections.filterKeys { title -> title !in titles }
@@ -352,8 +349,8 @@ internal class AgentMemoryStore(
         } else {
             content.trim()
         }
-        if (merged.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
-            throw AgentMemoryException("MEMORY_TOO_LARGE", "档案超过 1 MiB 安全上限")
+        if (merged.toByteArray(Charsets.UTF_8).size > FILE_MAX_BYTES) {
+            throw AgentMemoryException("MEMORY_TOO_LARGE", "档案超过 10 MiB 上限")
         }
         filesDir.mkdirs()
         file.writeText(if (merged.isEmpty()) "" else "$merged\n")
@@ -480,9 +477,6 @@ internal class AgentMemoryStore(
             if (existing.isNotEmpty()) append(existing).append("\n\n")
             append(blocks.joinToString("\n\n"))
             append('\n')
-        }
-        if (merged.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
-            throw AgentMemoryException("MEMORY_ARCHIVE_TOO_LARGE", "归档文件将超过 1 MiB，请先清理归档")
         }
         writeText(archiveFile, merged)
         removed.forEach { name -> fileFor(name)?.delete() }
@@ -1133,6 +1127,9 @@ internal class AgentMemoryStore(
 
     companion object {
         const val MAX_FILE_BYTES = 1024 * 1024
+
+        /** 单个档案文件的上限；归档文件不限制。 */
+        const val FILE_MAX_BYTES = 10 * 1024 * 1024
         const val DEFAULT_READ_CHARS = 12_000
         const val MAX_READ_CHARS = 32_000
         const val MIN_READ_CHARS = 1

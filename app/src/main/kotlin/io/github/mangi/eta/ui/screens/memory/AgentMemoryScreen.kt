@@ -141,11 +141,6 @@ internal fun AgentMemoryScreen(
                             enabled = !state.isLoading,
                             onCheckedChange = { onAction(AgentMemoryAction.ToggleEnabled(it)) },
                         )
-                        EtaPreferenceDivider(hasLeading = false)
-                        EtaPreference(
-                            title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),
-                            summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),
-                        )
                     }
                 }
 
@@ -875,7 +870,7 @@ private fun FileRow(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = buildString {
-                    append(stringResource(R.string.memory_file_meta, file.lineCount, formatBytes(file.byteSize)))
+                    append(stringResource(R.string.memory_file_lines, file.lineCount))
                     append(" · ")
                     append(
                         if (file.hitCount > 0) {
@@ -892,6 +887,12 @@ private fun FileRow(
                 style = MiuixTheme.textStyles.footnote1,
             )
         }
+        Text(
+            text = "${formatBytes(file.byteSize)} / ${formatBytes(AgentMemoryStore.FILE_MAX_BYTES)}",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.footnote1,
+        )
+        Spacer(modifier = Modifier.width(4.dp))
         if (expanded != null) {
             Icon(
                 imageVector = if (expanded) {

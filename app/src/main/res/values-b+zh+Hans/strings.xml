@@ -1429,7 +1429,7 @@
   <string name="memory_capacity_sections_title">章节</string>
   <string name="memory_capacity_sections_summary">共 %1$d 个 · 冷章节 %2$d 个</string>
   <string name="memory_capacity_archive_title">归档</string>
-  <string name="memory_capacity_archive_summary">%1$d 个章节 · %2$s</string>
+  <string name="memory_capacity_archive_summary">%1$d 个档案 · %2$s</string>
   <string name="memory_sections_title">章节与引用次数</string>
   <string name="memory_section_meta">%1$d 行 · %2$s</string>
   <string name="memory_section_hits">引用 %1$d 次</string>
@@ -1454,6 +1454,7 @@
   <string name="memory_files_title">档案</string>
   <string name="memory_files_empty">还没有档案；模型可以用 memory_write archive=&lt;名字&gt; 新建</string>
   <string name="memory_file_meta">%1$d 行 · %2$s</string>
+  <string name="memory_file_lines">%1$d 行</string>
   <string name="memory_files_summary">共 %1$d 个 · 冷档案 %2$d 个</string>
   <string name="memory_files_select_hint">长按档案可多选，然后归档</string>
   <string name="state_ui_memory_file_saved">档案已保存</string>
@@ -1470,9 +1471,9 @@
   <string name="memory_selection_cancel">取消选择</string>
   <string name="memory_unarchive_selected">取消归档（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消归档选中的章节？</string>
-  <string name="memory_unarchive_confirm_message">%1$d 个章节将移回 MEMORY.md 末尾。</string>
+  <string name="memory_unarchive_confirm_message">%1$d 个档案将还原成独立档案文件。</string>
   <string name="memory_section_select_hint">长按章节可多选，然后批量归档</string>
-  <string name="memory_archive_select_hint">长按已归档章节可多选，然后取消归档</string>
+  <string name="memory_archive_select_hint">长按已归档档案可多选，然后取消归档</string>
   <string name="memory_sections_empty">还没有章节</string>
   <string name="state_ui_memory_unarchived">已取消归档 %1$d 个章节</string>
   <string name="memory_archive_empty">暂无归档</string>
