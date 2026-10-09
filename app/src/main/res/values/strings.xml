@@ -1466,6 +1466,7 @@
   <string name="memory_archive_undo">Undo</string>
   <string name="memory_core_title">Core memory</string>
   <string name="memory_core_summary">Injected on every turn, up to %1$s characters</string>
+  <string name="memory_core_size">%1$s / %2$s chars</string>
   <string name="memory_core_clear_title">Clear core memory?</string>
   <string name="memory_core_clear_message">The core memory file will be emptied and no longer injected.</string>
   <string name="state_ui_memory_core_saved">Core memory saved</string>

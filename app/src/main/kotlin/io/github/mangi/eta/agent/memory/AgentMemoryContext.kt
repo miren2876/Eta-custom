@@ -128,7 +128,7 @@ internal object AgentMemoryContextBuilder {
     const val DEFAULT_CONTEXT_WINDOW = 128_000
     private const val CONTEXT_WINDOW_DIVISOR = 16
     private const val MIN_CORE_CHARS = 4_000
-    private const val MAX_CORE_CHARS = 32_000
+    private const val MAX_CORE_CHARS = 15_000
     private const val MAX_HEADING_INDEX_CHARS = 4_000
     private const val COLD_INDEX_DAYS = 60L
     private const val DAY_MILLIS = 24L * 60 * 60 * 1000

@@ -180,7 +180,11 @@ internal fun AgentMemoryScreen(
                                 )
                             }
                             Text(
-                                text = formatBytes(state.coreBytes),
+                                text = stringResource(
+                                    R.string.memory_core_size,
+                                    formatBytes(state.coreBytes),
+                                    formatNumber(state.coreBudgetChars),
+                                ),
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 style = MiuixTheme.textStyles.footnote1,
                             )
@@ -241,33 +245,6 @@ internal fun AgentMemoryScreen(
                                 }
                             }
                         }
-                    }
-                }
-
-                item(key = "capacity-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_capacity_title)) }
-                item(key = "capacity-card") {
-                    EtaPreferenceGroup(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 16.dp),
-                    ) {
-                        EtaPreference(
-                            title = stringResource(R.string.memory_capacity_total_title),
-                            summary = stringResource(
-                                R.string.memory_capacity_total_summary,
-                                formatBytes(state.draftBytes),
-                                formatBytes(state.maxBytes),
-                            ),
-                        )
-                        EtaPreferenceDivider(hasLeading = false)
-                        EtaPreference(
-                            title = stringResource(R.string.memory_capacity_core_title),
-                            summary = if (state.coreBytes > 0) {
-                                stringResource(R.string.memory_capacity_core_summary, formatBytes(state.coreBytes))
-                            } else {
-                                stringResource(R.string.memory_capacity_core_absent)
-                            },
-                        )
                     }
                 }
 
