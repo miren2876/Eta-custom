@@ -32,6 +32,22 @@ description: 维护 Eta 的持久记忆：工作记忆 MEMORY.md 的条目池（
 
 条目写法：`- (重要度 1-5) 一句话事实 [YYYY-MM-DD]`，一条只放一件事；`importance` 参数省略时取正文里的 `(N)`，都没有则按 3 算。
 传整行（`- (3) xxx`、`(3) xxx`、甚至重复标记）也不会写重标记，写入端会自动剥前缀。
+`memory_write` 必须显式给出 `target=entry|profile|working` 或 `archive=<名字>`——**没有默认值**，两个都不带会被直接拒掉（`MEMORY_TARGET_REQUIRED`）。
+
+## 常见错误码
+
+| 错误码 | 含义与处理 |
+|--------|------------|
+| `MEMORY_TARGET_REQUIRED` | `memory_write` 既没带 `target` 也没带 `archive=`。补上参数重发即可；这次调用**没有写入任何内容**（参数判断阶段就返回了） |
+| `MEMORY_DUPLICATE` | 与已有条目或章节过于相似（≥ 0.80）被拒写。改用 `target=entry match=<片段> content=<新内容>` 改写，确属新增时换更具体的措辞 |
+| `MEMORY_ARCHIVE_MISSING` | 归档 / 取消归档时选中的档案已不存在（已删或已移走）。先 `memory_get` 看清单再操作 |
+| `MEMORY_ARCHIVE_EMPTY` | 归档目录为空，或没有选中任何档案 |
+| `MEMORY_FILE_NAME_INVALID` | 档案名不合法（空名，或只剩路径分隔符） |
+| `MEMORY_TOO_LARGE` | 单个档案超过 10 MiB，或写入内容超长（条目 ≤ 500 字符） |
+| `REAL_MEMORY_READ_ONLY` | 角色会话里的现实记忆只读；剧情内容改用角色记忆工具 |
+| `MEMORY_DISABLED` | 设置里关掉了记忆，先请用户打开 |
+
+写入与读取结果里的 `ok`、`line_count`、`bytes` 用来核对这次调用实际改了什么；报错时不要当成已写入。
 
 ## GC 流程
 

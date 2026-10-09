@@ -55,6 +55,8 @@ internal object AgentMemoryToolCatalog {
                 AgentToolSchema.function(
                     name = "memory_write",
                     description = "Write persistent memory. " +
+                        "Provide exactly one of target= (entry|profile|working) or archive=<name>; a call with " +
+                        "neither is rejected with MEMORY_TARGET_REQUIRED. " +
                         "target=entry: append ONE working-memory line `- (importance 1-5) fact` — entries are injected " +
                         "every turn and ranked by effective importance (EI = importance × access × 30-day decay), " +
                         "so keep one fact per entry and put long details in an archive instead; " +
@@ -84,7 +86,8 @@ internal object AgentMemoryToolCatalog {
                                         .put("enum", JSONArray().put("entry").put("profile").put("working"))
                                         .put(
                                             "description",
-                                            "entry = add or rewrite one working-memory entry (default); " +
+                                            "Required unless archive= is given (no default): " +
+                                                "entry = add or rewrite one working-memory entry; " +
                                                 "profile = overwrite USER.md; working = overwrite MEMORY.md.",
                                         ),
                                 )
