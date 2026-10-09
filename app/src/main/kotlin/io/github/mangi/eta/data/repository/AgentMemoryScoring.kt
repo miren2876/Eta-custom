@@ -222,6 +222,15 @@ internal object AgentMemoryScoring {
         return count
     }
 
+    private val ARCHIVE_STAMP = Regex("^(#{1,6})\\s+(.*?)（归档于 [^）]*）$")
+
+    /** 去掉归档标记后缀：`## 标题（归档于 2026-10-09）` → `## 标题`。 */
+    fun stripArchiveStamp(text: String): String =
+        text.lineSequence().joinToString("\n") { line ->
+            val match = ARCHIVE_STAMP.matchEntire(line.trim())
+            if (match == null) line else "${match.groupValues[1]} ${match.groupValues[2]}"
+        }
+
     /** 章节长度对分数的轻微惩罚，供章节排序使用（避免超长章节仅靠体量占优）。 */
     fun lengthPenalty(lineCount: Int): Double = 1.0 / sqrt(1.0 + lineCount / 40.0)
 }

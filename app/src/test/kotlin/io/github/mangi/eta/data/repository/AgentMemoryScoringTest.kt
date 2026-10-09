@@ -180,4 +180,16 @@ class AgentMemoryScoringTest {
         assertTrue(AgentMemoryScoring.lengthPenalty(10) > AgentMemoryScoring.lengthPenalty(400))
         assertEquals(1.0, AgentMemoryScoring.lengthPenalty(0), 0.0001)
     }
+
+    @Test fun stripArchiveStampRestoresOriginalHeading() {
+        val archived = "## 提问卡片（归档于 2026-10-09）\n- 正文\n\n### 子节\n"
+
+        val restored = AgentMemoryScoring.stripArchiveStamp(archived)
+
+        assertEquals("## 提问卡片\n- 正文\n\n### 子节\n", restored)
+    }
+
+    @Test fun stripArchiveStampLeavesPlainHeadingsAlone() {
+        assertEquals("## 普通标题\n正文", AgentMemoryScoring.stripArchiveStamp("## 普通标题\n正文"))
+    }
 }

@@ -223,7 +223,8 @@ internal class AgentMemoryStore(
                 .joinToString("\n")
                 .trimEnd('\n')
             archivedBlocks += buildString {
-                append("## ").append(range.displayTitle).append("（归档于 ").append(stamp).append("）")
+                append("#".repeat(range.level.coerceAtLeast(2))).append(' ')
+                    .append(range.displayTitle).append("（归档于 ").append(stamp).append("）")
                 val bodyWithoutHeading = body.substringAfter('\n', "")
                 if (bodyWithoutHeading.isNotBlank()) append('\n').append(bodyWithoutHeading)
             }
@@ -259,16 +260,20 @@ internal class AgentMemoryStore(
             throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "归档是空的")
         }
         val snapshot = snapshotLocked()
+        // 恢复时去掉「（归档于 …）」标记，让标题回到归档前的写法。
+        val restored = stripArchiveStamp(archived)
         val merged = if (snapshot.content.isBlank()) {
-            archived
+            restored
         } else {
-            snapshot.content.trimEnd('\n') + "\n\n" + archived
+            snapshot.content.trimEnd('\n') + "\n\n" + restored
         }
         writeLocked(merged)
         writeText(archiveFile, "")
         writeUsageLocked(AgentMemoryUsage())
         snapshotOf(merged)
     }
+
+    private fun stripArchiveStamp(text: String): String = AgentMemoryScoring.stripArchiveStamp(text)
 
     /** 备份恢复时整体写回归档文件；空内容即清空归档。 */
     fun replaceArchive(content: String): AgentMemoryArchiveSnapshot = synchronized(lock) {
