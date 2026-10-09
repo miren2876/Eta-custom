@@ -216,7 +216,7 @@ class EtaBackupRepositoryTest {
         val records = database.characterDao().characters().map { row ->
             if (row.id == first.id) row.copy(cardJson = CharacterCardCodec.encodeJson(first.card.withEdits(name = "备份角色"))) else row
         }
-        val document = EtaBackupDocument(exportedAt = 0, memoryMd = "新的现实记忆",
+        val document = EtaBackupDocument(exportedAt = 0, memoryCoreMd = "新的现实记忆",
             roleplay = CharacterBackupData(characters = records, assets = listOf(
                 CharacterBackupAsset(first.id, memoryMd = "新的剧情记忆"),
                 CharacterBackupAsset(blocked.id, memoryMd = "写入失败"),

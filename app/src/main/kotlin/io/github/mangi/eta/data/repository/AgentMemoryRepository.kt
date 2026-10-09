@@ -17,6 +17,21 @@ internal data class AgentMemorySnapshot(
     val lineCount: Int,
 )
 
+/** 档案检索命中的一行。 */
+internal data class AgentMemoryLineHit(
+    val lineNumber: Int,
+    val line: String,
+    val score: Double,
+)
+
+/** 一个档案的检索命中结果。 */
+internal data class AgentMemoryFileHit(
+    val name: String,
+    val lineCount: Int,
+    val totalScore: Double,
+    val hits: List<AgentMemoryLineHit>,
+)
+
 /** 一个记忆档案（memory/files/<name>.md）的元信息。 */
 internal data class AgentMemoryFileInfo(
     val name: String,
@@ -144,7 +159,10 @@ internal class AgentMemoryStore(
     private val atomicFile = AtomicFile(File(memoryDir, FILE_NAME))
     private val archiveFile = AtomicFile(File(memoryDir, ARCHIVE_FILE_NAME))
     private val usageFile = AtomicFile(File(memoryDir, USAGE_FILE_NAME))
-    private val coreFile = AtomicFile(File(memoryDir, CORE_FILE_NAME))
+    /** 旧结构文件：画像 + 工作记忆同在一个 CORE.md，只在迁移时读写。 */
+    private val coreFile = AtomicFile(File(memoryDir, LEGACY_CORE_FILE_NAME))
+    private val userFile = AtomicFile(File(memoryDir, USER_FILE_NAME))
+    private val workingFile = AtomicFile(File(memoryDir, FILE_NAME))
     private val filesDir = File(memoryDir, FILES_DIR_NAME)
     private val lock = Any()
 
@@ -188,22 +206,33 @@ internal class AgentMemoryStore(
         minIdleDays: Long = DEFAULT_COLD_IDLE_DAYS,
         neverUsedGraceDays: Long = DEFAULT_NEVER_USED_GRACE_DAYS,
     ): List<AgentMemorySection> = synchronized(lock) {
-        val snapshot = snapshotLocked()
-        val usage = usageLocked()
-        val lines = snapshot.content.memoryLines()
-        val ranges = AgentMemoryScoring.sections(lines)
-        val cold = AgentMemoryScoring.coldSections(
-            sections = ranges,
-            usage = usage.sections,
-            nowMillis = nowMillis,
-            minIdleMillis = minIdleDays * DAY_MILLIS,
-            neverUsedGraceMillis = neverUsedGraceDays * DAY_MILLIS,
-        ).toSet()
-        sectionsOf(snapshot, usage).filter { section ->
-            cold.any { range ->
-                range.startIndex == section.startLine - 1 && range.title == section.title
+        // 建议归档 = 长期未引用的档案文件；MEMORY.md 现在是工作记忆，不再按章节判断。
+        files()
+            .filter { it.cold }
+            .map { file ->
+                AgentMemorySection(
+                    title = file.name,
+                    level = 2,
+                    startLine = 0,
+                    endLine = file.lineCount,
+                    lineCount = file.lineCount,
+                    hitCount = file.hitCount,
+                    lastHitAtMillis = file.lastHitAtMillis,
+                    writtenAtMillis = file.writtenAtMillis,
+                    preview = filePreview(file.name),
+                )
             }
-        }
+    }
+
+    /** 档案正文的第一行非空文本，用作记忆页的预览。 */
+    private fun filePreview(name: String): String {
+        val file = fileFor(name) ?: return ""
+        if (!file.exists()) return ""
+        return file.readText().memoryLines()
+            .firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?.take(PREVIEW_CHARS)
+            .orEmpty()
     }
 
     fun archiveSnapshot(): AgentMemoryArchiveSnapshot = synchronized(lock) {
@@ -280,6 +309,7 @@ internal class AgentMemoryStore(
             val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim('\n')
             fileFor(plain)?.let { file ->
                 file.writeText(if (body.isBlank()) "" else "$body\n")
+                recordFileWritten(plain)
                 restored++
             }
         }
@@ -335,9 +365,8 @@ internal class AgentMemoryStore(
 
     /** 档案变动后同步「工作记忆」里的档案清单：删掉 removed 里的行，补上 added。 */
     fun syncWorkingIndex(removed: List<String>, added: String?): AgentMemorySnapshot = synchronized(lock) {
-        val (profile, working) = splitCore(readText(coreFile))
         val removedSet = removed.toSet()
-        val lines = working.memoryLines()
+        val lines = readText(workingFile).memoryLines()
             .filter { it.isNotBlank() }
             .filter { line ->
                 val item = line.trim().removePrefix("-").trim()
@@ -348,7 +377,56 @@ internal class AgentMemoryStore(
             val exists = lines.any { it.trim().removePrefix("-").trim() == added }
             if (!exists) lines += "- $added"
         }
-        writeCore(profile = profile, working = lines.joinToString("\n"))
+        val merged = lines.joinToString("\n")
+        writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
+        coreSnapshotLocked()
+    }
+
+    /**
+     * 在所有档案里按相关度检索：先逐档案打分，再取每个档案的命中行，
+     * 按档案总分排序返回。用于 `memory_get query=<文本>`。
+     */
+    fun searchFiles(
+        query: String,
+        maxFiles: Int = 5,
+        maxLinesPerFile: Int = 6,
+    ): List<AgentMemoryFileHit> = synchronized(lock) {
+        if (AgentMemoryScoring.tokenize(query).isEmpty()) return@synchronized emptyList()
+        filesDir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
+            ?.mapNotNull { file ->
+                val lines = file.readText().memoryLines()
+                val scored = AgentMemoryScoring.scoreLines(lines, query)
+                if (scored.isEmpty()) return@mapNotNull null
+                AgentMemoryFileHit(
+                    name = file.name.removeSuffix(FILE_SUFFIX),
+                    lineCount = lines.size,
+                    totalScore = scored.sumOf { it.score },
+                    hits = scored.sortedByDescending { it.score }
+                        .take(maxLinesPerFile)
+                        .sortedBy { it.index }
+                        .map { hit ->
+                            AgentMemoryLineHit(
+                                lineNumber = hit.index + 1,
+                                line = lines.getOrElse(hit.index) { "" },
+                                score = hit.score,
+                            )
+                        },
+                )
+            }
+            ?.sortedByDescending { it.totalScore }
+            ?.take(maxFiles)
+            .orEmpty()
+    }
+
+    /** 档案清单（供工具与注入共用的简短索引）。 */
+    fun fileIndexText(): String = files().joinToString("\n") { file ->
+        buildString {
+            append("- ").append(file.name)
+            append("（").append(file.lineCount).append(" 行")
+            if (file.hitCount > 0) append("，引用 ").append(file.hitCount).append(" 次")
+            append("）")
+        }
     }
 
     /** 读档案时记一次命中，供「引用次数 / 冷档案」使用。 */
@@ -362,6 +440,16 @@ internal class AgentMemoryStore(
         )
         writeUsageLocked(AgentMemoryUsage(current))
     }
+    /** 档案写入后登记首次写入时间（已有记录不动），供冷档案判定使用。 */
+    fun recordFileWritten(name: String) = synchronized(lock) {
+        if (name.isBlank()) return@synchronized
+        val current = usageLocked().sections.toMutableMap()
+        val previous = current[name] ?: AgentMemoryUsageEntry()
+        if (previous.writtenAtMillis > 0L) return@synchronized
+        current[name] = previous.copy(writtenAtMillis = System.currentTimeMillis())
+        writeUsageLocked(AgentMemoryUsage(current))
+    }
+
     /** 读某个档案的全文。 */
     fun fileText(name: String): String = synchronized(lock) {
         val file = fileFor(name) ?: return@synchronized ""
@@ -383,6 +471,7 @@ internal class AgentMemoryStore(
         }
         filesDir.mkdirs()
         file.writeText(if (merged.isEmpty()) "" else "$merged\n")
+        recordFileWritten(name.trim())
         AgentMemoryFileInfo(
             name = name.trim(),
             lineCount = merged.memoryLines().size,
@@ -399,34 +488,44 @@ internal class AgentMemoryStore(
         return File(filesDir, safe + FILE_SUFFIX)
     }
 
-    /** 核心记忆的「用户画像」部分。 */
-    fun coreProfile(): String = synchronized(lock) { splitCore(readText(coreFile)).first }
+    /** 用户画像（USER.md）。 */
+    fun coreProfile(): String = synchronized(lock) { readText(userFile).trimEnd('\n') }
 
-    /** 核心记忆的「工作记忆」部分。 */
-    fun coreWorking(): String = synchronized(lock) { splitCore(readText(coreFile)).second }
+    /** 工作记忆（MEMORY.md：档案索引 + 当前进度）。 */
+    fun coreWorking(): String = synchronized(lock) { readText(workingFile).trimEnd('\n') }
 
     fun replaceCoreProfile(text: String): AgentMemorySnapshot = synchronized(lock) {
-        val (_, working) = splitCore(readText(coreFile))
-        writeCore(profile = text.trim(), working = working)
+        writeProfile(text)
+        coreSnapshotLocked()
     }
 
     fun replaceCoreWorking(text: String): AgentMemorySnapshot = synchronized(lock) {
-        val (profile, _) = splitCore(readText(coreFile))
-        writeCore(profile = profile, working = text.trim())
+        writeWorking(text)
+        coreSnapshotLocked()
     }
 
-    private fun writeCore(profile: String, working: String): AgentMemorySnapshot {
-        if (profile.toByteArray(Charsets.UTF_8).size > PROFILE_MAX_BYTES) {
+    /** 兼容旧备份：把「用户画像 + 工作记忆」两节文本分别写回两个文件。 */
+    fun replaceCoreLegacy(text: String): AgentMemorySnapshot = synchronized(lock) {
+        val (profile, working) = splitCore(text)
+        writeProfile(profile)
+        writeWorking(working)
+        coreSnapshotLocked()
+    }
+
+    private fun writeProfile(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.toByteArray(Charsets.UTF_8).size > PROFILE_MAX_BYTES) {
             throw AgentMemoryException("MEMORY_PROFILE_TOO_LARGE", "用户画像超过 5 KB，请先精简")
         }
-        val content = buildString {
-            append(PROFILE_HEADING).append('\n')
-            if (profile.isNotEmpty()) append(profile).append('\n')
-            append('\n').append(WORKING_HEADING).append('\n')
-            if (working.isNotEmpty()) append(working).append('\n')
-        }.trimEnd('\n')
-        writeText(coreFile, "$content\n")
-        return snapshotOf(content)
+        writeText(userFile, if (trimmed.isEmpty()) "" else "$trimmed\n")
+    }
+
+    private fun writeWorking(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.toByteArray(Charsets.UTF_8).size > WORKING_HARD_MAX_BYTES) {
+            throw AgentMemoryException("MEMORY_WORKING_TOO_LARGE", "工作记忆超过 64 KB，请精简或压缩后再写入")
+        }
+        writeText(workingFile, if (trimmed.isEmpty()) "" else "$trimmed\n")
     }
 
     /** 解析 CORE.md 的两节；旧格式（没有标题）整体算用户画像。 */
@@ -449,17 +548,42 @@ internal class AgentMemoryStore(
         return profile to working
     }
 
+    /** 拼出旧结构 CORE.md 的文本（画像 + 工作记忆），只用于迁移中间态。 */
+    private fun legacyCoreText(profile: String, working: String): String {
+        val content = buildString {
+            append(PROFILE_HEADING).append('\n')
+            if (profile.isNotEmpty()) append(profile).append('\n')
+            append('\n').append(WORKING_HEADING).append('\n')
+            if (working.isNotEmpty()) append(working).append('\n')
+        }.trimEnd('\n')
+        return "$content\n"
+    }
+
     /**
      * 首次使用时把 MEMORY.md 里的每个 `##` 章节拆成 memory/files/<标题>.md，
      * 档案清单补进核心记忆的「工作记忆」，原文件另存为 MEMORY.md.bak 后清空。
      */
+    /** 把旧的 CORE.md（用户画像 + 工作记忆两节）拆成 USER.md 与 MEMORY.md，随后删掉 CORE.md。 */
+    fun migrateCoreFilesIfNeeded(): Boolean = synchronized(lock) {
+        val legacyFile = coreFile.baseFile
+        if (!legacyFile.exists()) return@synchronized false
+        val (profile, working) = splitCore(readText(coreFile))
+        if (readText(userFile).isBlank() && profile.isNotBlank()) writeText(userFile, "$profile\n")
+        if (readText(workingFile).isBlank() && working.isNotBlank()) writeText(workingFile, "$working\n")
+        runCatching { legacyFile.delete() }
+        true
+    }
+
     fun migrateFilesIfNeeded(): Boolean = synchronized(lock) {
+        // 核心记忆已拆成 USER.md + MEMORY.md 后，MEMORY.md 就是工作记忆，不再当作旧档案正文。
+        if (userFile.baseFile.exists()) return@synchronized false
         val snapshot = snapshotLocked()
         if (snapshot.content.isBlank()) return@synchronized false
         if (filesDir.listFiles()?.any { it.isFile } == true) return@synchronized false
         val lines = snapshot.content.memoryLines()
         val ranges = AgentMemoryScoring.sections(lines).filter { it.level == 2 }
-        if (ranges.isEmpty()) return@synchronized false
+        // 至少两个 `##` 章节才说明这是旧的档案正文；工作记忆清单不会被误拆。
+        if (ranges.size < 2) return@synchronized false
         filesDir.mkdirs()
         val index = mutableListOf<String>()
         ranges.forEach { range ->
@@ -470,14 +594,16 @@ internal class AgentMemoryStore(
             index += "- $name"
         }
         writeText(AtomicFile(File(memoryDir, "$FILE_NAME.bak")), snapshot.content)
+        // 档案已拆完：MEMORY.md 从此不再读写，直接删掉，只留 .bak 以便回滚。
         writeLocked("")
+        runCatching { atomicFile.baseFile.delete() }
         val (profile, working) = splitCore(readText(coreFile))
         val merged = if (working.isBlank()) {
             index.joinToString("\n")
         } else {
             working + "\n" + index.joinToString("\n")
         }
-        runCatching { writeCore(profile = profile, working = merged) }
+        runCatching { writeText(coreFile, legacyCoreText(profile, merged)) }
         syncUsageLocked(snapshotOf(""))
         true
     }
@@ -512,19 +638,35 @@ internal class AgentMemoryStore(
         removed.size
     }
 
-    /** 核心记忆独立文件（CORE.md）的快照。 */
-    fun coreSnapshot(): AgentMemorySnapshot = synchronized(lock) {
-        snapshotOf(readText(coreFile).trimEnd('\n'))
+    /** 整体替换全部档案（备份恢复用）：先清空目录再写回，并重置用量记录。 */
+    fun replaceAllFiles(files: Map<String, String>): Int = synchronized(lock) {
+        filesDir.mkdirs()
+        filesDir.listFiles()?.forEach { file -> if (file.isFile) file.delete() }
+        var written = 0
+        files.forEach { (name, content) ->
+            val file = fileFor(name) ?: return@forEach
+            file.writeText(if (content.isBlank()) "" else content.trimEnd('\n') + "\n")
+            recordFileWritten(name)
+            written++
+        }
+        writeUsageLocked(AgentMemoryUsage())
+        written
     }
 
-    /** 整体写回核心记忆文件；空内容表示清空。 */
-    fun replaceCore(content: String): AgentMemorySnapshot = synchronized(lock) {
-        val trimmed = content.trimEnd('\n')
-        if (trimmed.toByteArray(Charsets.UTF_8).size > MAX_FILE_BYTES) {
-            throw AgentMemoryException("MEMORY_TOO_LARGE", "核心记忆超过 1 MiB 安全上限")
-        }
-        writeText(coreFile, if (trimmed.isEmpty()) "" else "$trimmed\n")
-        snapshotOf(trimmed)
+    /** 核心记忆快照：用户画像（USER.md）+ 工作记忆（MEMORY.md）合并后的文本，用于注入与展示。 */
+    fun coreSnapshot(): AgentMemorySnapshot = synchronized(lock) { coreSnapshotLocked() }
+
+    private fun coreSnapshotLocked(): AgentMemorySnapshot = snapshotOf(coreTextLocked())
+
+    private fun coreTextLocked(): String {
+        val profile = readText(userFile).trimEnd('\n')
+        val working = readText(workingFile).trimEnd('\n')
+        return buildString {
+            append(PROFILE_HEADING).append('\n')
+            if (profile.isNotEmpty()) append(profile).append('\n')
+            append('\n').append(WORKING_HEADING).append('\n')
+            if (working.isNotEmpty()) append(working)
+        }.trimEnd('\n')
     }
 
     /**
@@ -601,6 +743,7 @@ internal class AgentMemoryStore(
             val body = lines.subList(range.startIndex + 1, range.endIndex).joinToString("\n").trim('\n')
             fileFor(plain)?.let { file ->
                 file.writeText(if (body.isBlank()) "" else "$body\n")
+                recordFileWritten(plain)
                 restored++
             }
         }
@@ -1169,14 +1312,19 @@ internal class AgentMemoryStore(
         private const val DIRECTORY_NAME = "memory"
         private const val FILE_NAME = "MEMORY.md"
         private const val ARCHIVE_FILE_NAME = "MEMORY-archive.md"
-        private const val CORE_FILE_NAME = "CORE.md"
+        private const val LEGACY_CORE_FILE_NAME = "CORE.md"
+        private const val USER_FILE_NAME = "USER.md"
         private const val CORE_HEADING_LINE = "# 核心记忆"
         private const val FILES_DIR_NAME = "files"
         private const val FILE_SUFFIX = ".md"
         private const val PROFILE_HEADING = "## 用户画像"
         private const val WORKING_HEADING = "## 工作记忆"
         const val PROFILE_MAX_BYTES = 5 * 1024
+        /** 工作记忆软上限：超过后记忆页会自动调用模型压缩。 */
         const val WORKING_MAX_BYTES = 10 * 1024
+
+        /** 工作记忆硬上限：压缩失败时也拒绝写入，避免常驻注入被撑爆。 */
+        const val WORKING_HARD_MAX_BYTES = 64 * 1024
         private const val USAGE_FILE_NAME = "usage.json"
         private const val DEFAULT_START_LINE = 1
         private const val DUPLICATE_SKIP_THRESHOLD = 0.80
@@ -1203,6 +1351,8 @@ internal object AgentMemoryRepository {
             runCatching { store.migrateCoreIfNeeded() }
             // 再把每个 `##` 章节拆成独立档案，并把清单写进「工作记忆」。
             runCatching { store.migrateFilesIfNeeded() }
+            // 最后把 CORE.md（画像 + 工作记忆）拆成 USER.md 与 MEMORY.md，两者每轮注入。
+            runCatching { store.migrateCoreFilesIfNeeded() }
         }
     }
 
@@ -1267,6 +1417,16 @@ internal object AgentMemoryRepository {
         return store.files()
     }
 
+    fun searchFiles(query: String, maxFiles: Int = 5, maxLinesPerFile: Int = 6): List<AgentMemoryFileHit> {
+        ensureInitialized()
+        return store.searchFiles(query, maxFiles, maxLinesPerFile)
+    }
+
+    fun fileIndexText(): String {
+        ensureInitialized()
+        return store.fileIndexText()
+    }
+
     fun fileText(name: String): String {
         ensureInitialized()
         return store.fileText(name)
@@ -1302,14 +1462,25 @@ internal object AgentMemoryRepository {
         return store.migrateFilesIfNeeded()
     }
 
+    fun replaceAllFiles(files: Map<String, String>): Int {
+        ensureInitialized()
+        return store.replaceAllFiles(files)
+    }
+
     fun coreSnapshot(): AgentMemorySnapshot {
         ensureInitialized()
         return store.coreSnapshot()
     }
 
-    fun replaceCore(content: String): AgentMemorySnapshot {
+    /** 兼容旧备份：`## 用户画像` + `## 工作记忆` 两节文本，分别写回两个文件。 */
+    fun replaceCoreLegacy(content: String): AgentMemorySnapshot {
         ensureInitialized()
-        return store.replaceCore(content)
+        return store.replaceCoreLegacy(content)
+    }
+
+    fun migrateCoreFilesIfNeeded(): Boolean {
+        ensureInitialized()
+        return store.migrateCoreFilesIfNeeded()
     }
 
     fun migrateCoreIfNeeded(): Boolean {

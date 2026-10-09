@@ -63,6 +63,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import kotlinx.coroutines.runBlocking
 
@@ -447,53 +448,58 @@ internal class AgentLocalTools(
     }
 
     private fun memoryGetContent(args: JSONObject): String = try {
-        val mode = args.optString("mode").takeIf(String::isNotBlank)?.let { raw ->
-            when (raw.lowercase()) {
-                "excerpts" -> AgentMemoryReadMode.Excerpts
-                "sections" -> AgentMemoryReadMode.Sections
-                "section" -> AgentMemoryReadMode.Section
-                "range" -> AgentMemoryReadMode.Range
-                else -> null
-            }
-        }
-        val result = AgentMemoryRepository.read(
-            query = args.optString("query").takeIf(String::isNotBlank),
-            startLine = args.optInt("start_line", 1),
-            maxChars = args.optInt("max_chars", 12_000),
-            mode = mode ?: AgentMemoryReadMode.Range,
-            section = args.optString("section").takeIf(String::isNotBlank),
-        )
-        val sections = JSONArray()
-        result.sections.forEach { section ->
-            sections.put(
-                JSONObject()
-                    .put("title", section.displayTitle)
-                    .put("level", section.level)
-                    .put("start_line", section.startLine)
-                    .put("end_line", section.endLine)
-                    .put("lines", section.lineCount)
-                    .put("matched_lines", section.matchedLines)
-                    .put("score", section.score)
-                    .put("hit_count", section.hitCount)
-                    .put("last_hit_at", section.lastHitAtMillis)
-                    .put("written_at", section.writtenAtMillis)
-                    .put("preview", section.preview),
-            )
-        }
-        JSONObject()
-            .put("ok", true)
-            .put("revision", result.snapshot.revision)
-            .put("bytes", result.snapshot.byteSize)
-            .put("line_count", result.snapshot.lineCount)
-            .put("start_line", result.startLine ?: JSONObject.NULL)
-            .put("end_line", result.endLine ?: JSONObject.NULL)
-            .put("matched_lines", result.matchedLines)
-            .put("has_more", result.hasMore)
-            .put("sections", sections)
-            .put("content", result.content)
-            .toString()
+        val query = args.optString("query").takeIf(String::isNotBlank)
+        val core = AgentMemoryRepository.coreSnapshot().content
+        val index = AgentMemoryRepository.fileIndexText()
+        if (query == null) memoryOverviewJson(core, index) else memorySearchJson(query, core, index)
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆读取失败")
+    }
+
+    /** 不带 query：返回核心记忆全文与档案清单（等价于刷新常驻注入内容）。 */
+    private fun memoryOverviewJson(core: String, index: String): String = JSONObject()
+        .put("ok", true)
+        .put("mode", "overview")
+        .put("core", core)
+        .put("files", index)
+        .put("content", buildString {
+            if (core.isNotBlank()) append(core).append("\n\n")
+            append(index)
+        }.trim())
+        .toString()
+
+    /** 带 query：在所有档案里按相关度检索，返回命中档案与命中行（引用次数随之 +1）。 */
+    private fun memorySearchJson(query: String, core: String, index: String): String {
+        val hits = AgentMemoryRepository.searchFiles(query)
+        hits.forEach { hit -> AgentMemoryRepository.recordFileHit(hit.name) }
+        val hitsJson = JSONArray()
+        hits.forEach { hit ->
+            val lines = JSONArray()
+            hit.hits.forEach { line ->
+                lines.put(
+                    JSONObject()
+                        .put("line", line.lineNumber)
+                        .put("text", line.line)
+                        .put("score", line.score),
+                )
+            }
+            hitsJson.put(
+                JSONObject()
+                    .put("name", hit.name)
+                    .put("lines", hit.lineCount)
+                    .put("score", hit.totalScore)
+                    .put("hits", lines),
+            )
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("mode", "search")
+            .put("query", query)
+            .put("core", core)
+            .put("files", index)
+            .put("hit_count", hits.size)
+            .put("hits", hitsJson)
+            .toString()
     }
 
     private fun memoryWrite(args: JSONObject): String {
@@ -517,49 +523,37 @@ internal class AgentLocalTools(
     }
 
     private fun memoryWriteMemory(args: JSONObject): String = try {
-        val revision = args.getString("revision")
-        val mutation = when (args.getString("mode")) {
-            "replace_range" -> AgentMemoryMutation.ReplaceRange(
-                revision = revision,
-                startLine = args.getInt("start_line"),
-                endLine = args.getInt("end_line"),
-                content = args.getString("content"),
+        val content = args.getString("content")
+        when (args.optString("target").takeIf(String::isNotBlank)?.lowercase()) {
+            "profile" -> {
+                AgentMemoryRepository.replaceCoreProfile(content)
+                coreWriteResult("profile")
+            }
+
+            "working" -> {
+                AgentMemoryRepository.replaceCoreWorking(content)
+                coreWriteResult("working")
+            }
+
+            else -> errorResult(
+                "MEMORY_TARGET_REQUIRED",
+                "请用 target=profile / target=working 写核心记忆，或用 archive=<名字> 写档案",
             )
-            "append" -> AgentMemoryMutation.Append(
-                revision = revision,
-                content = args.getString("content"),
-            )
-            "clear" -> AgentMemoryMutation.Clear(revision)
-            else -> error("不支持的记忆写入模式")
-        }
-        when (val result = AgentMemoryRepository.mutate(mutation)) {
-            is AgentMemoryWriteResult.Success -> JSONObject()
-                .put("ok", true)
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .apply { result.notice?.let { notice -> put("notice", notice) } }
-                .toString()
-            is AgentMemoryWriteResult.Rejected -> JSONObject()
-                .put("ok", false)
-                .put("code", "MEMORY_DUPLICATE")
-                .put("message", result.notice)
-                .put("hint", "请先 memory_get（mode=sections 或 section）读取该节，再用 mode=replace_range 合并")
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .toString()
-            is AgentMemoryWriteResult.Conflict -> JSONObject()
-                .put("ok", false)
-                .put("code", "MEMORY_CONFLICT")
-                .put("message", "记忆已发生变化，请先调用 memory_get 获取最新内容")
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .toString()
         }
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆写入失败")
+    } catch (failure: JSONException) {
+        errorResult("MEMORY_ARGUMENT_INVALID", "缺少 content 或参数格式不对")
+    }
+
+    private fun coreWriteResult(target: String): String {
+        val core = AgentMemoryRepository.coreSnapshot()
+        return JSONObject()
+            .put("ok", true)
+            .put("target", target)
+            .put("bytes", core.byteSize)
+            .put("working_bytes", AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size)
+            .toString()
     }
 
     private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {

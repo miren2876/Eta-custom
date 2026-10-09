@@ -121,11 +121,13 @@ internal class AgentRuntimeRunExecutor(
             }
             val memoryContext = if (memoryEnabled) {
                 runCatching {
+                    val core = AgentMemoryRepository.coreSnapshot()
                     AgentMemoryContextBuilder.build(
-                        snapshot = AgentMemoryRepository.snapshot(),
+                        // revision/bytes 以注入的核心记忆（USER.md + MEMORY.md）为准，档案写入不会改变它。
+                        snapshot = core,
                         sections = AgentMemoryRepository.sections(),
                         contextWindow = request.config.contextWindow,
-                        core = AgentMemoryRepository.coreSnapshot().content,
+                        core = core.content,
                         files = AgentMemoryRepository.files(),
                     )
                 }.getOrElse { throwable ->

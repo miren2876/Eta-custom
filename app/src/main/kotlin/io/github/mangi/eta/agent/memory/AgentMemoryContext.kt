@@ -46,7 +46,8 @@ internal object AgentMemoryContextBuilder {
         files: List<AgentMemoryFileInfo> = emptyList(),
     ): AgentMemoryContext {
         val coreBudget = coreBudgetChars(contextWindow)
-        val headings = if (files.isNotEmpty()) fileIndex(files) else headingIndex(snapshot, sections, nowMillis)
+        // 主记忆（有核心文件）用档案清单；角色记忆没有核心文件，退回单文件的章节索引。
+        val headings = if (core.isNotBlank()) fileIndex(files, nowMillis) else headingIndex(snapshot, sections, nowMillis)
         return AgentMemoryContext(
             enabled = true,
             revision = snapshot.revision,
@@ -58,10 +59,39 @@ internal object AgentMemoryContextBuilder {
         )
     }
 
-    /** 档案清单：模型据此用 `memory_get archive=<name>` 取具体档案。 */
-    private fun fileIndex(files: List<AgentMemoryFileInfo>): String =
-        files.joinToString("\n") { file -> "- ${file.name}（${file.lineCount} 行 / ${file.byteSize} 字节）" }
-            .take(MAX_HEADING_INDEX_CHARS)
+    /**
+     * 档案清单：模型据此用 `memory_get archive=<name>` 取具体档案。
+     * 长期未引用的档案折叠成一行，只保留名字（仍可读取），避免冷档案长期占常驻预算。
+     */
+    private fun fileIndex(files: List<AgentMemoryFileInfo>, nowMillis: Long): String {
+        val warm = mutableListOf<String>()
+        val cold = mutableListOf<String>()
+        files.forEach { file ->
+            val lastTouched = maxOf(file.lastHitAtMillis, file.writtenAtMillis)
+            val idleDays = if (lastTouched <= 0L) null else (nowMillis - lastTouched) / DAY_MILLIS
+            if (file.cold) {
+                val idle = if (idleDays != null) "未用 $idleDays 天" else "长期未用"
+                cold += "- ${file.name}（$idle）"
+            } else {
+                warm += buildString {
+                    append("- ").append(file.name)
+                    append("（").append(file.lineCount).append(" 行 / ").append(file.byteSize).append(" 字节")
+                    if (file.hitCount > 0) append(" · 引用 ").append(file.hitCount).append(" 次")
+                    if (idleDays != null && idleDays > 0) append(" · ").append(idleDays).append(" 天前")
+                    append("）")
+                }
+            }
+        }
+        return buildString {
+            append(warm.joinToString("\n"))
+            if (cold.isNotEmpty()) {
+                if (isNotEmpty()) append('\n')
+                append("## 冷档案（").append(cold.size)
+                append(" 个，长期未引用；需要时用 memory_get archive=<名字> 单独读取）")
+                cold.forEach { append('\n').append(it) }
+            }
+        }.take(MAX_HEADING_INDEX_CHARS)
+    }
 
     /**
      * 章节索引：带上条目数、引用次数与最近使用时间；长期未引用的章节折叠成一段清单，
@@ -136,7 +166,8 @@ internal object AgentMemoryContextBuilder {
     private const val CONTEXT_WINDOW_DIVISOR = 16
     private const val MIN_CORE_CHARS = 4_000
     private const val MAX_CORE_CHARS = 15_000
-    private const val MAX_HEADING_INDEX_CHARS = 4_000
+    /** 注入的档案清单上限；冷档案已折叠，正常不会触顶。 */
+    private const val MAX_HEADING_INDEX_CHARS = 6_000
     private const val COLD_INDEX_DAYS = 60L
     private const val DAY_MILLIS = 24L * 60 * 60 * 1000
     private const val EMPTY_SHA256 =
