@@ -1429,6 +1429,7 @@
   <string name="state_ui_memory_core_saved">核心記憶已儲存</string>
   <string name="state_ui_memory_core_cleared">核心記憶已清空</string>
   <string name="memory_selection_cancel">取消選取</string>
+  <string name="memory_selection_start">選取</string>
   <string name="memory_unarchive_selected">取消封存（%1$d）</string>
   <string name="memory_unarchive_confirm_title">取消封存選取的封存檔？</string>
   <string name="memory_unarchive_confirm_message">%1$d 個封存檔將還原成獨立檔案。</string>

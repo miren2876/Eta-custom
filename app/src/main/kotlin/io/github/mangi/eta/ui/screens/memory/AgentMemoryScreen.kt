@@ -262,6 +262,21 @@ internal fun AgentMemoryScreen(
                                     )
                                 }
                             } else if (state.files.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_start),
+                                        enabled = !state.isArchiving,
+                                        onClick = {
+                                            selectionScope = MemorySelection.Files
+                                            fileSelection = emptySet()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
                                 SectionHint(text = stringResource(R.string.memory_files_select_hint))
                             }
                         }
@@ -417,6 +432,21 @@ internal fun AgentMemoryScreen(
                                     )
                                 }
                             } else if (state.archiveList.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_start),
+                                        enabled = !state.isArchiving,
+                                        onClick = {
+                                            selectionScope = MemorySelection.Archive
+                                            archiveSelection = emptySet()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
                                 SectionHint(text = stringResource(R.string.memory_archive_select_hint))
                             }
                         }

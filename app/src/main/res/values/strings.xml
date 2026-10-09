@@ -1490,6 +1490,7 @@
   <string name="state_ui_memory_core_saved">Core memory saved</string>
   <string name="state_ui_memory_core_cleared">Core memory cleared</string>
   <string name="memory_selection_cancel">Clear selection</string>
+  <string name="memory_selection_start">Select</string>
   <string name="memory_unarchive_selected">Unarchive (%1$d)</string>
   <string name="memory_unarchive_confirm_title">Unarchive selected archives?</string>
   <string name="memory_unarchive_confirm_message">%1$d archive(s) will be restored as standalone files.</string>

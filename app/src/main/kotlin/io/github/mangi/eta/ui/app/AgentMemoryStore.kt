@@ -216,6 +216,7 @@ internal class AgentMemoryStore(
                             memoryState = memoryState.copy(
                                 isArchiving = false,
                                 expandedFileName = null,
+                                lastArchivedTitles = names,
                                 notice = appContext.getString(R.string.state_ui_memory_archived, count),
                             )
                         }
