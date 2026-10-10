@@ -1437,6 +1437,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     cancelDelayed = { action -> service.mainHandler.removeCallbacks(action) },
                     launchReview = { _, prompt -> service.startMemoryReviewRun(prompt) },
                     trace = { line -> service.traceIdleReview(line) },
+                    notifyOutcome = { kind, name ->
+                        AgentExecutionService.postMemoryReviewResult(
+                            service,
+                            when (kind) {
+                                "new" -> service.getString(
+                                    io.github.mangi.eta.R.string.memory_review_done_new,
+                                    name.orEmpty(),
+                                )
+                                "append" -> service.getString(
+                                    io.github.mangi.eta.R.string.memory_review_done_append,
+                                    name.orEmpty(),
+                                )
+                                else -> service.getString(io.github.mangi.eta.R.string.memory_review_done_none)
+                            },
+                        )
+                    },
                 ).also { instance -> idleReviewInstance = instance }
             }
         const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"

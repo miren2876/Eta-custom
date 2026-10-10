@@ -38,6 +38,14 @@ internal class AgentExecutionService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
+        // 记忆整理用独立渠道，默认重要度（会弹横幅），让用户看得见它在跑与跑完。
+        manager.createNotificationChannel(
+            NotificationChannel(
+                REVIEW_CHANNEL,
+                getString(R.string.memory_review_channel),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
         ensureForeground()
     }
 
@@ -124,14 +132,19 @@ internal class AgentExecutionService : Service() {
         // 没有 run 但有保留的虚拟屏会话：只有这一条通知时用虚拟屏文案。
         val virtualScreenOnly = status == null &&
             io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()
-        val builder = Notification.Builder(this, CHANNEL)
+        val reviewRun = leases.hasPrefix("run:${AgentMemoryIdleReview.REVIEW_RUN_PREFIX}")
+        val builder = Notification.Builder(this, if (reviewRun) REVIEW_CHANNEL else CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(
-                if (virtualScreenOnly) getString(R.string.virtual_screen_notification_title)
-                else getString(R.string.execution_title),
+                when {
+                    reviewRun -> getString(R.string.memory_review_running_title)
+                    virtualScreenOnly -> getString(R.string.virtual_screen_notification_title)
+                    else -> getString(R.string.execution_title)
+                },
             )
             .setContentText(
                 when {
+                    reviewRun -> getString(R.string.memory_review_running_content)
                     activePrompt != null -> activePrompt.questions.firstOrNull()?.question
                         ?.take(120) ?: getString(R.string.user_prompt_chip)
                     virtualScreenOnly -> getString(R.string.virtual_screen_notification_content)
@@ -164,7 +177,11 @@ internal class AgentExecutionService : Service() {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(
-                    if (activePrompt != null) getString(R.string.user_prompt_chip) else status!!.shortText(),
+                    when {
+                        reviewRun -> getString(R.string.memory_review_chip)
+                        activePrompt != null -> getString(R.string.user_prompt_chip)
+                        else -> status!!.shortText()
+                    },
                 )
                 .setRequestPromotedOngoing(true)
         }
@@ -189,7 +206,28 @@ internal class AgentExecutionService : Service() {
 
     companion object {
         private const val CHANNEL = "eta_execution"
+        private const val REVIEW_CHANNEL = "eta_memory_review"
+        private const val REVIEW_RESULT_NOTIFICATION_ID = 1109
         private const val NOTIFICATION_ID = 1107
+
+        /** 记忆整理跑完后的短通知：让用户看得见刚才发生了什么（60 秒后自动消失）。 */
+        fun postMemoryReviewResult(context: Context, text: String) {
+            runCatching {
+                val notification = Notification.Builder(context, REVIEW_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(context.getString(R.string.memory_review_done_title))
+                    .setContentText(text)
+                    .setAutoCancel(true)
+                    .setTimeoutAfter(60_000L)
+                    .build()
+                context.getSystemService(NotificationManager::class.java)
+                    .notify(REVIEW_RESULT_NOTIFICATION_ID, notification)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warnThrottled("memory_review_notify_failed") {
+                    "Memory review notification failed: type=${failure.safeLogType()}"
+                }
+            }
+        }
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private val leases = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()

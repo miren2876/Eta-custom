@@ -1397,6 +1397,14 @@
     <string name="settings_ask_user_summary">任务需要你拍板或信息不足时，弹出带选项的提问卡片：可单选、多选、自定义回答或跳过。</string>
     <string name="settings_memory_idle_review_title">记忆自动整理</string>
     <string name="settings_memory_idle_review_summary">任务结束后按活动量打分，过门槛就等 30 秒空闲，起一个隐藏的整理子任务把项目记录写进档案；失败不重放。</string>
+    <string name="memory_review_channel">记忆整理</string>
+    <string name="memory_review_running_title">正在整理记忆</string>
+    <string name="memory_review_running_content">把这次的项目记录写进档案，不影响你当前的对话。</string>
+    <string name="memory_review_chip">记忆整理</string>
+    <string name="memory_review_done_title">记忆整理完成</string>
+    <string name="memory_review_done_none">这次没有需要整理的内容</string>
+    <string name="memory_review_done_new">新建档案《%1$s》</string>
+    <string name="memory_review_done_append">追加到《%1$s》</string>
     <string name="user_prompt_custom_hint">输入你的答案</string>
     <string name="user_prompt_skip">跳过</string>
     <string name="user_prompt_submit">提交</string>

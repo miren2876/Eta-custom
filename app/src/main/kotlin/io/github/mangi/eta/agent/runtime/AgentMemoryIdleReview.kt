@@ -16,6 +16,7 @@ internal class AgentMemoryIdleReview(
     private val cancelDelayed: (Runnable) -> Unit,
     private val launchReview: (sessionKey: String, prompt: String) -> Unit,
     private val trace: (String) -> Unit = {},
+    private val notifyOutcome: (kind: String, name: String?) -> Unit = { _, _ -> },
 ) {
     private data class Signal(
         var userChars: Int = 0,
@@ -33,6 +34,7 @@ internal class AgentMemoryIdleReview(
     private var lastAttemptAtMillis = 0L
     private var pendingAction: Runnable? = null
     private var activeReviewSessionKey: String? = null
+    private var reviewSnapshot: Map<String, Int>? = null
 
     fun isReviewRun(runId: String): Boolean = runId.startsWith(REVIEW_RUN_PREFIX)
 
@@ -72,6 +74,7 @@ internal class AgentMemoryIdleReview(
             activeReviewSessionKey = null
             // 整理已尝试过：清空累计信号（简化上游的"成功才清"，失败也不重放）。
             if (key != null) signals.remove(key)
+            reportOutcome()
             return
         }
         val binding = bindings.remove(runId) ?: return
@@ -121,7 +124,10 @@ internal class AgentMemoryIdleReview(
         }
         val delay = maxOf(IDLE_DELAY_MS, lastAttemptAtMillis + MIN_INTERVAL_MS - System.currentTimeMillis())
         pendingAction?.let(cancelDelayed)
-        val action = Runnable { startReview(sessionKey, score, added) }
+        val action = Runnable {
+            pendingAction = null
+            startReview(sessionKey, score, added)
+        }
         pendingAction = action
         AndroidAgentLogger.info(
             "Memory idle review: scheduled in ${delay}ms (score=%.1f)".format(score)
@@ -143,12 +149,44 @@ internal class AgentMemoryIdleReview(
         attempts[sessionKey] = (attempts[sessionKey] ?: 0) + 1
         lastAttemptAtMillis = System.currentTimeMillis()
         activeReviewSessionKey = sessionKey
+        // 记下整理前的档案快照，跑完对比出「新建了谁 / 追加到谁」。
+        reviewSnapshot = runCatching {
+            io.github.mangi.eta.data.repository.AgentMemoryRepository.files()
+                .associate { file -> file.name to file.byteSize }
+        }.getOrNull()
         val prompt = buildPrompt(score, added)
         trace("启动整理 run（score=%.1f）".format(score))
         runCatching { launchReview(sessionKey, prompt) }.onFailure { failure ->
             activeReviewSessionKey = null
             AndroidAgentLogger.warn("Memory idle review launch failed: type=${failure.safeLogType()}")
             trace("整理 run 启动失败：${failure.safeLogType()}")
+        }
+    }
+
+    /** 整理跑完后对比档案快照，把结果交给通知层（新建 / 追加 / 无变化）。 */
+    private fun reportOutcome() {
+        val before = reviewSnapshot
+        reviewSnapshot = null
+        if (before == null) return
+        val after = runCatching {
+            io.github.mangi.eta.data.repository.AgentMemoryRepository.files()
+                .associate { file -> file.name to file.byteSize }
+        }.getOrNull() ?: return
+        val created = after.keys - before.keys
+        val appended = after.filter { (name, size) -> before[name]?.let { it < size } == true }.keys - created
+        when {
+            created.isNotEmpty() -> {
+                trace("整理完成：新建档案《${created.first()}》")
+                notifyOutcome("new", created.first())
+            }
+            appended.isNotEmpty() -> {
+                trace("整理完成：追加到《${appended.first()}》")
+                notifyOutcome("append", appended.first())
+            }
+            else -> {
+                trace("整理完成：没有需要整理的内容")
+                notifyOutcome("none", null)
+            }
         }
     }
 

@@ -1417,6 +1417,14 @@
     <string name="settings_ask_user_summary">When a task needs your decision, show a card with options: single choice, multiple choice, your own answer, or skip.</string>
     <string name="settings_memory_idle_review_title">Automatic memory review</string>
     <string name="settings_memory_idle_review_summary">After a task finishes, score the activity; past the threshold it waits 30s idle, then runs a hidden review that files project notes into archives. Failures are not replayed.</string>
+    <string name="memory_review_channel">Memory review</string>
+    <string name="memory_review_running_title">Memory review in progress</string>
+    <string name="memory_review_running_content">Filing project notes from this session into archives; your current chat is not affected.</string>
+    <string name="memory_review_chip">Memory review</string>
+    <string name="memory_review_done_title">Memory review finished</string>
+    <string name="memory_review_done_none">Nothing worth filing this time</string>
+    <string name="memory_review_done_new">New archive: %1$s</string>
+    <string name="memory_review_done_append">Appended to: %1$s</string>
     <string name="user_prompt_custom_hint">Type your answer</string>
     <string name="user_prompt_skip">Skip</string>
     <string name="user_prompt_submit">Submit</string>

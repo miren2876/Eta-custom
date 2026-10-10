@@ -1356,6 +1356,14 @@
     <string name="settings_ask_user_summary">任務需要你決定或資訊不足時，彈出帶選項的提問卡片：可單選、多選、自訂回答或略過。</string>
     <string name="settings_memory_idle_review_title">記憶自動整理</string>
     <string name="settings_memory_idle_review_summary">任務結束後依活動量打分，過門檻就等 30 秒空閒，起一個隱藏的整理子任務把專案記錄寫進檔案；失敗不重放。</string>
+    <string name="memory_review_channel">記憶整理</string>
+    <string name="memory_review_running_title">正在整理記憶</string>
+    <string name="memory_review_running_content">把這次的專案記錄寫進檔案，不影響你目前的對話。</string>
+    <string name="memory_review_chip">記憶整理</string>
+    <string name="memory_review_done_title">記憶整理完成</string>
+    <string name="memory_review_done_none">這次沒有需要整理的內容</string>
+    <string name="memory_review_done_new">新建檔案《%1$s》</string>
+    <string name="memory_review_done_append">追加到《%1$s》</string>
     <string name="user_prompt_custom_hint">輸入你的答案</string>
     <string name="user_prompt_skip">略過</string>
     <string name="user_prompt_submit">提交</string>
