@@ -58,6 +58,9 @@ internal object Prefs {
         /** 不确定时向用户提问：运行中弹出带选项的提问卡片。 */
         const val AGENT_ASK_USER = "agent_ask_user"
 
+        /** 记忆空闲审查：任务结束后按活动打分判断值不值得整理，够门槛就起一个隐藏的整理 run。 */
+        const val AGENT_MEMORY_IDLE_REVIEW = "agent_memory_idle_review"
+
         /** 全部布尔开关及其默认值。 */
         val BOOLEAN_DEFAULTS: Map<String, Boolean> = mapOf(
             POWER_KEY_TAKEOVER to false,
@@ -79,6 +82,7 @@ internal object Prefs {
             AGENT_MID_RUN_INTERJECTION to true,
             AGENT_LINUX_RUN_NOTIFICATION to true,
             AGENT_ASK_USER to false,
+            AGENT_MEMORY_IDLE_REVIEW to false,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */
@@ -93,6 +97,7 @@ internal object Prefs {
             AGENT_MID_RUN_INTERJECTION,
             AGENT_LINUX_RUN_NOTIFICATION,
             AGENT_ASK_USER,
+            AGENT_MEMORY_IDLE_REVIEW,
         )
     }
 

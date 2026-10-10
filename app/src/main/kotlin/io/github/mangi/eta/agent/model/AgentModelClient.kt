@@ -291,6 +291,8 @@ internal object AgentModelClient {
         val customHeaders: List<CustomHeader> = emptyList(),
         val customBody: List<CustomBody> = emptyList(),
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+        /** 记忆整理 run 专用：只给记忆工具，档案仅追加，一轮只写一层。 */
+        val memoryReviewMode: Boolean = false,
     ) {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && providerType == ProviderTypes.OPENAI_COMPATIBLE &&

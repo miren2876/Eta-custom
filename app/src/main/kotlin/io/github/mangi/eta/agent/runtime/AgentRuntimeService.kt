@@ -130,6 +130,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sessionByRunId(runId: String): AgentRuntimeSession? =
         synchronized(sessionsLock) { sessions.firstOrNull { it.runId == runId } }
 
+    /** 记忆空闲审查：打分 + 空闲定时器 + 隐藏整理 run。 */
+    private val memoryIdleReview = AgentMemoryIdleReview(
+        postDelayed = { delay, action -> mainHandler.postDelayed(action, delay) },
+        cancelDelayed = { action -> mainHandler.removeCallbacks(action) },
+        launchReview = { _, prompt -> startMemoryReviewRun(prompt) },
+    )
+
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
     private var capsuleView: ComposeView? = null
@@ -415,7 +422,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
     ) {
-        when (Prefs.MultiRunMode.current()) {
+        val reviewRun = memoryIdleReview.isReviewRun(request.runId)
+        memoryIdleReview.bindRun(request.runId, request.effectiveModelSessionId, request.history.size)
+        if (!reviewRun) {
+            // 用户新任务优先：撤掉待执行的整理，并中止正在跑的整理（和上游一样让位）。
+            memoryIdleReview.onUserRunStarted()
+            cancelActiveReviewRuns()
+        }
+        // 整理 run 不参与多会话策略：不能让后台整理把用户正在跑的任务替换掉。
+        when (if (reviewRun) Prefs.MultiRunMode.CONCURRENT else Prefs.MultiRunMode.current()) {
             // 原版行为：新任务终止正在跑的任务。
             Prefs.MultiRunMode.REPLACE -> activeSession?.controller?.cancel()
             // 排队：当前还有任务在跑时先入队，等它结束后自动开始。
@@ -431,6 +446,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             runId = request.runId,
             operation = request.operation,
             eventSink = { event ->
+                if (event is AgentEvent.ToolFinished) {
+                    memoryIdleReview.recordToolFinished(request.runId, event.name)
+                }
                 val current = sessionByRunId(request.runId)
                 if (current != null && event is AgentEvent.ToolStarted &&
                     (event.name in VirtualScreenRoutingPolicy.uiTools || event.name == "virtual_screen") &&
@@ -589,6 +607,42 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
     }
 
+    /** 中止正在跑的整理 run；用户的新任务不该排在后台整理后面。 */
+    private fun cancelActiveReviewRuns() {
+        val reviews = synchronized(sessionsLock) {
+            sessions.filter { memoryIdleReview.isReviewRun(it.runId) }
+        }
+        reviews.forEach { session -> session.controller.cancel() }
+    }
+
+    /** 起一个隐藏的记忆整理 run：只给记忆工具，不属于任何会话。 */
+    private fun startMemoryReviewRun(prompt: String) {
+        val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
+            .getOrNull()
+        if (config == null) {
+            AndroidAgentLogger.warn("Memory idle review: runtime config unavailable")
+            return
+        }
+        val runId = AgentMemoryIdleReview.REVIEW_RUN_PREFIX + java.util.UUID.randomUUID()
+        AndroidAgentLogger.info("Memory idle review: run $runId")
+        startRun(
+            AgentRuntimeWire.RunRequest(
+                runId = runId,
+                prompt = prompt,
+                config = config.copy(
+                    memoryReviewMode = true,
+                    terminalTools = false,
+                    browserTools = false,
+                    deviceDirectTools = false,
+                    deviceSensitiveReadTools = false,
+                    deviceSensitiveActionTools = false,
+                    hostedWebSearchEnabled = false,
+                ),
+                images = emptyList(),
+            )
+        )
+    }
+
     private fun postTerminalOverlay(
         session: AgentRuntimeSession,
         result: AgentRuntimeWire.RunResult,
@@ -600,6 +654,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             lastCompletedRunContext = completedContext
             removeActiveSession(session)
             drainRunQueue()
+            // 任务结束后评估是否值得整理（打分与准入都在 AgentMemoryIdleReview 里）。
+            memoryIdleReview.onRunFinished(
+                runId = session.runId,
+                transcript = session.transcript,
+                enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
+            )
             runCatching {
                 if (result.ok) {
                     enterFinalState(

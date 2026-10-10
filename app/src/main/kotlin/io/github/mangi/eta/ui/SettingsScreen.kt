@@ -391,6 +391,17 @@ private fun SettingsPageContent(
                     )
 
                     EtaPreferenceDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_memory_idle_review_title),
+                        summary = stringResource(R.string.settings_memory_idle_review_summary),
+                        key = Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW,
+                        icon = Icons.Rounded.Psychology,
+                        iconTint = EtaPreferenceColors.Green,
+                    )
+
+                    EtaPreferenceDivider()
                     EtaDropdownPreference(
                         title = stringResource(R.string.settings_multi_run_mode),
                         summary = stringResource(R.string.settings_multi_run_mode_summary),

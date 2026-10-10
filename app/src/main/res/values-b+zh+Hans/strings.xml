@@ -1395,6 +1395,8 @@
     <string name="tool_ask_user">向你提问</string>
     <string name="settings_ask_user_title">不确定时向我提问</string>
     <string name="settings_ask_user_summary">任务需要你拍板或信息不足时，弹出带选项的提问卡片：可单选、多选、自定义回答或跳过。</string>
+    <string name="settings_memory_idle_review_title">记忆自动整理</string>
+    <string name="settings_memory_idle_review_summary">任务结束后按活动量打分，过门槛就等 30 秒空闲，起一个隐藏的整理子任务把项目记录写进档案；失败不重放。</string>
     <string name="user_prompt_custom_hint">输入你的答案</string>
     <string name="user_prompt_skip">跳过</string>
     <string name="user_prompt_submit">提交</string>

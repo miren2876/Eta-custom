@@ -67,6 +67,9 @@ import org.json.JSONException
 import org.json.JSONObject
 import kotlinx.coroutines.runBlocking
 
+/** 记忆写入策略：整理 run 只允许写一层，且档案只能追加。 */
+internal enum class AgentMemoryWritePolicy { FULL, REVIEW }
+
 internal class AgentLocalTools(
     private val context: Context,
     private val logger: AgentLogger,
@@ -111,6 +114,8 @@ internal class AgentLocalTools(
     private val askUserPrompt: ((JSONObject) -> String)? = null,
     /** 本次 run 所属会话；提问卡片只在对应会话里显示。 */
     private val askUserConversationId: String? = null,
+    /** 整理 run 的写入策略：不给 profile/working，档案只能追加，一轮只写一层。 */
+    private val memoryWritePolicy: AgentMemoryWritePolicy = AgentMemoryWritePolicy.FULL,
     private val onMainScreenFallback: () -> Unit = {},
     private val onVirtualTaskCancelled: () -> Unit = {},
     private val virtualScreenOwner: String = browserRunId,
@@ -540,8 +545,30 @@ internal class AgentLocalTools(
             .toString()
     }
 
+    /** 整理 run 的层锁：第一次写档案或写条目就决定本轮所写的层。 */
+    private val memoryReviewLayer = java.util.concurrent.atomic.AtomicReference<String?>(null)
+
     private fun memoryWrite(args: JSONObject): String {
         val archiveName = args.optString("archive").takeIf(String::isNotBlank)
+        if (memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+            val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
+            if (archiveName == null && target != null && target != "entry") {
+                return errorResult(
+                    "MEMORY_REVIEW_TARGET_DENIED",
+                    "整理 run 只能追加档案或写条目，不能改画像或整份工作记忆",
+                )
+            }
+            val layer = if (archiveName != null) "档案" else "条目"
+            val declared = memoryReviewLayer.get()
+            if (declared == null) {
+                memoryReviewLayer.compareAndSet(null, layer)
+            } else if (declared != layer) {
+                return errorResult(
+                    "MEMORY_REVIEW_LAYER_LOCKED",
+                    "这轮已经写过$declared，整理 run 一轮只写一层",
+                )
+            }
+        }
         return if (archiveName != null) memoryWriteArchive(args, archiveName) else memoryWriteMemory(args)
     }
 
@@ -549,6 +576,9 @@ internal class AgentLocalTools(
     private fun memoryWriteArchive(args: JSONObject, name: String): String = try {
         val content = args.getString("content")
         val append = args.optString("mode", "append") != "replace"
+        if (!append && memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+            return errorResult("MEMORY_REVIEW_APPEND_ONLY", "整理 run 只能追加档案，不能整体覆盖")
+        }
         val info = AgentMemoryRepository.writeFile(name, content, append)
         JSONObject()
             .put("ok", true)
@@ -1177,6 +1207,9 @@ internal class AgentLocalTools(
 
     /** 不确定时向用户提问：卡片由聊天页渲染，这里阻塞等待用户提交或跳过。 */
     private fun askUser(args: JSONObject): AgentModelClient.ToolResult {
+        if (memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+            return textResult(errorResult("ASK_USER_UNAVAILABLE", "整理 run 不能向用户提问"))
+        }
         if (!io.github.mangi.eta.config.Prefs.isEnabled(io.github.mangi.eta.config.Prefs.Keys.AGENT_ASK_USER)) {
             return textResult(errorResult("ASK_USER_DISABLED", "请先在 设置 → 对话 里开启「不确定时向我提问」"))
         }

@@ -1,0 +1,227 @@
+package io.github.mangi.eta.agent.runtime
+
+import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.core.safeLogType
+
+/**
+ * 记忆「空闲审查」：run 结束后按**确定性打分**判断这次值不值得整理，
+ * 过门槛再等一段空闲，起一个**隐藏的整理 run**（只给记忆工具、一轮只写一层）。
+ *
+ * 参照 dsh-mnemon 的 Idle Review：只用结构信号、不调 LLM 分类，也不持久化累计信号
+ * （进程重启即丢失，和上游一致）。
+ */
+internal class AgentMemoryIdleReview(
+    private val postDelayed: (Long, Runnable) -> Unit,
+    private val cancelDelayed: (Runnable) -> Unit,
+    private val launchReview: (sessionKey: String, prompt: String) -> Unit,
+) {
+    private data class Signal(
+        var userChars: Int = 0,
+        var assistantChars: Int = 0,
+        var turns: Int = 0,
+        var toolResults: Int = 0,
+        val toolNames: MutableSet<String> = mutableSetOf(),
+    )
+
+    private data class Binding(val sessionKey: String, val historySize: Int)
+
+    private val bindings = mutableMapOf<String, Binding>()
+    private val signals = mutableMapOf<String, Signal>()
+    private val attempts = mutableMapOf<String, Int>()
+    private var lastAttemptAtMillis = 0L
+    private var pendingAction: Runnable? = null
+    private var activeReviewSessionKey: String? = null
+
+    fun isReviewRun(runId: String): Boolean = runId.startsWith(REVIEW_RUN_PREFIX)
+
+    /** 登记一次 run：记住会话归属与历史长度（只统计本次新增的消息）。 */
+    fun bindRun(runId: String, sessionKey: String, historySize: Int) {
+        if (isReviewRun(runId)) {
+            // 整理 run 沿用发起它的会话键：完成后用来清掉那一段的累计信号。
+            if (activeReviewSessionKey == null) activeReviewSessionKey = sessionKey
+            return
+        }
+        bindings[runId] = Binding(sessionKey, historySize)
+    }
+
+    /** 用户又发起了新任务：取消还没到点的整理（累计信号保留）。 */
+    fun onUserRunStarted() {
+        pendingAction?.let(cancelDelayed)
+        pendingAction = null
+    }
+
+    fun recordToolFinished(runId: String, toolName: String) {
+        if (isReviewRun(runId)) return
+        val key = bindings[runId]?.sessionKey ?: return
+        val signal = signals.getOrPut(key) { Signal() }
+        signal.toolResults += 1
+        if (toolName.isNotBlank()) signal.toolNames += toolName
+    }
+
+    /** run 结束：累计信号 → 打分 → 准入 → 排一个空闲定时器。 */
+    fun onRunFinished(
+        runId: String,
+        transcript: List<AgentModelClient.ConversationMessage>,
+        enabled: Boolean,
+    ) {
+        if (isReviewRun(runId)) {
+            val key = activeReviewSessionKey
+            activeReviewSessionKey = null
+            // 整理已尝试过：清空累计信号（简化上游的"成功才清"，失败也不重放）。
+            if (key != null) signals.remove(key)
+            return
+        }
+        val binding = bindings.remove(runId) ?: return
+        if (!enabled) return
+        val added = transcript.drop(binding.historySize)
+        val signal = signals.getOrPut(binding.sessionKey) { Signal() }
+        added.forEach { message ->
+            when (message.role) {
+                ROLE_USER -> signal.userChars += message.content.length
+                ROLE_ASSISTANT -> signal.assistantChars += message.content.length
+                ROLE_TOOL -> signal.toolResults += 1
+            }
+        }
+        signal.turns += 1
+        val score = score(signal)
+        if (score < SCORE_THRESHOLD) {
+            AndroidAgentLogger.info(
+                "Memory idle review: below threshold score=%.1f user=%d assistant=%d tools=%d/%d".format(
+                    score, signal.userChars, signal.assistantChars, signal.toolResults, signal.toolNames.size,
+                )
+            )
+            return
+        }
+        if (added.lastOrNull { it.role == ROLE_USER }?.content?.let { NO_REMEMBER.containsMatchIn(it) } == true) {
+            signals.remove(binding.sessionKey)
+            AndroidAgentLogger.info("Memory idle review: skipped by explicit request")
+            return
+        }
+        if (!hasDurableCandidate(signal)) {
+            AndroidAgentLogger.info("Memory idle review: no durable candidate (score=%.1f)".format(score))
+            return
+        }
+        val sessionKey = binding.sessionKey
+        val used = attempts[sessionKey] ?: 0
+        if (used >= MAX_PER_SESSION) {
+            AndroidAgentLogger.info("Memory idle review: session budget used ($used)")
+            return
+        }
+        val delay = maxOf(IDLE_DELAY_MS, lastAttemptAtMillis + MIN_INTERVAL_MS - System.currentTimeMillis())
+        pendingAction?.let(cancelDelayed)
+        val action = Runnable { startReview(sessionKey, score, added) }
+        pendingAction = action
+        AndroidAgentLogger.info(
+            "Memory idle review: scheduled in ${delay}ms (score=%.1f)".format(score)
+        )
+        postDelayed(delay, action)
+    }
+
+    private fun startReview(
+        sessionKey: String,
+        score: Double,
+        added: List<AgentModelClient.ConversationMessage>,
+    ) {
+        attempts[sessionKey] = (attempts[sessionKey] ?: 0) + 1
+        lastAttemptAtMillis = System.currentTimeMillis()
+        activeReviewSessionKey = sessionKey
+        val prompt = buildPrompt(score, added)
+        runCatching { launchReview(sessionKey, prompt) }.onFailure { failure ->
+            activeReviewSessionKey = null
+            AndroidAgentLogger.warn("Memory idle review launch failed: type=${failure.safeLogType()}")
+        }
+    }
+
+    /** 整理 run 的提示词：写入规则 + 现有记忆索引 + 有界检查点。 */
+    private fun buildPrompt(
+        score: Double,
+        added: List<AgentModelClient.ConversationMessage>,
+    ): String = buildString {
+        appendLine("你是记忆整理子代理。只做一件事：判断这次对话有没有值得长期保留的内容；有就写进记忆，没有就什么都不做（直接回答「无需整理」）。")
+        appendLine()
+        appendLine("写入规则：")
+        appendLine("- 档案是**项目记录的唯一去处**：设计、调查、流程、踩坑与排障、配置与路径、决策理由、交接材料。")
+        appendLine("- 一轮只写一层：写档案 或 写条目，二选一，优先档案。")
+        appendLine("- 写/追加档案：memory_write archive=<主题名> mode=append content=\"<正文>\"；先 memory_get 看有没有同名档案，别重复已有内容。")
+        appendLine("- 写条目：memory_write target=entry content=\"一句话结论\" importance=2；只收用户明确、持久的新结论，且必须是档案没覆盖的。")
+        appendLine("- 什么都不做也是正常结果；不要改用户画像、不要覆盖整份工作记忆、不要删除任何东西。")
+        appendLine("- 路径、端口、实现细节一律不进条目。")
+        appendLine()
+        val index = runCatching { io.github.mangi.eta.data.repository.AgentMemoryRepository.fileIndexText() }
+            .getOrNull().orEmpty()
+        appendLine("<现有档案>")
+        appendLine(index.ifBlank { "（暂无档案）" })
+        appendLine("</现有档案>")
+        appendLine()
+        val entries = runCatching {
+            io.github.mangi.eta.data.repository.AgentMemoryRepository.entries().take(40).joinToString("\n") { entry ->
+                "- (${entry.importance}) ${entry.text}"
+            }
+        }.getOrNull().orEmpty()
+        appendLine("<现有条目>")
+        appendLine(entries.ifBlank { "（暂无条目）" })
+        appendLine("</现有条目>")
+        appendLine()
+        appendLine("<最近对话>")
+        appendLine(renderCheckpoint(added))
+        appendLine("</最近对话>")
+    }.trimEnd()
+
+    /** 有界检查点：只取每条消息前若干字符，总量受 [MAX_CONTEXT_CHARS] 限制。 */
+    private fun renderCheckpoint(messages: List<AgentModelClient.ConversationMessage>): String {
+        val builder = StringBuilder()
+        messages.forEach { message ->
+            val role = when (message.role) {
+                ROLE_USER -> "用户"
+                ROLE_ASSISTANT -> "助手"
+                ROLE_TOOL -> "工具"
+                else -> message.role
+            }
+            val body = message.content.replace('\n', ' ').trim().take(PER_MESSAGE_CHARS)
+            if (body.isBlank()) return@forEach
+            val line = "$role：$body"
+            if (builder.length + line.length + 1 > MAX_CONTEXT_CHARS) {
+                builder.append("\n（更早内容已截断）")
+                return@forEach
+            }
+            builder.append(line).append('\n')
+        }
+        return builder.toString().trimEnd()
+    }
+
+    /** dsh 原文的确定性活动评分。 */
+    private fun score(signal: Signal): Double =
+        (minOf(signal.userChars / 50, 3) + signal.turns + minOf(signal.toolResults / 5, 2) + diversity(signal)).toDouble()
+
+    private fun diversity(signal: Signal): Int = when {
+        signal.toolNames.size < 3 -> 0
+        signal.toolNames.size == 3 -> 1
+        else -> 2
+    }
+
+    private fun hasDurableCandidate(signal: Signal): Boolean =
+        signal.userChars >= MIN_USER_CHARS ||
+            signal.assistantChars >= MIN_ASSISTANT_CHARS ||
+            (signal.toolResults >= 3 && signal.toolNames.any { it !in MEMORY_TOOLS })
+
+    companion object {
+        const val REVIEW_RUN_PREFIX = "memory-review:"
+
+        private const val IDLE_DELAY_MS = 30_000L
+        private const val MIN_INTERVAL_MS = 5 * 60 * 1000L
+        private const val MAX_PER_SESSION = 2
+        private const val SCORE_THRESHOLD = 5.0
+        private const val MIN_USER_CHARS = 320
+        private const val MIN_ASSISTANT_CHARS = 600
+        private const val MAX_CONTEXT_CHARS = 8_000
+        private const val PER_MESSAGE_CHARS = 600
+
+        private const val ROLE_USER = "user"
+        private const val ROLE_ASSISTANT = "assistant"
+        private const val ROLE_TOOL = "tool"
+
+        private val MEMORY_TOOLS = setOf("memory_get", "memory_write")
+        private val NO_REMEMBER = Regex("不要记|别记|不用记|无需记|别存|不要存|只是问一下|仅测试")
+    }
+}

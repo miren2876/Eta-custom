@@ -23,6 +23,7 @@ import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
 import io.github.mangi.eta.agent.tool.AgentLocalTools
+import io.github.mangi.eta.agent.tool.AgentMemoryWritePolicy
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.PendingSkillConflictCapabilityParser
@@ -149,6 +150,8 @@ internal class AgentRuntimeRunExecutor(
                 }
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
+            // 记忆整理 run：只保留记忆工具，其余全部关掉，并且只允许写一层。
+            val memoryReview = request.config.memoryReviewMode
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -157,26 +160,31 @@ internal class AgentRuntimeRunExecutor(
                 virtualScreenOwner = request.virtualScreenOwner,
                 isRunCancelled = { runController.isCancelled },
                 browserToolsEnabled = {
-                    request.config.browserTools && currentPermissions().browserTools
+                    !memoryReview && request.config.browserTools && currentPermissions().browserTools
                 },
                 terminalToolsEnabled = {
-                    request.config.terminalTools && currentPermissions().terminalTools
+                    !memoryReview && request.config.terminalTools && currentPermissions().terminalTools
                 },
                 deviceDirectToolsEnabled = {
-                    request.config.deviceDirectTools && currentPermissions().deviceDirectTools
+                    !memoryReview && request.config.deviceDirectTools && currentPermissions().deviceDirectTools
                 },
                 deviceSensitiveReadToolsEnabled = {
-                    request.config.deviceSensitiveReadTools &&
+                    !memoryReview && request.config.deviceSensitiveReadTools &&
                         currentPermissions().deviceSensitiveReadTools
                 },
                 deviceSensitiveActionToolsEnabled = {
-                    request.config.deviceSensitiveActionTools &&
+                    !memoryReview && request.config.deviceSensitiveActionTools &&
                         currentPermissions().deviceSensitiveActionTools
                 },
                 memoryToolsEnabled = {
                     runBlocking { AgentMemoryRepository.isEnabled() }
                 },
                 memoryWritable = roleplayContext == null,
+                memoryWritePolicy = if (memoryReview) {
+                    AgentMemoryWritePolicy.REVIEW
+                } else {
+                    AgentMemoryWritePolicy.FULL
+                },
                 screenshotExcludedPackages = {
                     entrySurfaceGuard?.consumeScreenshotExcludedPackages().orEmpty()
                 },

@@ -1415,6 +1415,8 @@
     <string name="tool_ask_user">Ask you a question</string>
     <string name="settings_ask_user_title">Ask me when unsure</string>
     <string name="settings_ask_user_summary">When a task needs your decision, show a card with options: single choice, multiple choice, your own answer, or skip.</string>
+    <string name="settings_memory_idle_review_title">Automatic memory review</string>
+    <string name="settings_memory_idle_review_summary">After a task finishes, score the activity; past the threshold it waits 30s idle, then runs a hidden review that files project notes into archives. Failures are not replayed.</string>
     <string name="user_prompt_custom_hint">Type your answer</string>
     <string name="user_prompt_skip">Skip</string>
     <string name="user_prompt_submit">Submit</string>
