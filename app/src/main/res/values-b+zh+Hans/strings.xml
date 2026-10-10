@@ -1401,6 +1401,7 @@
     <string name="memory_review_running_title">正在整理记忆</string>
     <string name="memory_review_running_content">把这次的项目记录写进档案，不影响你当前的对话。</string>
     <string name="memory_review_chip">记忆整理</string>
+    <string name="memory_review_chip_done">整理完成</string>
     <string name="memory_review_done_title">记忆整理完成</string>
     <string name="memory_review_done_none">这次没有需要整理的内容</string>
     <string name="memory_review_done_new">新建档案《%1$s》</string>

@@ -178,7 +178,8 @@ internal class AgentExecutionService : Service() {
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         // 门槛取 Baklava(Android 16, 36.0)：ColorOS 16/17 的流体云直接对接原生 Live Updates API，
         // 36.0 设备同样支持提升（上游原先要求 QPR1，会把 36.0 的设备整体排除）。
-        if ((status != null || activePrompt != null) && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+        // 整理 run 也申请提升：横幅被系统/渠道挡掉时，流体云胶囊是另一条可见路径。
+        if ((reviewRun || status != null || activePrompt != null) && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(
@@ -213,20 +214,31 @@ internal class AgentExecutionService : Service() {
         private const val CHANNEL = "eta_execution"
         private const val REVIEW_CHANNEL = "eta_memory_review"
         private const val REVIEW_RESULT_NOTIFICATION_ID = 1109
+        private const val REVIEW_RESULT_TIMEOUT_MS = 30_000L
         private const val NOTIFICATION_ID = 1107
 
-        /** 记忆整理跑完后的短通知：让用户看得见刚才发生了什么（60 秒后自动消失）。 */
+        /**
+         * 记忆整理跑完后的短提醒：让用户看得见刚才发生了什么。
+         * 做成 **ongoing + 提升为 Live Update**（流体云胶囊），30 秒后自动消失——
+         * 横幅在 ColorOS 上可能被渠道/系统挡掉，胶囊是更稳的可见路径。
+         */
         fun postMemoryReviewResult(context: Context, text: String) {
             runCatching {
-                val notification = Notification.Builder(context, REVIEW_CHANNEL)
+                val builder = Notification.Builder(context, REVIEW_CHANNEL)
                     .setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle(context.getString(R.string.memory_review_done_title))
                     .setContentText(text)
                     .setAutoCancel(true)
-                    .setTimeoutAfter(60_000L)
-                    .build()
+                    .setTimeoutAfter(REVIEW_RESULT_TIMEOUT_MS)
+                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+                    builder
+                        .setOngoing(true)
+                        .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
+                        .setShortCriticalText(context.getString(R.string.memory_review_chip_done))
+                        .setRequestPromotedOngoing(true)
+                }
                 context.getSystemService(NotificationManager::class.java)
-                    .notify(REVIEW_RESULT_NOTIFICATION_ID, notification)
+                    .notify(REVIEW_RESULT_NOTIFICATION_ID, builder.build())
             }.onFailure { failure ->
                 AndroidAgentLogger.warnThrottled("memory_review_notify_failed") {
                     "Memory review notification failed: type=${failure.safeLogType()}"
