@@ -12,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,8 @@ class MainActivity : ComponentActivity() {
                     .collectAsState(initial = initialAppearance)
                 // 提问卡片按会话过滤，需要知道当前打开的是哪条会话。
                 val agentAppViewModel = viewModel<io.github.mangi.eta.ui.app.AgentAppViewModel>()
+                // 侧栏打开时收起卡片：卡片画在整棵界面之上，会把侧栏内容盖住。
+                var conversationPaneOpen by remember { mutableStateOf(false) }
 
                 LaunchedEffect(appearance.themeMode) {
                     updateApplicationNightMode(appearance.themeMode)
@@ -75,6 +78,7 @@ class MainActivity : ComponentActivity() {
                     AgentAppRoot(
                         assistantConversationKey = assistantConversationKey,
                         requestedConversationId = requestedConversationId,
+                        onConversationPaneChanged = { conversationPaneOpen = it },
                         onRequestedConversationOpened = { requestedConversationId = null; intent?.action = null },
                         openSpeechSettings = speechSettingsRequested,
                         onSpeechSettingsOpened = { speechSettingsRequested = false; intent?.action = null },
@@ -91,12 +95,14 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize().imePadding(),
                         contentAlignment = Alignment.BottomCenter,
                     ) {
-                        io.github.mangi.eta.ui.components.AgentUserPromptCard(
-                            conversationId = agentAppViewModel.state.conversationPaneState.selectedConversationId,
-                            modifier = Modifier
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp),
-                        )
+                        if (!conversationPaneOpen) {
+                            io.github.mangi.eta.ui.components.AgentUserPromptCard(
+                                conversationId = agentAppViewModel.state.conversationPaneState.selectedConversationId,
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp)
+                                    .padding(bottom = 12.dp),
+                            )
+                        }
                     }
                 }
             }

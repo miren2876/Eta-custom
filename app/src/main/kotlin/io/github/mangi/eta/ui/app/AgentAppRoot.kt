@@ -121,6 +121,8 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 fun AgentAppRoot(
     assistantConversationKey: String? = null,
     requestedConversationId: String? = null,
+    /** 侧栏（会话抽屉）开合变化时通知宿主，宿主据此收起浮层卡片。 */
+    onConversationPaneChanged: (Boolean) -> Unit = {},
     onRequestedConversationOpened: () -> Unit = {},
     openSpeechSettings: Boolean = false,
     onSpeechSettingsOpened: () -> Unit = {},
@@ -168,6 +170,8 @@ fun AgentAppRoot(
     }
 
     var conversationPaneOpen by remember { mutableStateOf(false) }
+    // 侧栏是独立浮层，盖在整棵界面之上；打开时手势卡片要让位，否则会压住侧栏内容。
+    LaunchedEffect(conversationPaneOpen) { onConversationPaneChanged(conversationPaneOpen) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
