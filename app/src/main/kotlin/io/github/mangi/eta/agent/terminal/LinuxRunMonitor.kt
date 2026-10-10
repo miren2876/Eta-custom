@@ -10,6 +10,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 /**
  * Linux 工具环境的运行状态监视。
@@ -80,11 +82,35 @@ internal object LinuxRunMonitor {
         job = scope.launch { watchLoop() }
     }
 
-    /** 结束 Linux 环境里的全部进程，并立即收起通知；返回结束的进程数。 */
-    fun exit(): Int {
-        val killed = runCatching { runRootScript(exitScript)?.trim()?.toIntOrNull() }.getOrNull() ?: 0
+    /**
+     * 「退出」入口：立刻收起通知，再在后台线程结束 Linux 进程。
+     *
+     * 调用方（Service.onStartCommand）在主线程上，绝不能同步等 root shell：
+     * 之前就是这样调用阻塞版实现的，su 起得慢时整个 App 会冻住，只能强行停止。
+     */
+    fun requestExit() {
         updateNotification(0)
-        return killed
+        scope.launch {
+            val killed = runCatching { exitBlocking() }.getOrDefault(0)
+            AndroidAgentLogger.info("Linux run exit: killed=$killed")
+        }
+    }
+
+    /** 同步结束 Linux 进程；只能在后台线程调用。带超时，避免 root shell 卡死线程。 */
+    private fun exitBlocking(): Int {
+        val process = runCatching {
+            ProcessBuilder("su", "-c", exitScript).redirectErrorStream(true).start()
+        }.getOrNull() ?: return 0
+        val output = runCatching {
+            process.inputStream.bufferedReader().use { reader ->
+                val text = reader.readText()
+                if (!process.waitFor(EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    process.destroyForcibly()
+                }
+                text
+            }
+        }.getOrNull().orEmpty()
+        return output.trim().toIntOrNull() ?: 0
     }
 
     private suspend fun watchLoop() {
@@ -113,12 +139,7 @@ internal object LinuxRunMonitor {
         }
     }
 
-    private fun runRootScript(script: String): String? = runCatching {
-        val process = ProcessBuilder("su", "-c", script).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        process.waitFor()
-        output
-    }.getOrNull()
+
 
     private fun updateNotification(count: Int) {
         val context = appContext ?: return
@@ -157,4 +178,7 @@ internal object LinuxRunMonitor {
 
     private const val RECHECK_INTERVAL_MS = 5_000L
     private const val RESTART_INTERVAL_MS = 3_000L
+
+    /** root 脚本超时：脚本本身只遍历 /proc，正常几十毫秒；超时就放弃，不挂住线程。 */
+    private const val EXIT_TIMEOUT_SECONDS = 5L
 }

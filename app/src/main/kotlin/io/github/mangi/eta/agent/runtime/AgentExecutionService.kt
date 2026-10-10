@@ -75,8 +75,8 @@ internal class AgentExecutionService : Service() {
         if (intent?.action == ACTION_STOP) {
             stopTasks()
         } else if (intent?.action == LinuxRunMonitor.ACTION_EXIT_LINUX) {
-            // 结束 Linux 环境里的全部进程；没有其他前台任务时顺带收回本服务。
-            LinuxRunMonitor.exit()
+            // 结束 Linux 进程要走 root shell，绝不能占在主线程上等（否则整个 App 冻住）。
+            LinuxRunMonitor.requestExit()
             if (!foregroundActive) stopSelf(startId)
         } else {
             ensureForeground()
