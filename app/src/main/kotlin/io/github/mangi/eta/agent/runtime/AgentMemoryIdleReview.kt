@@ -15,6 +15,7 @@ internal class AgentMemoryIdleReview(
     private val postDelayed: (Long, Runnable) -> Unit,
     private val cancelDelayed: (Runnable) -> Unit,
     private val launchReview: (sessionKey: String, prompt: String) -> Unit,
+    private val trace: (String) -> Unit = {},
 ) {
     private data class Signal(
         var userChars: Int = 0,
@@ -47,6 +48,7 @@ internal class AgentMemoryIdleReview(
 
     /** 用户又发起了新任务：取消还没到点的整理（累计信号保留）。 */
     fun onUserRunStarted() {
+        if (pendingAction != null) trace("用户发起新任务：取消待执行的整理")
         pendingAction?.let(cancelDelayed)
         pendingAction = null
     }
@@ -73,7 +75,10 @@ internal class AgentMemoryIdleReview(
             return
         }
         val binding = bindings.remove(runId) ?: return
-        if (!enabled) return
+        if (!enabled) {
+            trace("本次 run 结束：开关关闭，跳过")
+            return
+        }
         val added = transcript.drop(binding.historySize)
         val signal = signals.getOrPut(binding.sessionKey) { Signal() }
         added.forEach { message ->
@@ -86,26 +91,29 @@ internal class AgentMemoryIdleReview(
         signal.turns += 1
         val score = score(signal)
         if (score < SCORE_THRESHOLD) {
-            AndroidAgentLogger.info(
-                "Memory idle review: below threshold score=%.1f user=%d assistant=%d tools=%d/%d".format(
-                    score, signal.userChars, signal.assistantChars, signal.toolResults, signal.toolNames.size,
-                )
+            val line = "分数未达门槛 score=%.1f 用户字符=%d 助手字符=%d 工具=%d/%d".format(
+                score, signal.userChars, signal.assistantChars, signal.toolResults, signal.toolNames.size,
             )
+            AndroidAgentLogger.info("Memory idle review: below threshold. $line")
+            trace(line)
             return
         }
         if (added.lastOrNull { it.role == ROLE_USER }?.content?.let { NO_REMEMBER.containsMatchIn(it) } == true) {
             signals.remove(binding.sessionKey)
             AndroidAgentLogger.info("Memory idle review: skipped by explicit request")
+            trace("用户说了不要记，跳过")
             return
         }
         if (!hasDurableCandidate(signal)) {
             AndroidAgentLogger.info("Memory idle review: no durable candidate (score=%.1f)".format(score))
+            trace("过门槛（score=%.1f）但没有可持久内容，跳过".format(score))
             return
         }
         val sessionKey = binding.sessionKey
         val used = attempts[sessionKey] ?: 0
         if (used >= MAX_PER_SESSION) {
             AndroidAgentLogger.info("Memory idle review: session budget used ($used)")
+            trace("本次会话整理次数已用完（$used 次），跳过")
             return
         }
         val delay = maxOf(IDLE_DELAY_MS, lastAttemptAtMillis + MIN_INTERVAL_MS - System.currentTimeMillis())
@@ -115,6 +123,7 @@ internal class AgentMemoryIdleReview(
         AndroidAgentLogger.info(
             "Memory idle review: scheduled in ${delay}ms (score=%.1f)".format(score)
         )
+        trace("过门槛（score=%.1f）：${delay / 1000} 秒后启动整理（用户一发消息就取消）".format(score))
         postDelayed(delay, action)
     }
 
@@ -127,9 +136,11 @@ internal class AgentMemoryIdleReview(
         lastAttemptAtMillis = System.currentTimeMillis()
         activeReviewSessionKey = sessionKey
         val prompt = buildPrompt(score, added)
+        trace("启动整理 run（score=%.1f）".format(score))
         runCatching { launchReview(sessionKey, prompt) }.onFailure { failure ->
             activeReviewSessionKey = null
             AndroidAgentLogger.warn("Memory idle review launch failed: type=${failure.safeLogType()}")
+            trace("整理 run 启动失败：${failure.safeLogType()}")
         }
     }
 

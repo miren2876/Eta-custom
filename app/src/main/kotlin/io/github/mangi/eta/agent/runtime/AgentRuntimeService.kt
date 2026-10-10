@@ -53,6 +53,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
 import io.github.mangi.eta.config.Prefs
+import java.io.File
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.safeLogType
@@ -135,7 +136,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         postDelayed = { delay, action -> mainHandler.postDelayed(action, delay) },
         cancelDelayed = { action -> mainHandler.removeCallbacks(action) },
         launchReview = { _, prompt -> startMemoryReviewRun(prompt) },
+        trace = ::traceIdleReview,
     )
+
+    /** 空闲审查的落盘轨迹（memory/review.log，保留最近 200 行），便于事后核对判定链。 */
+    private fun traceIdleReview(line: String) {
+        runCatching {
+            val file = File(filesDir, "memory/review.log")
+            val stamp = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date())
+            file.appendText("$stamp $line\n")
+            val lines = file.readLines()
+            if (lines.size > 200) {
+                file.writeText(lines.takeLast(200).joinToString("\n", postfix = "\n"))
+            }
+        }
+    }
 
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
@@ -508,6 +524,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             try {
                 executeRun(session, request)
             } finally {
+                // 所有 run 都会走到这里（悬浮窗那条路径是 postTerminalOverlay，聊天页的 run 不走）。
+                memoryIdleReview.onRunFinished(
+                    runId = session.runId,
+                    transcript = session.transcript,
+                    enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
+                )
                 AgentExecutionService.updateRunStatus(this, null)
                 AgentExecutionService.release("run:${request.runId}")
             }
@@ -654,12 +676,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             lastCompletedRunContext = completedContext
             removeActiveSession(session)
             drainRunQueue()
-            // 任务结束后评估是否值得整理（打分与准入都在 AgentMemoryIdleReview 里）。
-            memoryIdleReview.onRunFinished(
-                runId = session.runId,
-                transcript = session.transcript,
-                enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
-            )
             runCatching {
                 if (result.ok) {
                     enterFinalState(
