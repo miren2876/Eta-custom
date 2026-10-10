@@ -79,7 +79,9 @@ internal class AgentMemoryIdleReview(
             trace("本次 run 结束：开关关闭，跳过")
             return
         }
-        val added = transcript.drop(binding.historySize)
+        // 只取结尾一段：run 的 transcript 形状不固定（有时含请求历史、有时只有本轮），
+        // 用「结尾 N 条」既能覆盖本轮、又不会把历史重复计进去。
+        val added = transcript.takeLast(TRANSCRIPT_TAIL)
         val signal = signals.getOrPut(binding.sessionKey) { Signal() }
         added.forEach { message ->
             when (message.role) {
@@ -91,8 +93,9 @@ internal class AgentMemoryIdleReview(
         signal.turns += 1
         val score = score(signal)
         if (score < SCORE_THRESHOLD) {
-            val line = "分数未达门槛 score=%.1f 用户字符=%d 助手字符=%d 工具=%d/%d".format(
-                score, signal.userChars, signal.assistantChars, signal.toolResults, signal.toolNames.size,
+            val line = "分数未达门槛 score=%.1f 回合=%d 用户字符=%d 助手字符=%d 工具=%d/%d transcript=%d history=%d".format(
+                score, signal.turns, signal.userChars, signal.assistantChars,
+                signal.toolResults, signal.toolNames.size, transcript.size, binding.historySize,
             )
             AndroidAgentLogger.info("Memory idle review: below threshold. $line")
             trace(line)
@@ -123,7 +126,12 @@ internal class AgentMemoryIdleReview(
         AndroidAgentLogger.info(
             "Memory idle review: scheduled in ${delay}ms (score=%.1f)".format(score)
         )
-        trace("过门槛（score=%.1f）：${delay / 1000} 秒后启动整理（用户一发消息就取消）".format(score))
+        trace(
+            "过门槛 score=%.1f（回合=%d 用户字符=%d 助手字符=%d 工具=%d/%d）：${delay / 1000} 秒后启动整理（用户一发消息就取消）".format(
+                score, signal.turns, signal.userChars, signal.assistantChars,
+                signal.toolResults, signal.toolNames.size,
+            )
+        )
         postDelayed(delay, action)
     }
 
@@ -226,6 +234,7 @@ internal class AgentMemoryIdleReview(
         private const val MIN_USER_CHARS = 320
         private const val MIN_ASSISTANT_CHARS = 600
         private const val MAX_CONTEXT_CHARS = 8_000
+        private const val TRANSCRIPT_TAIL = 24
         private const val PER_MESSAGE_CHARS = 600
 
         private const val ROLE_USER = "user"

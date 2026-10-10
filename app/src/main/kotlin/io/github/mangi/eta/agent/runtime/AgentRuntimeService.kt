@@ -131,13 +131,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sessionByRunId(runId: String): AgentRuntimeSession? =
         synchronized(sessionsLock) { sessions.firstOrNull { it.runId == runId } }
 
-    /** 记忆空闲审查：打分 + 空闲定时器 + 隐藏整理 run。 */
-    private val memoryIdleReview = AgentMemoryIdleReview(
-        postDelayed = { delay, action -> mainHandler.postDelayed(action, delay) },
-        cancelDelayed = { action -> mainHandler.removeCallbacks(action) },
-        launchReview = { _, prompt -> startMemoryReviewRun(prompt) },
-        trace = ::traceIdleReview,
-    )
+    /**
+     * 记忆空闲审查：打分 + 空闲定时器 + 隐藏整理 run。
+     * 必须取**进程级单例**：run 结束、服务空闲后会 stopSelf()，实例字段会随服务一起丢掉，
+     * 累计信号就永远攒不到门槛。
+     */
+    private val memoryIdleReview: AgentMemoryIdleReview
+        get() = sharedIdleReview(this)
 
     /** 空闲审查的落盘轨迹（memory/review.log，保留最近 200 行），便于事后核对判定链。 */
     private fun traceIdleReview(line: String) {
@@ -1426,6 +1426,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private companion object {
+        @Volatile
+        private var idleReviewInstance: AgentMemoryIdleReview? = null
+
+        /** 进程内唯一的空闲审查协调器；首次调用时用当时存活的 service 绑好回调。 */
+        private fun sharedIdleReview(service: AgentRuntimeService): AgentMemoryIdleReview =
+            idleReviewInstance ?: synchronized(this) {
+                idleReviewInstance ?: AgentMemoryIdleReview(
+                    postDelayed = { delay, action -> service.mainHandler.postDelayed(action, delay) },
+                    cancelDelayed = { action -> service.mainHandler.removeCallbacks(action) },
+                    launchReview = { _, prompt -> service.startMemoryReviewRun(prompt) },
+                    trace = { line -> service.traceIdleReview(line) },
+                ).also { instance -> idleReviewInstance = instance }
+            }
         const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
         const val HIDE_DELAY_MS = 2_500L
         const val RESULT_REVIEW_DELAY_MS = 120_000L
