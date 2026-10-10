@@ -38,6 +38,8 @@ internal data class AgentUserPromptRequest(
     val token: String,
     val owner: String,
     val questions: List<AgentUserPromptQuestion>,
+    /** 提问所属的会话；为空表示不属于任何会话，卡片退回全局显示。 */
+    val conversationId: String? = null,
 )
 
 /** 用户对某一道题的回答；[skipped] 表示跳过（模型应按自己的判断继续）。 */
@@ -87,11 +89,12 @@ internal object AgentUserPrompt {
         owner: String,
         args: JSONObject,
         isCancelled: () -> Boolean,
+        conversationId: String? = null,
     ): String {
         val questions = parseQuestions(args)
             ?: return errorResult("INVALID_QUESTIONS", "questions 至少需要一道带 2 个以上选项的题目")
         val token = UUID.randomUUID().toString()
-        val request = AgentUserPromptRequest(token, owner, questions)
+        val request = AgentUserPromptRequest(token, owner, questions, conversationId)
         val entry = Pending(request, AtomicReference(null))
         pending[token] = entry
         prompts.update { it + request }

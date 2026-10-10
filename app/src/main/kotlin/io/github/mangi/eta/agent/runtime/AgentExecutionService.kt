@@ -110,8 +110,10 @@ internal class AgentExecutionService : Service() {
                 io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java
             else -> MainActivity::class.java
         }
+        // 提问挂起时把会话 id 一起带过去：点通知/流体云直接落在提问所在的会话。
+        val promptConversationId = activePrompt?.conversationId
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, openTarget),
+            this, 0, Intent(this, openTarget).apply { openConversation(promptConversationId) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
@@ -147,7 +149,8 @@ internal class AgentExecutionService : Service() {
         } else {
             val answer = PendingIntent.getActivity(
                 this, 2,
-                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .apply { openConversation(promptConversationId) },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             builder.addAction(
@@ -166,6 +169,13 @@ internal class AgentExecutionService : Service() {
                 .setRequestPromotedOngoing(true)
         }
         return builder.build()
+    }
+
+    /** 带上「打开指定会话」的动作与 extra；会话 id 为空时保持原样。 */
+    private fun Intent.openConversation(conversationId: String?) {
+        if (conversationId.isNullOrBlank()) return
+        action = MainActivity.ACTION_OPEN_CONVERSATION_ID
+        putExtra(MainActivity.EXTRA_CONVERSATION_ID, conversationId)
     }
 
     /** 状态栏胶囊约 7 个字符可完整显示；更长时只取动作，工具名留在展开态。 */

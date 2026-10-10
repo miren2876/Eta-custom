@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
@@ -49,6 +50,8 @@ class MainActivity : ComponentActivity() {
             setContent {
                 val appearance by AppearanceSettingsRepository.settingsFlow()
                     .collectAsState(initial = initialAppearance)
+                // 提问卡片按会话过滤，需要知道当前打开的是哪条会话。
+                val agentAppViewModel = viewModel<io.github.mangi.eta.ui.app.AgentAppViewModel>()
 
                 LaunchedEffect(appearance.themeMode) {
                     updateApplicationNightMode(appearance.themeMode)
@@ -89,6 +92,7 @@ class MainActivity : ComponentActivity() {
                         contentAlignment = Alignment.BottomCenter,
                     ) {
                         io.github.mangi.eta.ui.components.AgentUserPromptCard(
+                            conversationId = agentAppViewModel.state.conversationPaneState.selectedConversationId,
                             modifier = Modifier
                                 .padding(horizontal = 12.dp)
                                 .padding(bottom = 12.dp),

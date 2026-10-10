@@ -109,6 +109,8 @@ internal class AgentLocalTools(
     private val virtualUiExecutor: ((String, JSONObject) -> AgentModelClient.ToolResult)? = null,
     private val fallbackApproval: ((String, String) -> MainScreenFallbackDecision)? = null,
     private val askUserPrompt: ((JSONObject) -> String)? = null,
+    /** 本次 run 所属会话；提问卡片只在对应会话里显示。 */
+    private val askUserConversationId: String? = null,
     private val onMainScreenFallback: () -> Unit = {},
     private val onVirtualTaskCancelled: () -> Unit = {},
     private val virtualScreenOwner: String = browserRunId,
@@ -1180,7 +1182,7 @@ internal class AgentLocalTools(
         }
         val executor = askUserPrompt
         val result = executor?.invoke(args) ?: io.github.mangi.eta.agent.prompt.AgentUserPrompt.request(
-            context, browserRunId, args, { closed.get() || isRunCancelled() },
+            context, browserRunId, args, { closed.get() || isRunCancelled() }, askUserConversationId,
         )
         return textResult(result)
     }
