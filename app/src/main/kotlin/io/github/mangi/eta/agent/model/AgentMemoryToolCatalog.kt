@@ -117,8 +117,19 @@ internal object AgentMemoryToolCatalog {
                                     "mode",
                                     JSONObject()
                                         .put("type", "string")
-                                        .put("enum", JSONArray().put("append").put("replace"))
-                                        .put("description", "For archive writes: append (default) adds, replace overwrites."),
+                                        .put("enum", JSONArray().put("append").put("replace").put("edit"))
+                                        .put(
+                                            "description",
+                                            "For archive writes: append (default) adds, edit replaces one unique old_text " +
+                                                "snippet, replace overwrites the whole file (not allowed for the background review run).",
+                                        ),
+                                )
+                                .put(
+                                    "old_text",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 2000)
+                                        .put("description", "For mode=edit: the existing snippet to replace; must appear exactly once."),
                                 )
                                 .put(
                                     "content",

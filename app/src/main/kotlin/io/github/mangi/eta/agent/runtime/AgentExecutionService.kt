@@ -38,12 +38,17 @@ internal class AgentExecutionService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
-        // 记忆整理用独立渠道，默认重要度（会弹横幅），让用户看得见它在跑与跑完。
+        // 记忆整理用独立渠道，高重要度（弹横幅 + 响铃/震动按系统设置），让用户看得见它在跑与跑完。
+        // 系统不允许应用直接提高已有渠道的重要度，早期用 DEFAULT 建过的要删掉重建一次。
+        val existingReview = manager.getNotificationChannel(REVIEW_CHANNEL)
+        if (existingReview != null && existingReview.importance < NotificationManager.IMPORTANCE_HIGH) {
+            manager.deleteNotificationChannel(REVIEW_CHANNEL)
+        }
         manager.createNotificationChannel(
             NotificationChannel(
                 REVIEW_CHANNEL,
                 getString(R.string.memory_review_channel),
-                NotificationManager.IMPORTANCE_DEFAULT,
+                NotificationManager.IMPORTANCE_HIGH,
             ),
         )
         ensureForeground()

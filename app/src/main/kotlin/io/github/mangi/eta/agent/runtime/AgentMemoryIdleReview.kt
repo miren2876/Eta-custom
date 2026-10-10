@@ -45,7 +45,10 @@ internal class AgentMemoryIdleReview(
             if (activeReviewSessionKey == null) activeReviewSessionKey = sessionKey
             return
         }
-        bindings[runId] = Binding(sessionKey, historySize)
+        // 没有会话归属的 run（sessionKey 退回 runId）统一并到一个桶里，
+        // 否则每轮都是新键，回合数永远只有 1。
+        val stable = if (sessionKey.isBlank() || sessionKey == runId) DEFAULT_SESSION_KEY else sessionKey
+        bindings[runId] = Binding(stable, historySize)
     }
 
     /** 用户又发起了新任务：取消还没到点的整理（累计信号保留）。 */
@@ -96,8 +99,8 @@ internal class AgentMemoryIdleReview(
         signal.turns += 1
         val score = score(signal)
         if (score < SCORE_THRESHOLD) {
-            val line = "分数未达门槛 score=%.1f 回合=%d 用户字符=%d 助手字符=%d 工具=%d/%d transcript=%d history=%d".format(
-                score, signal.turns, signal.userChars, signal.assistantChars,
+            val line = "分数未达门槛 score=%.1f 会话=%s 回合=%d 用户字符=%d 助手字符=%d 工具=%d/%d transcript=%d history=%d".format(
+                score, sessionTag(binding.sessionKey), signal.turns, signal.userChars, signal.assistantChars,
                 signal.toolResults, signal.toolNames.size, transcript.size, binding.historySize,
             )
             AndroidAgentLogger.info("Memory idle review: below threshold. $line")
@@ -133,8 +136,8 @@ internal class AgentMemoryIdleReview(
             "Memory idle review: scheduled in ${delay}ms (score=%.1f)".format(score)
         )
         trace(
-            "过门槛 score=%.1f（回合=%d 用户字符=%d 助手字符=%d 工具=%d/%d）：${delay / 1000} 秒后启动整理（用户一发消息就取消）".format(
-                score, signal.turns, signal.userChars, signal.assistantChars,
+            "过门槛 score=%.1f（会话=%s 回合=%d 用户字符=%d 助手字符=%d 工具=%d/%d）：${delay / 1000} 秒后启动整理（用户一发消息就取消）".format(
+                score, sessionTag(binding.sessionKey), signal.turns, signal.userChars, signal.assistantChars,
                 signal.toolResults, signal.toolNames.size,
             )
         )
@@ -201,6 +204,7 @@ internal class AgentMemoryIdleReview(
         appendLine("- 档案是**项目记录的唯一去处**：设计、调查、流程、踩坑与排障、配置与路径、决策理由、交接材料。")
         appendLine("- 一轮只写一层：写档案 或 写条目，二选一，优先档案。")
         appendLine("- 写/追加档案：memory_write archive=<主题名> mode=append content=\"<正文>\"；先 memory_get 看有没有同名档案，别重复已有内容。")
+        appendLine("- 修正已有档案里的**一处**内容：memory_write archive=<主题名> mode=edit old_text=\"<要替换的原文片段，必须唯一>\" content=\"<新内容>\"（比追加一条「更正」干净）。")
         appendLine("- 写条目：memory_write target=entry content=\"一句话结论\" importance=2；只收用户明确、持久的新结论，且必须是档案没覆盖的。")
         appendLine("- 什么都不做也是正常结果；不要改用户画像、不要覆盖整份工作记忆、不要删除任何东西。")
         appendLine("- 路径、端口、实现细节一律不进条目。")
@@ -247,6 +251,10 @@ internal class AgentMemoryIdleReview(
         return builder.toString().trimEnd()
     }
 
+    /** 会话键的短标签：只用来在日志里区分桶。 */
+    private fun sessionTag(sessionKey: String): String =
+        if (sessionKey == DEFAULT_SESSION_KEY) "-" else sessionKey.takeLast(6)
+
     /** dsh 原文的确定性活动评分。 */
     private fun score(signal: Signal): Double =
         (minOf(signal.userChars / 50, 3) + signal.turns + minOf(signal.toolResults / 5, 2) + diversity(signal)).toDouble()
@@ -278,6 +286,9 @@ internal class AgentMemoryIdleReview(
         private const val ROLE_USER = "user"
         private const val ROLE_ASSISTANT = "assistant"
         private const val ROLE_TOOL = "tool"
+
+        /** 没有会话归属的 run 共用的桶。 */
+        private const val DEFAULT_SESSION_KEY = "default-session"
 
         private val MEMORY_TOOLS = setOf("memory_get", "memory_write")
         private val NO_REMEMBER = Regex("不要记|别记|不用记|无需记|别存|不要存|只是问一下|仅测试")

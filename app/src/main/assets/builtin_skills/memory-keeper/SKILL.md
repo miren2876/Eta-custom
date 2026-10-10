@@ -26,6 +26,7 @@ description: 维护 Eta 的持久记忆：工作记忆 MEMORY.md 的条目池（
 | 删除一条条目 | `memory_write target=entry match="片段" content=""` |
 | 覆盖用户画像 | `memory_write target=profile content="<完整画像>"` |
 | 写档案 | `memory_write archive=<名字> mode=append content="<正文>"` |
+| 修正档案里的一处 | `memory_write archive=<名字> mode=edit old_text="<唯一片段>" content="<新内容>"`（old_text 必须恰好出现一次） |
 | 读单个档案 | `memory_get archive=<名字>` |
 | 检索条目 + 档案 | `memory_get query=<关键词>` |
 | 看全貌 | `memory_get`（画像 + 全部条目与 EI + 档案清单） |

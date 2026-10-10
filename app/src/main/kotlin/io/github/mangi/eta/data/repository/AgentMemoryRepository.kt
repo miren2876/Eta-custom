@@ -767,6 +767,39 @@ internal class AgentMemoryStore(
         )
     }
 
+    /**
+     * 唯一匹配替换：`oldText` 必须恰好出现一次，否则拒绝。
+     * 给「修正已有档案」用——比整体覆盖安全，也比纯追加干净。
+     */
+    fun editFile(name: String, oldText: String, content: String): AgentMemoryFileInfo = synchronized(lock) {
+        val file = fileFor(name) ?: throw AgentMemoryException("MEMORY_FILE_NAME_INVALID", "档案名不合法")
+        if (!file.exists()) {
+            throw AgentMemoryException("MEMORY_ARCHIVE_MISSING", "档案不存在：${name.trim()}")
+        }
+        if (oldText.isBlank()) {
+            throw AgentMemoryException("MEMORY_ARGUMENT_INVALID", "old_text 不能为空")
+        }
+        val existing = file.readText()
+        val first = existing.indexOf(oldText)
+        if (first < 0) {
+            throw AgentMemoryException("MEMORY_MATCH_MISSING", "档案里找不到 old_text")
+        }
+        if (existing.indexOf(oldText, first + oldText.length) >= 0) {
+            throw AgentMemoryException("MEMORY_MATCH_AMBIGUOUS", "old_text 在档案里出现多次，请给更长的片段")
+        }
+        val updated = existing.replaceRange(first, first + oldText.length, content.trim()).trimEnd('\n')
+        if (updated.toByteArray(Charsets.UTF_8).size > FILE_MAX_BYTES) {
+            throw AgentMemoryException("MEMORY_TOO_LARGE", "档案超过 10 MiB 上限")
+        }
+        file.writeText(if (updated.isEmpty()) "" else "$updated\n")
+        recordFileWritten(name.trim())
+        AgentMemoryFileInfo(
+            name = name.trim(),
+            lineCount = updated.memoryLines().size,
+            byteSize = updated.toByteArray(Charsets.UTF_8).size,
+        )
+    }
+
     /** 档案名 → 文件名（目录分隔符与 `..` 替换掉，避免越出档案目录）。 */
     private fun sanitizeName(name: String): String? {
         val safe = name.trim()
@@ -1809,6 +1842,12 @@ internal object AgentMemoryRepository {
     fun writeFile(name: String, content: String, append: Boolean): AgentMemoryFileInfo {
         ensureInitialized()
         return store.writeFile(name, content, append)
+    }
+
+    /** 唯一匹配替换（mode=edit）：old_text 必须恰好出现一次。 */
+    fun editFile(name: String, oldText: String, content: String): AgentMemoryFileInfo {
+        ensureInitialized()
+        return store.editFile(name, oldText, content)
     }
 
     fun coreProfile(): String {

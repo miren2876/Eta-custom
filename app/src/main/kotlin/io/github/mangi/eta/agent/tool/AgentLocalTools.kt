@@ -575,9 +575,27 @@ internal class AgentLocalTools(
     /** 写独立档案：mode=append 追加，mode=replace 整体替换（不存在则创建）。 */
     private fun memoryWriteArchive(args: JSONObject, name: String): String = try {
         val content = args.getString("content")
-        val append = args.optString("mode", "append") != "replace"
+        val mode = args.optString("mode", "append")
+        if (mode == "edit") {
+            val oldText = args.optString("old_text")
+            if (oldText.isBlank()) {
+                return errorResult("MEMORY_ARGUMENT_INVALID", "mode=edit 需要 old_text（要替换的原文片段，必须唯一）")
+            }
+            val edited = AgentMemoryRepository.editFile(name, oldText, content)
+            return JSONObject()
+                .put("ok", true)
+                .put("archive", edited.name)
+                .put("mode", "edit")
+                .put("bytes", edited.byteSize)
+                .put("line_count", edited.lineCount)
+                .toString()
+        }
+        val append = mode != "replace"
         if (!append && memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
-            return errorResult("MEMORY_REVIEW_APPEND_ONLY", "整理 run 只能追加档案，不能整体覆盖")
+            return errorResult(
+                "MEMORY_REVIEW_APPEND_ONLY",
+                "整理 run 不能整体覆盖档案；要修正既有内容请用 mode=edit + old_text",
+            )
         }
         val info = AgentMemoryRepository.writeFile(name, content, append)
         JSONObject()
