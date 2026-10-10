@@ -88,8 +88,9 @@ internal object AgentUserPrompt {
         context: Context,
         owner: String,
         args: JSONObject,
-        isCancelled: () -> Boolean,
         conversationId: String? = null,
+        /** 放在最后，保留 `request(...) { isCancelled }` 的尾随 lambda 写法。 */
+        isCancelled: () -> Boolean,
     ): String {
         val questions = parseQuestions(args)
             ?: return errorResult("INVALID_QUESTIONS", "questions 至少需要一道带 2 个以上选项的题目")

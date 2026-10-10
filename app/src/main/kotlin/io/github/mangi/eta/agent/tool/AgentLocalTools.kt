@@ -1182,7 +1182,11 @@ internal class AgentLocalTools(
         }
         val executor = askUserPrompt
         val result = executor?.invoke(args) ?: io.github.mangi.eta.agent.prompt.AgentUserPrompt.request(
-            context, browserRunId, args, { closed.get() || isRunCancelled() }, askUserConversationId,
+            context = context,
+            owner = browserRunId,
+            args = args,
+            conversationId = askUserConversationId,
+            isCancelled = { closed.get() || isRunCancelled() },
         )
         return textResult(result)
     }
