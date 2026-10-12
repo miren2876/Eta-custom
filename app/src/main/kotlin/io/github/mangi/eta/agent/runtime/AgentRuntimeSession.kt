@@ -88,18 +88,26 @@ internal class AgentRuntimeSession(
         true
     }
 
-    fun steer(text: String): Boolean =
+    fun steer(
+        text: String,
+        images: List<AgentModelClient.ModelImage> = emptyList(),
+    ): Boolean =
         lock.withLock {
             if (state != State.RUNNING || operation != AgentRuntimeWire.OP_CHAT) return false
-            controller.steer(text)
+            controller.steer(text, images)
         }
 
     fun <T : AgentEvent> steer(
         text: String,
+        images: List<AgentModelClient.ModelImage> = emptyList(),
         eventFactory: () -> T,
     ): T? =
         lock.withLock {
-            if (state != State.RUNNING || operation != AgentRuntimeWire.OP_CHAT || !controller.steer(text)) return null
+            if (state != State.RUNNING || operation != AgentRuntimeWire.OP_CHAT ||
+                !controller.steer(text, images)
+            ) {
+                return null
+            }
             eventFactory().also { event ->
                 recordForReplay(event)
                 subscribers.forEach { it.eventSink(event) }

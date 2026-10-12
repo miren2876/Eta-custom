@@ -942,27 +942,25 @@ internal class AgentAppState(
                 if (pendingImages.isEmpty() && pendingFileReferences.isEmpty()) {
                     submitMidRunInterjection(prompt)
                 } else {
-                    // 附件插话：插话通道只收文本，先把附件暂存成路径，再随文本一起插进这一轮。
+                    // 图片走原生插话（Runtime 侧物化后挂到补充消息上）；文件引用只能把路径写进文本。
                     val images = pendingImages
                     val references = pendingFileReferences
                     scope.launch(Dispatchers.Main) {
-                        val note = AgentInterjectionAttachments.describe(appContext, images, references)
-                        if (note.isBlank()) {
-                            // 暂存不成功：退回「本轮结束后自动发出」，不丢草稿与附件。
-                            selectedConversationId?.let { queuedSendAfterRun += it }
-                            Toast.makeText(
-                                appContext,
-                                appContext.getString(R.string.chat_interjection_attachments_queued),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        } else {
-                            submitMidRunInterjection(
-                                text = listOf(prompt, note).filter { it.isNotBlank() }.joinToString("\n"),
-                                restoreText = prompt,
-                                restoreImages = images,
-                                restoreFiles = references,
-                            )
-                        }
+                        val note = AgentInterjectionAttachments.describeFiles(references)
+                        submitMidRunInterjection(
+                            text = listOf(prompt, note).filter { it.isNotBlank() }.joinToString("\n"),
+                            restoreText = prompt,
+                            restoreImages = images,
+                            restoreFiles = references,
+                            images = images.map { image ->
+                                AgentModelClient.ModelImage(
+                                    reference = image.uri,
+                                    mimeType = image.mimeType,
+                                    bytes = 0,
+                                    source = "user_attach",
+                                )
+                            },
+                        )
                     }
                 }
             } else if (pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()) {
@@ -1088,6 +1086,7 @@ internal class AgentAppState(
         restoreText: String = text,
         restoreImages: List<PendingImageUi> = emptyList(),
         restoreFiles: List<PendingFileReferenceUi> = emptyList(),
+        images: List<AgentModelClient.ModelImage> = emptyList(),
     ) {
         val runId = activeRunIds.firstOrNull { conversationIdForRun(it) == selectedConversationId } ?: return
         val conversationId = conversationIdForRun(runId) ?: return
@@ -1102,7 +1101,7 @@ internal class AgentAppState(
         persistConversations()
         scope.launch(Dispatchers.IO) {
             val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger)
-                .interjectRun(runId, text)
+                .interjectRun(runId, text, images)
             if (!accepted) {
                 withContext(Dispatchers.Main) {
                     restoreInterjectionDraft(conversationId, restoreText, restoreImages, restoreFiles)

@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunController
+import io.github.mangi.eta.agent.runtime.SteeringSupplement
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -271,11 +272,14 @@ internal class AgentLoop(
         return true
     }
 
-    private fun steeringPrompt(supplement: String): String =
-        "用户补充指令：$supplement\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"
+    private fun steeringPrompt(supplement: SteeringSupplement): String {
+        val body = supplement.text.ifBlank { "（见附图）" }
+        return "用户补充指令：$body\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"
+    }
 
-    private fun steeringMessage(supplement: String): JSONObject =
-        AgentConversationCodec.userTextMessage(steeringPrompt(supplement))
+    /** 插话消息：文本 + 可选图片（图片已在 Runtime 侧物化，可直接进 content 数组）。 */
+    private fun steeringMessage(supplement: SteeringSupplement): JSONObject =
+        AgentConversationCodec.userMessage(steeringPrompt(supplement), supplement.images)
             .put("_eta_message_id", "user-$operationId-supplement-${++supplementIndex}")
 
     private fun executeTool(

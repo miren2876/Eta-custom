@@ -6,7 +6,14 @@ import java.util.ArrayDeque
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
+import io.github.mangi.eta.agent.model.AgentModelClient
 import kotlin.concurrent.withLock
+
+/** 一条中途插话：文本 + 可选图片（图片已在 Runtime 侧物化成模型可用引用）。 */
+internal data class SteeringSupplement(
+    val text: String,
+    val images: List<AgentModelClient.ModelImage> = emptyList(),
+)
 
 internal class AgentRunController {
     private val resources = CopyOnWriteArraySet<CancellableResource>()
@@ -19,7 +26,7 @@ internal class AgentRunController {
 
     private val lock = ReentrantLock()
     private val pauseCondition = lock.newCondition()
-    private val steeringMessages = ArrayDeque<String>()
+    private val steeringMessages = ArrayDeque<SteeringSupplement>()
     private var acceptingSteering = true
     @Volatile
     private var paused = false
@@ -40,25 +47,25 @@ internal class AgentRunController {
     /**
      * 将补充指令排入下一个 turn。steering 不取消当前模型请求或工具批次。
      */
-    fun steer(text: String): Boolean {
+    fun steer(text: String, images: List<AgentModelClient.ModelImage> = emptyList()): Boolean {
         val prompt = text.trim()
-        if (prompt.isBlank()) return false
+        if (prompt.isBlank() && images.isEmpty()) return false
         lock.withLock {
             if (cancelled || !acceptingSteering) return false
-            steeringMessages.addLast(prompt)
+            steeringMessages.addLast(SteeringSupplement(prompt, images))
         }
         return true
     }
 
     /** 默认逐条消费，避免后来的补充指令越过前一条的模型回合。 */
-    fun pollSteeringMessage(): String? =
+    fun pollSteeringMessage(): SteeringSupplement? =
         lock.withLock { steeringMessages.pollFirst() }
 
     /**
      * 自然结束前原子地消费最后一条 steering；若队列为空则永久关闭本 run 的接收入口。
      * 这样 Service 不会在 loop 已返回后仍把补充指令误报为已接收。
      */
-    fun pollSteeringOrSeal(): String? =
+    fun pollSteeringOrSeal(): SteeringSupplement? =
         lock.withLock {
             steeringMessages.pollFirst()?.let { return it }
             acceptingSteering = false

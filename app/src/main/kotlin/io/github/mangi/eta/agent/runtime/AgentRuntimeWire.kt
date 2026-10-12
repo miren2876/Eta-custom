@@ -615,13 +615,50 @@ internal object AgentRuntimeWire {
     }
 
     /** 中途插话消息的数据体：run 标识 + 用户补充文本。 */
-    fun supplementBundle(runId: String, text: String): Bundle = Bundle().apply {
+    fun supplementBundle(
+        runId: String,
+        text: String,
+        images: List<WireImage> = emptyList(),
+    ): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
         putString(KEY_SUPPLEMENT_TEXT, text)
+        if (images.isNotEmpty()) {
+            putParcelableArrayList(KEY_IMAGES, ArrayList(images.map(::wireImageBundle)))
+        }
     }
 
     fun supplementTextFromBundle(bundle: Bundle): String =
         bundle.getString(KEY_SUPPLEMENT_TEXT).orEmpty()
+
+    /** 读取插话附带的图片；没有图片时返回空列表。 */
+    fun supplementImagesFromBundle(bundle: Bundle): List<WireImage> =
+        bundle.getParcelableArrayList(KEY_IMAGES, Bundle::class.java).orEmpty().mapNotNull { image ->
+            val descriptor = image.getParcelable(KEY_IMAGE_FD, ParcelFileDescriptor::class.java)
+            val reference = image.getString(KEY_IMAGE_URL) ?: image.getString(KEY_DATA_URL)
+            if (descriptor == null && reference.isNullOrBlank()) return@mapNotNull null
+            WireImage(
+                remoteUrl = reference,
+                fileDescriptor = descriptor,
+                mimeType = image.getString(KEY_MIME_TYPE).orEmpty(),
+                bytes = image.getInt(KEY_BYTES),
+                width = image.optionalInt(KEY_WIDTH),
+                height = image.optionalInt(KEY_HEIGHT),
+                source = image.getString(KEY_SOURCE).orEmpty(),
+                preserveOriginal = image.getBoolean(KEY_PRESERVE_ORIGINAL, false),
+            )
+        }
+
+    /** 单张图片的 IPC 表示；与 [toBundle] 使用同一套键。 */
+    private fun wireImageBundle(image: WireImage): Bundle = Bundle().apply {
+        image.remoteUrl?.let { putString(KEY_IMAGE_URL, it) }
+        image.fileDescriptor?.let { putParcelable(KEY_IMAGE_FD, it) }
+        putString(KEY_MIME_TYPE, image.mimeType)
+        putInt(KEY_BYTES, image.bytes)
+        image.width?.let { putInt(KEY_WIDTH, it) }
+        image.height?.let { putInt(KEY_HEIGHT, it) }
+        putString(KEY_SOURCE, image.source)
+        putBoolean(KEY_PRESERVE_ORIGINAL, image.preserveOriginal)
+    }
 
     fun supplementResponseBundle(runId: String, accepted: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)

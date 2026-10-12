@@ -326,10 +326,24 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
                 AgentRuntimeWire.MSG_SUPPLEMENT -> {
                     val data = msg.data ?: return
-                    val runId = AgentRuntimeWire.runIdFromBundle(data)
-                    val text = AgentRuntimeWire.supplementTextFromBundle(data)
-                    val accepted = requestMidRunInterjection(runId, text)
-                    sendSupplementResponse(msg.replyTo, runId, accepted)
+                    val replyTo = msg.replyTo
+                    // 图片物化要解码/压缩，放到后台线程，别占住 Messenger 线程。
+                    thread(name = "agent-supplement") {
+                        val runId = AgentRuntimeWire.runIdFromBundle(data)
+                        val text = AgentRuntimeWire.supplementTextFromBundle(data)
+                        val images = runCatching {
+                            AgentRuntimeImageTransfer.materializeImages(
+                                AgentRuntimeWire.supplementImagesFromBundle(data),
+                            )
+                        }.onFailure { failure ->
+                            AndroidAgentLogger.warnThrottled("runtime_supplement_images_failed") {
+                                "Agent supplement images failed: type=${failure.safeLogType()}"
+                            }
+                        }.getOrDefault(emptyList())
+                        val accepted = requestMidRunInterjection(runId, text, images)
+                        if (!accepted) AgentRuntimeWire.closeImageDescriptors(data)
+                        sendSupplementResponse(replyTo, runId, accepted)
+                    }
                 }
             }
         }
@@ -964,15 +978,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 与 [requestSupplement] 的区别：这里不接管浮窗输入态，也不在 run 已结束时
      * 回退成新的续跑请求——run 不在执行中就返回 false，由调用方决定后续处理。
      */
-    private fun requestMidRunInterjection(runId: String, text: String): Boolean {
+    private fun requestMidRunInterjection(
+        runId: String,
+        text: String,
+        images: List<AgentModelClient.ModelImage> = emptyList(),
+    ): Boolean {
         val supplementText = text.trim()
-        if (supplementText.isBlank()) return false
+        if (supplementText.isBlank() && images.isEmpty()) return false
         val session = sessionByRunId(runId) ?: return false
-        val event = session.steer(supplementText) {
-            recordSupplementEvent(supplementText)
+        val event = session.steer(supplementText, images) {
+            recordSupplementEvent(supplementText.ifBlank { "（图片）" })
         } ?: return false
         AndroidAgentLogger.info(
-            "Agent runtime mid-run interjection received: index=${event.index}, chars=${event.text.length}"
+            "Agent runtime mid-run interjection received: index=${event.index}, " +
+                "chars=${event.text.length}, images=${images.size}"
         )
         state.value = state.value.applyEvent(event)
         return true

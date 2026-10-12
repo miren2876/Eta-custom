@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.core.AgentLogger
 import io.github.mangi.eta.core.safeLogType
 import java.util.concurrent.CountDownLatch
@@ -219,8 +220,24 @@ internal class AgentRuntimeClient(
      * 返回 true 表示 Runtime 已接受并把它排入下一个 turn；false 表示目标 run
      * 不在执行、不是 chat 操作或服务不可用，调用方应回退为普通发送。
      */
-    fun interjectRun(runId: String, text: String): Boolean {
-        if (runId.isBlank() || text.isBlank()) return false
+    fun interjectRun(
+        runId: String,
+        text: String,
+        images: List<AgentModelClient.ModelImage> = emptyList(),
+    ): Boolean {
+        if (runId.isBlank() || (text.isBlank() && images.isEmpty())) return false
+        // 图片按 RunRequest 那套转成 IPC 可传的形态（本地图片走文件描述符，远程走 URL）。
+        val prepared = runCatching { AgentRuntimeImageTransfer.prepare(context, images) }.getOrNull()
+        if (images.isNotEmpty() && prepared == null) return false
+        if (prepared == null) return sendInterjection(runId, text, emptyList())
+        return prepared.use { transfer -> sendInterjection(runId, text, transfer.images) }
+    }
+
+    private fun sendInterjection(
+        runId: String,
+        text: String,
+        images: List<AgentRuntimeWire.WireImage>,
+    ): Boolean {
         val responseLatch = CountDownLatch(1)
         val acceptedRef = AtomicReference(false)
         val clientMessenger = Messenger(
@@ -232,7 +249,7 @@ internal class AgentRuntimeClient(
         return withRuntimeMessenger(false) { serviceMessenger ->
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_SUPPLEMENT)
             msg.replyTo = clientMessenger
-            msg.data = AgentRuntimeWire.supplementBundle(runId, text)
+            msg.data = AgentRuntimeWire.supplementBundle(runId, text, images)
             serviceMessenger.send(msg)
             if (!responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 false
