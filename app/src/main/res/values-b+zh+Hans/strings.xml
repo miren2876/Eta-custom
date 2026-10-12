@@ -1095,6 +1095,7 @@
   <string name="settings_mid_run_interjection">中途插话</string>
   <string name="settings_mid_run_interjection_summary">Eta 干活时你照常打字，发送后这句会被插进正在跑的这一轮，Eta 下一次思考就能看到；关闭 = 原版行为（这期间的发送会被丢弃）。</string>
   <string name="chat_interjection_unavailable">这一轮已经结束了，消息没有发出去。再发一次即可开始新一轮。</string>
+  <string name="chat_interjection_attachments_queued">运行中不能带图片/文件插话：已保留草稿与附件，这一轮结束后会自动发出。</string>
   <string name="settings_linux_run_notification">Linux 运行通知</string>
   <string name="settings_linux_run_notification_summary">Linux 环境里有进程运行时，在通知栏显示状态并可一键退出；关闭后不显示也不探测。</string>
   <string name="linux_run_channel">Linux 运行</string>

@@ -99,6 +99,9 @@ internal class AgentAppState(
     private val runEventFlushJobs = mutableMapOf<String, Job>()
     /** 正在运行的 run 集合；替换模式最多一个，排队/并发模式可能同时存在多个。 */
     private val activeRunIds = linkedSetOf<String>()
+
+    /** 运行中带附件时按下的发送：附件没法插话，先记下来，等这一轮结束后自动发出。 */
+    private val queuedSendAfterRun = mutableSetOf<String>()
     private var currentRunJob: Job? = null
     private val persistenceLock = Any()
     private var persistenceJob: Job? = null
@@ -941,6 +944,14 @@ internal class AgentAppState(
                 pendingFileReferences.isEmpty()
             ) {
                 submitMidRunInterjection(prompt)
+            } else if (pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()) {
+                // 带图片/文件的插话运行时收不了：保留草稿与附件，等这一轮结束后自动发出。
+                selectedConversationId?.let { queuedSendAfterRun += it }
+                Toast.makeText(
+                    appContext,
+                    appContext.getString(R.string.chat_interjection_attachments_queued),
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
             return
         }
@@ -1072,6 +1083,16 @@ internal class AgentAppState(
                 }
             }
         }
+    }
+
+    /** 运行结束时补发运行期间带附件按下的消息；只在它还停在当前会话时自动发出。 */
+    private fun flushQueuedSendAfterRun(conversationId: String) {
+        if (!queuedSendAfterRun.remove(conversationId)) return
+        if (conversationId != selectedConversationId) return
+        val state = conversationsById[conversationId] ?: return
+        if (state.isStreaming) return
+        if (state.input.isBlank() && state.pendingImages.isEmpty() && state.pendingFileReferences.isEmpty()) return
+        sendCurrentMessage()
     }
 
     /** 插话未被 Runtime 接受时退回草稿并提示，避免用户输入丢失。 */
@@ -1714,6 +1735,10 @@ internal class AgentAppState(
         acknowledgeRuntimeResult: Boolean = false,
     ) {
         flushPendingRunDelta(runId)
+        // 这一轮结束后，把运行期间带附件按下的发送放出去（投到主线程队列，等状态落定再发）。
+        conversationIdForRun(runId)?.let { finishedConversationId ->
+            scope.launch(Dispatchers.Main) { flushQueuedSendAfterRun(finishedConversationId) }
+        }
         val rewriting = result.operation == AgentRuntimeWire.OP_REWRITE_REPLY || isReplyRewrite(runId)
         stopRequestedRunIds.remove(runId)
         if (runId in activeRunIds) {

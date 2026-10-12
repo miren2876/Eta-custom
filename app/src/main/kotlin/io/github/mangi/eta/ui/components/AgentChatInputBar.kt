@@ -356,18 +356,20 @@ internal fun AgentChatInputBar(
                         )
 
                         // 运行中只要有可插话的纯文本，按钮就回到发送，让用户能把话插进正在跑的这一轮；
-                        // 没有可发送内容时才显示停止。
-                        // 关闭中途插话时保持原版行为：运行中按钮仍是停止，不给出会丢消息的发送入口。
+                        // 带图片/文件时也给发送按钮——附件插不了话，但会保留到本轮结束后自动发出。
+                        // 只有开关关闭、同时没有附件时才保持原版行为：运行中按钮仍是停止，不给出会丢消息的发送入口。
                         val canInterject = Prefs.isEnabled(Prefs.Keys.AGENT_MID_RUN_INTERJECTION) &&
                             textFieldState.text.isNotBlank() &&
                             pendingImages.isEmpty() &&
                             pendingFileReferences.isEmpty()
-                        val showStopButton = isStreaming && !canInterject
+                        val hasAttachments = pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()
+                        val showStopButton = isStreaming && !canInterject && !hasAttachments
                         val submitInput = {
                             if (canSend) {
                                 dictation.cancel()
                                 val submittedText = textFieldState.text.toString()
-                                textFieldState.clearText()
+                                // 运行中带附件：草稿要留给本轮结束后的自动发送，别清空输入框。
+                                if (!(isStreaming && hasAttachments)) textFieldState.clearText()
                                 onSubmit(submittedText)
                             }
                         }

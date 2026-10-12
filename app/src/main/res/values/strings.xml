@@ -1203,6 +1203,7 @@
   <string name="settings_mid_run_interjection">Interject during a run</string>
   <string name="settings_mid_run_interjection_summary">While Eta is working you can keep typing; sending queues that message into the running turn so Eta sees it at its next thinking step. Off restores the original behavior (sends during a run are discarded).</string>
   <string name="chat_interjection_unavailable">This run already finished, so the message was not sent. Send it again to start a new turn.</string>
+  <string name="chat_interjection_attachments_queued">Attachments can\'t be sent mid-run. Kept as a draft and will be sent automatically when this run finishes.</string>
   <string name="settings_linux_run_notification">Linux run notification</string>
   <string name="settings_linux_run_notification_summary">Show a notification while processes are running inside the Linux environment, with a one-tap exit. Off restores the original behavior (nothing shown, nothing probed).</string>
   <string name="linux_run_channel">Linux run</string>
