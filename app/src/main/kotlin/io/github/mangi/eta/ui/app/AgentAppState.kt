@@ -938,14 +938,35 @@ internal class AgentAppState(
         if (homeState.isStreaming) {
             // 中途插话：运行期间照常发送，把这句排进正在跑的这一轮，下一次思考即可看到；
             // 关闭开关时保持原版行为（这期间的发送会被丢弃）。
-            if (
-                agentBooleanForUi(Prefs.Keys.AGENT_MID_RUN_INTERJECTION) &&
-                pendingImages.isEmpty() &&
-                pendingFileReferences.isEmpty()
-            ) {
-                submitMidRunInterjection(prompt)
+            if (agentBooleanForUi(Prefs.Keys.AGENT_MID_RUN_INTERJECTION)) {
+                if (pendingImages.isEmpty() && pendingFileReferences.isEmpty()) {
+                    submitMidRunInterjection(prompt)
+                } else {
+                    // 附件插话：插话通道只收文本，先把附件暂存成路径，再随文本一起插进这一轮。
+                    val images = pendingImages
+                    val references = pendingFileReferences
+                    scope.launch(Dispatchers.Main) {
+                        val note = AgentInterjectionAttachments.describe(appContext, images, references)
+                        if (note.isBlank()) {
+                            // 暂存不成功：退回「本轮结束后自动发出」，不丢草稿与附件。
+                            selectedConversationId?.let { queuedSendAfterRun += it }
+                            Toast.makeText(
+                                appContext,
+                                appContext.getString(R.string.chat_interjection_attachments_queued),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            submitMidRunInterjection(
+                                text = listOf(prompt, note).filter { it.isNotBlank() }.joinToString("\n"),
+                                restoreText = prompt,
+                                restoreImages = images,
+                                restoreFiles = references,
+                            )
+                        }
+                    }
+                }
             } else if (pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()) {
-                // 带图片/文件的插话运行时收不了：保留草稿与附件，等这一轮结束后自动发出。
+                // 关闭插话开关：保留草稿与附件，等这一轮结束后自动发出。
                 selectedConversationId?.let { queuedSendAfterRun += it }
                 Toast.makeText(
                     appContext,
@@ -1062,7 +1083,12 @@ internal class AgentAppState(
      * UserSupplementReceived 事件把消息插入会话；被拒绝（run 刚好结束等）时
      * 把草稿放回输入框并提示，不静默丢失内容。
      */
-    private fun submitMidRunInterjection(prompt: String) {
+    private fun submitMidRunInterjection(
+        text: String,
+        restoreText: String = text,
+        restoreImages: List<PendingImageUi> = emptyList(),
+        restoreFiles: List<PendingFileReferenceUi> = emptyList(),
+    ) {
         val runId = activeRunIds.firstOrNull { conversationIdForRun(it) == selectedConversationId } ?: return
         val conversationId = conversationIdForRun(runId) ?: return
         if (conversationId != selectedConversationId) return
@@ -1076,10 +1102,10 @@ internal class AgentAppState(
         persistConversations()
         scope.launch(Dispatchers.IO) {
             val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger)
-                .interjectRun(runId, prompt)
+                .interjectRun(runId, text)
             if (!accepted) {
                 withContext(Dispatchers.Main) {
-                    restoreInterjectionDraft(conversationId, prompt)
+                    restoreInterjectionDraft(conversationId, restoreText, restoreImages, restoreFiles)
                 }
             }
         }
@@ -1096,12 +1122,21 @@ internal class AgentAppState(
     }
 
     /** 插话未被 Runtime 接受时退回草稿并提示，避免用户输入丢失。 */
-    private fun restoreInterjectionDraft(conversationId: String, prompt: String) {
+    private fun restoreInterjectionDraft(
+        conversationId: String,
+        prompt: String,
+        images: List<PendingImageUi> = emptyList(),
+        files: List<PendingFileReferenceUi> = emptyList(),
+    ) {
         val state = conversationsById[conversationId] ?: return
         if (state.input.isBlank()) {
             updateConversation(
                 conversationId = conversationId,
-                state = state.copy(input = prompt),
+                state = state.copy(
+                    input = prompt,
+                    pendingImages = images.ifEmpty { state.pendingImages },
+                    pendingFileReferences = files.ifEmpty { state.pendingFileReferences },
+                ),
                 updateTimestamp = false,
             )
         }
