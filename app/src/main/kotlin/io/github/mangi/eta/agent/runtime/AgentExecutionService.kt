@@ -77,7 +77,14 @@ internal class AgentExecutionService : Service() {
         } else if (intent?.action == LinuxRunMonitor.ACTION_EXIT_LINUX) {
             // 结束 Linux 进程要走 root shell，绝不能占在主线程上等（否则整个 App 冻住）。
             LinuxRunMonitor.requestExit()
-            if (!foregroundActive) stopSelf(startId)
+            // 处理完就把自己收掉：这个动作的 PendingIntent 指向本服务，onCreate 里
+            // ensureForeground() 会先发一条「0 项任务正在运行」的通知；没有别的租约时
+            // 必须 stopForeground + stopSelf，否则那条通知会一直挂着。
+            if (leases.count() == 0) {
+                foregroundActive = false
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+            }
         } else {
             ensureForeground()
             refreshNotification()
