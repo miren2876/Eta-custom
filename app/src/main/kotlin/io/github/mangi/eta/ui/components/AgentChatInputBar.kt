@@ -177,6 +177,20 @@ internal fun AgentChatInputBar(
         }
     }
 
+    // 运行中带附件的插话被接受后，业务状态会清空附件；这时要把本地输入框一起清掉，
+    // 否则文字会留在框里（补丁 15 为了「排队等本轮结束再发」特意没有清）。
+    // 仍在排队（附件没被消费）的场景不动，草稿继续可见。
+    var hadAttachments by remember {
+        mutableStateOf(pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty())
+    }
+    LaunchedEffect(pendingImages.size, pendingFileReferences.size, isStreaming) {
+        val hasAttachments = pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()
+        if (hadAttachments && !hasAttachments && isStreaming) {
+            textFieldState.clearText()
+        }
+        hadAttachments = hasAttachments
+    }
+
     LaunchedEffect(isStreaming, isCompacting) {
         if (isStreaming && !isCompacting) {
             // 发送按钮、建议词和外部恢复都可能启动流式任务，统一清掉本地草稿。
