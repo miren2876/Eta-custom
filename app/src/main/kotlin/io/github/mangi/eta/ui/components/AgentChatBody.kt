@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import io.github.mangi.eta.agent.prompt.AgentUserPrompt
 import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -158,6 +159,7 @@ internal fun AgentChatBody(
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     characterName: String? = null,
+    conversationId: String? = null,
     isDrawerOpen: Boolean = false,
     scrollToTopRequest: Int = 0,
     modifier: Modifier = Modifier,
@@ -221,6 +223,7 @@ internal fun AgentChatBody(
             hasMessages = visibleMessages.isNotEmpty(),
             scrollToTopRequest = scrollToTopRequest,
             scrollState = scrollState,
+            conversationId = conversationId,
             input = input,
             modelPickerState = modelPickerState,
             isCompacting = isCompacting,
@@ -274,6 +277,7 @@ private fun AgentChatScaffold(
     hasMessages: Boolean,
     scrollToTopRequest: Int,
     scrollState: LazyListState,
+    conversationId: String?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
@@ -331,6 +335,7 @@ private fun AgentChatScaffold(
         bottomBar = {
             AgentChatBottomBar(
                 messageBackdrop = messageBackdrop.takeIf { frostEnabled },
+                conversationId = conversationId,
                 input = input,
                 modelPickerState = modelPickerState,
                 isCompacting = isCompacting,
@@ -892,6 +897,7 @@ internal fun resolveFinalResultMessageIds(
 @Composable
 private fun AgentChatBottomBar(
     messageBackdrop: LayerBackdrop?,
+    conversationId: String?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
@@ -975,7 +981,13 @@ private fun AgentChatBottomBar(
                 .navigationBarsPadding()
                 .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
-            AgentChatInputBar(
+            val promptRequests by AgentUserPrompt.state.collectAsState()
+            val pendingPrompt = promptRequests.firstOrNull {
+                it.conversationId == null || it.conversationId == conversationId
+            }
+            if (pendingPrompt != null) {
+                AgentUserPromptCardContent(pendingPrompt, Modifier.fillMaxWidth())
+            } else AgentChatInputBar(
                 input = input,
                 modelPickerState = modelPickerState,
                 isCompacting = isCompacting,

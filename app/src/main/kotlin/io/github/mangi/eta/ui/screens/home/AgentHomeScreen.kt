@@ -38,6 +38,7 @@ internal fun AgentHomeScreen(
             pendingFileReferences = state.pendingFileReferences,
             messageEdit = state.messageEdit,
             characterName = state.roleplay?.characterName,
+            conversationId = conversationKey,
             scrollToTopRequest = scrollToTopRequest,
             onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
             onCompactContext = { onAction(AgentHomeAction.CompactContext) },

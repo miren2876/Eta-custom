@@ -26,7 +26,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -55,22 +54,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 模型调用 ask_user 后这里渲染：每题可单选或多选，允许自定义文字补充，
  * 多题时用翻页显示「下一题」，也可以跳过。提交或全部跳过后结果作为工具返回值交还给模型。
  *
- * 只渲染属于当前打开会话的提问：别的会话在提问时不在这里出卡片（通知/流体云里能看到）。
- * 不属于任何会话的提问（[AgentUserPromptRequest.conversationId] 为空）保持全局显示。
+ * 调用方负责挑选属于当前会话的提问（聊天页在输入框的位置渲染本组件）。
  */
 @Composable
-internal fun AgentUserPromptCard(
-    conversationId: String? = null,
-    modifier: Modifier = Modifier,
-) {
-    val requests by AgentUserPrompt.state.collectAsState()
-    val request = requests.firstOrNull { it.conversationId == null || it.conversationId == conversationId }
-        ?: return
-    PromptCard(request = request, modifier = modifier)
-}
-
-@Composable
-private fun PromptCard(request: AgentUserPromptRequest, modifier: Modifier) {
+internal fun AgentUserPromptCardContent(request: AgentUserPromptRequest, modifier: Modifier) {
     val total = request.questions.size
     var page by remember(request.token) { mutableIntStateOf(0) }
     var collapsed by remember(request.token) { mutableStateOf(false) }
