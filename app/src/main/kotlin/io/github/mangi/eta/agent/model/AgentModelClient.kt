@@ -94,6 +94,8 @@ internal object AgentModelClient {
         skillContext: SkillContext = SkillContext.EMPTY,
         memoryContext: AgentMemoryContext = AgentMemoryContext.DISABLED,
         additionalTools: JSONArray = JSONArray(),
+        /** MCP 工具名 → 聊天里显示的名字「服务器 · 工具」；由运行时按冻结目录给出。 */
+        mcpToolLabels: Map<String, String> = emptyMap(),
         capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
         sessionId: String = java.util.UUID.randomUUID().toString(),
         compactOnly: Boolean = false,
@@ -185,6 +187,7 @@ internal object AgentModelClient {
             toolExecutor = toolExecutor,
             runController = runController,
             traceFormatter = traceFormatter,
+            mcpToolLabels = mcpToolLabels,
             onEvent = onEvent,
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,

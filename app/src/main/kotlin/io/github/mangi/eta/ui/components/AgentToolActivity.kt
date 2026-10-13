@@ -254,7 +254,13 @@ internal fun ToolGroupRow(
     var expanded by rememberSaveable(group.key) { mutableStateOf(false) }
     val running = group.running
     val latest = group.calls.last()
-    val title = toolDisplayName(group.toolName) + " · " +
+    // MCP 工具名形如 mcp_<服务器>_<工具>_<哈希>，显示名取第一条调用的摘要（「MCP · 服务器 · 工具」）。
+    val label = if (group.toolName.startsWith("mcp_")) {
+        group.calls.first().argumentsSummary.ifBlank { group.toolName }
+    } else {
+        toolDisplayName(group.toolName)
+    }
+    val title = label + " · " +
         pluralStringResource(R.plurals.tool_group_calls, group.calls.size, group.calls.size)
     val subtitle = when {
         running -> latest.argumentsSummary.takeIf(String::isNotBlank)

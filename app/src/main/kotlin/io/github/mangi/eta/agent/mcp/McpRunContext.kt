@@ -23,6 +23,11 @@ internal class McpRunSnapshot(
 ) {
     private val byModelName = tools.associateBy(McpRunTool::modelName)
 
+    /** 模型工具名 → 聊天里显示的名字「<服务器名> · <工具名>」。 */
+    val labels: Map<String, String> = tools.associate { tool ->
+        tool.modelName to (tool.server.name + " · " + tool.definition.name)
+    }
+
     fun resolve(modelName: String): McpRunTool? = byModelName[modelName]
 
     fun appendModelTools(destination: JSONArray) {

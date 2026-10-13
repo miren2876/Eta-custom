@@ -601,6 +601,52 @@ class AgentTraceFormatterTest {
         )
     }
 
+    @Test
+    fun mcpCallsShowServerAndToolAndFallBackToParsingTheModelName() {
+        val named = AgentModelClient.ToolCall("c1", "mcp_70f84c3c_get_file_contents_9c3a3138", "{}")
+        assertEquals(
+            "MCP · github · get_file_contents",
+            formatter.summarizeArguments(named, "github · get_file_contents"),
+        )
+        // 运行时没给目录信息时，至少把工具名从模型名里读出来。
+        assertEquals("MCP · get_file_contents", formatter.summarizeArguments(named))
+        assertEquals(
+            "MCP · github · search_code",
+            formatter.summarizeArguments(
+                AgentModelClient.ToolCall("c2", "mcp_70f84c3c_search_code_a41f342a", "{}"),
+                "github · search_code",
+            ),
+        )
+        assertEquals(
+            "MCP 工具",
+            formatter.summarizeArguments(AgentModelClient.ToolCall("c3", "mcp_call", "{}")),
+        )
+    }
+
+    @Test
+    fun mcpResultKeepsPreviewAndEndsWithItsConclusionLine() {
+        val summary = formatter.summarizeResult(
+            "mcp_70f84c3c_get_file_contents_9c3a3138",
+            AgentModelClient.ToolResult(
+                """{"ok":true,"server":"github","tool":"get_file_contents",""" +
+                    """"content":["line1\nline2\nline3"],"truncated":true}""",
+            ),
+        )
+        // 折叠时显示的是最后一行结论，展开后能看到正文预览。
+        assertEquals("已返回 · 17 字符 · 已截断", summary.lines().last())
+        assertTrue(summary.startsWith("line1"))
+        assertEquals(3, summary.substringBeforeLast("\n").lines().size)
+        assertEquals(
+            "失败 · MCP 工具调用失败 · code=MCP_CALL_FAILED",
+            formatter.summarizeResult(
+                "mcp_70f84c3c_get_file_contents_9c3a3138",
+                AgentModelClient.ToolResult(
+                    """{"ok":false,"code":"MCP_CALL_FAILED","message":"MCP 工具调用失败"}""",
+                ),
+            ),
+        )
+    }
+
     private data class RedactionCase(
         val toolName: String,
         val argumentsJson: String,

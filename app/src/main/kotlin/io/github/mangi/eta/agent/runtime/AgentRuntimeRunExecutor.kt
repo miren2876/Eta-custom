@@ -281,6 +281,7 @@ internal class AgentRuntimeRunExecutor(
                 skillContext = skillContext,
                 memoryContext = memoryContext,
                 additionalTools = runTools,
+                mcpToolLabels = mcpSnapshot.labels,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(

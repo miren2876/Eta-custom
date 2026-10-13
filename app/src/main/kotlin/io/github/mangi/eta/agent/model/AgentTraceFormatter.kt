@@ -7,7 +7,11 @@ import org.json.JSONObject
 
 /** 工具摘要面向用户展示，不包含敏感参数；终端命令通过独立字段提供给用户核对。 */
 internal class AgentTraceFormatter {
-    fun summarizeArguments(toolCall: AgentModelClient.ToolCall): String =
+    /** MCP 工具的显示名由运行时按冻结目录给出；其它工具不需要这个参数。 */
+    fun summarizeArguments(
+        toolCall: AgentModelClient.ToolCall,
+        mcpLabel: String? = null,
+    ): String =
         when (toolCall.name) {
             BROWSER_TOOL_NAME -> summarizeBrowserArguments(toolCall.argumentsJson)
             "web_search" -> "搜索网页"
@@ -66,6 +70,9 @@ internal class AgentTraceFormatter {
                     ?: io.github.mangi.eta.agent.context.PersonalSearchTools.searches.firstOrNull { it.name == toolCall.name }?.title
                     ?: when (toolCall.name) { "search_notes" -> "查询便签"; "search_system_memories" -> "查询系统记忆"; "read_personal_item" -> "读取检索详情"; "summarize_bills" -> "汇总账单"; else -> null }
                 when {
+                    // MCP 工具名形如 mcp_<服务器id片段>_<工具名>_<哈希>：优先用运行时给的「服务器 · 工具」。
+                    toolCall.name.startsWith(MCP_TOOL_PREFIX) || toolCall.name == MCP_CALL_TOOL ->
+                        summarizeMcpArguments(toolCall.name, mcpLabel)
                     label == null -> "准备执行"
                     toolCall.name.startsWith("search_") ->
                         summarizeQueryArguments(label, toolCall.argumentsJson)
@@ -278,6 +285,21 @@ internal class AgentTraceFormatter {
             }.joinToString(" · ")
         }.getOrDefault("更新记忆")
 
+    /** MCP 调用：显示成「MCP · 服务器 · 工具」；运行时没给目录信息就从模型名里解析工具名。 */
+    private fun summarizeMcpArguments(modelName: String, mcpLabel: String?): String {
+        val text = mcpLabel?.takeIf(String::isNotBlank) ?: parseMcpToolName(modelName)
+        if (text.isBlank()) return MCP_LABEL + " 工具"
+        return MCP_LABEL + " · " + sanitizeSummaryValue(text, MAX_MCP_LABEL_CHARS)
+    }
+
+    /** mcp_<服务器id片段>_<工具名>_<哈希> → 工具名；解析不出来返回空串。 */
+    private fun parseMcpToolName(modelName: String): String {
+        if (!modelName.startsWith(MCP_TOOL_PREFIX)) return ""
+        return modelName.removePrefix(MCP_TOOL_PREFIX)
+            .substringAfter('_')
+            .substringBeforeLast('_', missingDelimiterValue = "")
+    }
+
     /** 技能读取摘要：只带技能 id，取不到时退回工具标签；同技能的正文与资源读取摘要相同。 */
     private fun summarizeSkillArguments(label: String, argumentsJson: String): String =
         runCatching {
@@ -331,6 +353,34 @@ internal class AgentTraceFormatter {
     private fun String.askUserQuestions(): JSONArray? =
         runCatching { JSONObject(this).optJSONArray("questions") }.getOrNull()
 
+    /** MCP 结果：正文预览（最多 6 行 / 600 字符）+ 最后一行结论。 */
+    private fun summarizeMcpResult(json: JSONObject?): String {
+        val body = json?.optJSONArray("content")?.let { array ->
+            (0 until array.length())
+                .mapNotNull { index -> array.opt(index) as? String }
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .joinToString("\n")
+        }.orEmpty()
+        val conclusion = buildList {
+            add("已返回")
+            add("${body.length} 字符")
+            if (json?.optBoolean("truncated") == true) add("已截断")
+            json?.optInt("omitted_items", 0)?.takeIf { it > 0 }?.let { add("省略 $it 项") }
+        }.joinToString(" · ")
+        val lines = body.lines()
+        val preview = lines.take(MAX_MCP_PREVIEW_LINES).joinToString("\n").take(MAX_MCP_PREVIEW_CHARS)
+        val capped = lines.size > MAX_MCP_PREVIEW_LINES || preview.length < body.length
+        return buildString {
+            if (preview.isNotBlank()) {
+                append(preview)
+                if (capped) append("\n…")
+                append("\n")
+            }
+            append(conclusion)
+        }
+    }
+
     /** 结果成败供事件与 UI 状态使用，不再依赖摘要文本里的标记。 */
     fun isSuccessResult(result: AgentModelClient.ToolResult): Boolean =
         parseResultJson(result)?.optBoolean("ok", true) ?: true
@@ -347,6 +397,9 @@ internal class AgentTraceFormatter {
         }
         if (json?.optString("status") == "unconfirmed") return "操作已提交，效果未确认"
         if (!isSuccessResult(result)) return summarizeFailure(json)
+        // MCP 结果正文（文件内容、PR 正文等）取一段当预览，展开后能看到；结论放在最后一行，
+        // 折叠时显示的就是它（与终端输出同一套做法）。
+        if (toolName.startsWith(MCP_TOOL_PREFIX)) return summarizeMcpResult(json)
         return when (toolName) {
             BROWSER_TOOL_NAME -> json?.let(::summarizeBrowserResult) ?: "浏览器操作完成"
             AgentConversationToolCatalog.READ_HISTORY -> "已读取历史分页"
@@ -652,6 +705,12 @@ internal class AgentTraceFormatter {
     private companion object {
         const val BROWSER_TOOL_NAME = "browser_use"
         const val ASK_USER_LABEL = "向你提问"
+        const val MCP_TOOL_PREFIX = "mcp_"
+        const val MCP_CALL_TOOL = "mcp_call"
+        const val MCP_LABEL = "MCP"
+        const val MAX_MCP_LABEL_CHARS = 60
+        const val MAX_MCP_PREVIEW_LINES = 6
+        const val MAX_MCP_PREVIEW_CHARS = 600
         const val ANSWERED_LABEL = "已回答"
         const val SKIPPED_LABEL = "已跳过"
         const val MAX_DISPLAY_COMMAND_CHARS = 4_000
