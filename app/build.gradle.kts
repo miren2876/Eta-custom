@@ -114,6 +114,8 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // 纯 JVM 测试里没有 android.util.Log：让它返回默认值，避免「not mocked」打断用例。
+        unitTests.isReturnDefaultValues = true
         // Robolectric 在高版本 JDK 下需要访问内部 API，参数只作用于测试 JVM。
         unitTests.all {
             it.jvmArgs(
