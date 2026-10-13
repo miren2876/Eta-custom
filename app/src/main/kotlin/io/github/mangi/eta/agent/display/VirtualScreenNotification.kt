@@ -35,7 +35,7 @@ internal object VirtualScreenNotification {
         show(context, sessionId)
     }
 
-    private fun show(context: Context, sessionId: String) {
+    fun show(context: Context, sessionId: String) {
         if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED) return
         runCatching {
@@ -59,5 +59,10 @@ internal object VirtualScreenNotification {
 
     fun cancel(context: Context) {
         context.getSystemService(NotificationManager::class.java)?.cancel(ID)
+    }
+
+    /** 按会话取消：本实现用固定 ID，多会话不会并存，sessionId 只作兼容参数。 */
+    fun cancel(context: Context, sessionId: String) {
+        cancel(context)
     }
 }

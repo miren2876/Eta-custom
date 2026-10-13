@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
@@ -55,6 +56,17 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_FALLBACK_ENABLED = booleanPreferencesKey("virtual_screen_fallback_enabled")
     private val VIRTUAL_SCREEN_AUTO_RESTART_APPS = booleanPreferencesKey("virtual_screen_auto_restart_apps")
     private val VIRTUAL_SCREEN_IDLE_TIMEOUT = intPreferencesKey("virtual_screen_idle_timeout_minutes")
+    private val VIRTUAL_SCREEN_FRAME_RATE = intPreferencesKey("virtual_screen_frame_rate")
+    private val VIRTUAL_SCREEN_FAVORITE_APPS = stringSetPreferencesKey("virtual_screen_favorite_apps")
+    private val VIRTUAL_SCREEN_FLOAT_WINDOW = booleanPreferencesKey("virtual_screen_float_window")
+    private val VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE = booleanPreferencesKey("virtual_screen_float_edge_collapse")
+    private val VIRTUAL_SCREEN_FLOAT_WIDTH = intPreferencesKey("virtual_screen_float_width_dp")
+    private val VIRTUAL_SCREEN_FLOAT_HEIGHT = intPreferencesKey("virtual_screen_float_height_dp")
+    private val VIRTUAL_SCREEN_FLOAT_ALPHA = floatPreferencesKey("virtual_screen_float_alpha")
+    private val VIRTUAL_SCREEN_FLOAT_POS_X = intPreferencesKey("virtual_screen_float_pos_x")
+    private val VIRTUAL_SCREEN_FLOAT_POS_Y = intPreferencesKey("virtual_screen_float_pos_y")
+    private val VIRTUAL_SCREEN_FLOAT_BUBBLE_SIDE = intPreferencesKey("virtual_screen_float_bubble_side")
+    private val VIRTUAL_SCREEN_FLOAT_BUBBLE_Y = intPreferencesKey("virtual_screen_float_bubble_y")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -121,7 +133,36 @@ internal object SettingsDataStore {
             prefs[VIRTUAL_SCREEN_FALLBACK_ENABLED] = updated.virtualScreenFallbackEnabled
             prefs[VIRTUAL_SCREEN_AUTO_RESTART_APPS] = updated.virtualScreenAutoRestartApps
             prefs[VIRTUAL_SCREEN_IDLE_TIMEOUT] = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(updated.virtualScreenIdleTimeoutMinutes)
+            prefs[VIRTUAL_SCREEN_FRAME_RATE] = io.github.mangi.eta.data.model.VirtualScreenFrameRate.normalize(updated.virtualScreenFrameRate)
+            prefs[VIRTUAL_SCREEN_FLOAT_WINDOW] = updated.virtualScreenFloatWindowEnabled
+            prefs[VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE] = updated.virtualScreenFloatEdgeCollapseEnabled
+            prefs[VIRTUAL_SCREEN_FLOAT_WIDTH] = updated.virtualScreenFloatWindowWidthDp
+            prefs[VIRTUAL_SCREEN_FLOAT_HEIGHT] = updated.virtualScreenFloatWindowHeightDp
+            prefs[VIRTUAL_SCREEN_FLOAT_ALPHA] = updated.virtualScreenFloatWindowAlpha
+            prefs[VIRTUAL_SCREEN_FLOAT_POS_X] = updated.virtualScreenFloatWindowPosX
+            prefs[VIRTUAL_SCREEN_FLOAT_POS_Y] = updated.virtualScreenFloatWindowPosY
+            prefs[VIRTUAL_SCREEN_FLOAT_BUBBLE_SIDE] = updated.virtualScreenFloatWindowBubbleSide
+            prefs[VIRTUAL_SCREEN_FLOAT_BUBBLE_Y] = updated.virtualScreenFloatWindowBubbleY
             prefs.putAppearance(updated.appearance.normalized())
+        }
+    }
+
+    /** 虚拟屏应用菜单的收藏（按包名保存，跨会话保留）。 */
+    suspend fun favoriteApps(): Set<String> {
+        ensureInitialized()
+        return dataStore.data.first()[VIRTUAL_SCREEN_FAVORITE_APPS] ?: emptySet()
+    }
+
+    fun favoriteAppsFlow(): Flow<Set<String>> {
+        ensureInitialized()
+        return dataStore.data.map { it[VIRTUAL_SCREEN_FAVORITE_APPS] ?: emptySet() }
+    }
+
+    suspend fun setFavoriteApps(packages: Set<String>) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            if (packages.isEmpty()) prefs.remove(VIRTUAL_SCREEN_FAVORITE_APPS)
+            else prefs[VIRTUAL_SCREEN_FAVORITE_APPS] = packages
         }
     }
 
@@ -252,6 +293,17 @@ internal object SettingsDataStore {
         virtualScreenFallbackEnabled = this[VIRTUAL_SCREEN_FALLBACK_ENABLED] ?: false,
         virtualScreenAutoRestartApps = this[VIRTUAL_SCREEN_AUTO_RESTART_APPS] ?: false,
         virtualScreenIdleTimeoutMinutes = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(this[VIRTUAL_SCREEN_IDLE_TIMEOUT] ?: 20),
+        virtualScreenFrameRate = io.github.mangi.eta.data.model.VirtualScreenFrameRate.normalize(this[VIRTUAL_SCREEN_FRAME_RATE] ?: 60),
+        virtualScreenFloatWindowEnabled = this[VIRTUAL_SCREEN_FLOAT_WINDOW] ?: false,
+        virtualScreenFloatEdgeCollapseEnabled = this[VIRTUAL_SCREEN_FLOAT_EDGE_COLLAPSE] ?: true,
+        virtualScreenFloatWindowWidthDp = this[VIRTUAL_SCREEN_FLOAT_WIDTH] ?: 0,
+        virtualScreenFloatWindowHeightDp = this[VIRTUAL_SCREEN_FLOAT_HEIGHT] ?: 0,
+        virtualScreenFloatWindowAlpha = this[VIRTUAL_SCREEN_FLOAT_ALPHA] ?: 0.85f,
+        virtualScreenFloatWindowPosX = this[VIRTUAL_SCREEN_FLOAT_POS_X] ?: 16,
+        virtualScreenFloatWindowPosY = this[VIRTUAL_SCREEN_FLOAT_POS_Y] ?: 120,
+        virtualScreenFloatWindowBubbleSide = (this[VIRTUAL_SCREEN_FLOAT_BUBBLE_SIDE] ?: 0)
+            .takeIf { it in 0..1 } ?: 0,
+        virtualScreenFloatWindowBubbleY = this[VIRTUAL_SCREEN_FLOAT_BUBBLE_Y] ?: -1,
         appearance = AppearanceSettings(
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
             monetEnabled = this[APPEARANCE_MONET_ENABLED] ?: false,

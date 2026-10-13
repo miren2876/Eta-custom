@@ -1532,4 +1532,27 @@
   <string name="state_ui_memory_archive_failed">Archive failed</string>
   <string name="state_ui_memory_archive_restored">Archive restored</string>
   <string name="state_ui_memory_archive_restore_failed">Restoring the archive failed</string>
+    <string name="virtual_screen_action_close">Close</string>
+    <string name="virtual_screen_action_fullscreen">Fullscreen</string>
+    <string name="virtual_screen_action_normal">Normal size</string>
+    <string name="virtual_screen_action_shrink">Shrink</string>
+    <string name="virtual_screen_action_minimize">Minimize</string>
+    <string name="virtual_screen_ready">Ready</string>
+    <string name="virtual_screen_search_hint">Search apps</string>
+    <string name="virtual_screen_search_empty">No app matches &quot;%1$s&quot;</string>
+    <string name="virtual_screen_favorites">Favorites</string>
+    <string name="virtual_screen_all_apps">All apps</string>
+    <string name="virtual_screen_favorite_hint">Tap the star to pin up to 3 apps; pinned apps also show in the Eta top bar</string>
+    <string name="virtual_screen_favorite_limit">Up to %1$d pinned apps</string>
+    <string name="virtual_screen_apps">Apps</string>
+    <string name="virtual_screen_apps_empty">No launchable app found.</string>
+    <string name="virtual_screen_manual_open">Virtual screen</string>
+    <string name="virtual_screen_manual_view">Virtual screen</string>
+    <string name="virtual_screen_open_menu">Open virtual screen</string>
+    <string name="virtual_screen_manual_description">Open the virtual screen and pick an app to run in it</string>
+    <string name="virtual_screen_manual_failed">Could not open the virtual screen; check Root and the virtual screen switch</string>
+    <string name="virtual_screen_frame_rate">Frame rate</string>
+    <string name="virtual_screen_frame_rate_summary">60-90 fps; higher is smoother and uses more power</string>
+    <string name="virtual_screen_float_window_title">Floating window</string>
+    <string name="virtual_screen_float_window_summary">Show a draggable mini window while the virtual screen runs; drag it to the screen edge to collapse</string>
 </resources>

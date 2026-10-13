@@ -1471,4 +1471,27 @@
   <string name="state_ui_memory_archive_failed">封存失敗</string>
   <string name="state_ui_memory_archive_restored">已還原封存內容</string>
   <string name="state_ui_memory_archive_restore_failed">還原封存失敗</string>
+    <string name="virtual_screen_action_close">關閉</string>
+    <string name="virtual_screen_action_fullscreen">全螢幕</string>
+    <string name="virtual_screen_action_normal">一般大小</string>
+    <string name="virtual_screen_action_shrink">縮小</string>
+    <string name="virtual_screen_action_minimize">最小化</string>
+    <string name="virtual_screen_ready">就緒</string>
+    <string name="virtual_screen_search_hint">搜尋應用</string>
+    <string name="virtual_screen_search_empty">沒有符合「%1$s」的應用</string>
+    <string name="virtual_screen_favorites">收藏</string>
+    <string name="virtual_screen_all_apps">全部應用</string>
+    <string name="virtual_screen_favorite_hint">點卡片右側 ☆ 收藏（最多 3 個），收藏後會出現在 Eta 頂欄，可直接點開</string>
+    <string name="virtual_screen_favorite_limit">最多收藏 %1$d 個應用</string>
+    <string name="virtual_screen_apps">應用</string>
+    <string name="virtual_screen_apps_empty">沒有可啟動的應用。</string>
+    <string name="virtual_screen_manual_open">虛擬螢幕</string>
+    <string name="virtual_screen_manual_view">虛擬螢幕</string>
+    <string name="virtual_screen_open_menu">開啟虛擬屏</string>
+    <string name="virtual_screen_manual_description">手動開啟虛擬螢幕並選擇要在裡面執行的應用</string>
+    <string name="virtual_screen_manual_failed">無法開啟虛擬螢幕：請確認 Root 與虛擬螢幕開關</string>
+    <string name="virtual_screen_frame_rate">影格率</string>
+    <string name="virtual_screen_frame_rate_summary">60-90 幀；越高越流暢、越耗電</string>
+    <string name="virtual_screen_float_window_title">虛擬螢幕懸浮小窗</string>
+    <string name="virtual_screen_float_window_summary">虛擬螢幕啟動時自動彈出可拖曳小窗，拖到螢幕邊緣自動折疊</string>
 </resources>

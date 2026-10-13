@@ -504,9 +504,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             return
         }
         addActiveSession(session)
-        if (usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)) {
-            removeOverlayWindows()
-        }
+        // 虚拟屏路由下不再撤掉悬浮胶囊：胶囊要始终输出运行状态（与 02 层定制一致）。
         lastCompletedRunContext = null
         runCatching {
             startService(Intent(this, AgentRuntimeService::class.java).setAction(ACTION_KEEP_ALIVE))
@@ -590,7 +588,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val virtualScreenEnabled = (revealsOperation || dismissesEntrySurface || event is AgentEvent.ToolStarted) &&
             runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
         val virtualUi = usesVirtualUi(session, virtualScreenEnabled)
-        val revealsForegroundOperation = !virtualUi && revealsOperation
         val requiresEntrySurfaceDismissal = !virtualUi && dismissesEntrySurface
         val entrySurfaceReady = if (requiresEntrySurfaceDismissal && entrySurfaceGuard != null) {
             runCatching { entrySurfaceGuard.dismissOnce() }.getOrDefault(false)
@@ -599,7 +596,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         mainHandler.post {
             if (!isActiveSession(session)) return@post
-            if (usesVirtualUi(session, virtualScreenEnabled)) removeOverlayWindows()
             if (
                 !virtualUi && AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
@@ -611,7 +607,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (session.isTerminal) return@post
             runCatching {
                 state.value = state.value.applyEvent(event)
-                if (revealsForegroundOperation && entrySurfaceReady) {
+                if (revealsOperation && entrySurfaceReady) {
                     if (capsuleView == null) {
                         AgentHapticFeedback.perform(
                             this,
@@ -1069,9 +1065,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
 
     private fun showOverlay() {
-        if (activeSession?.let { session ->
-                usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
-            } == true) return
         if (capsuleView != null) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return

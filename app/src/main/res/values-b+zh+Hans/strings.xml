@@ -1512,4 +1512,27 @@
   <string name="state_ui_memory_archive_failed">归档失败</string>
   <string name="state_ui_memory_archive_restored">已恢复归档内容</string>
   <string name="state_ui_memory_archive_restore_failed">恢复归档失败</string>
+    <string name="virtual_screen_action_close">关闭</string>
+    <string name="virtual_screen_action_fullscreen">全屏</string>
+    <string name="virtual_screen_action_normal">常规大小</string>
+    <string name="virtual_screen_action_shrink">缩小</string>
+    <string name="virtual_screen_action_minimize">最小化</string>
+    <string name="virtual_screen_ready">就绪</string>
+    <string name="virtual_screen_search_hint">搜索应用</string>
+    <string name="virtual_screen_search_empty">没有匹配「%1$s」的应用</string>
+    <string name="virtual_screen_favorites">收藏</string>
+    <string name="virtual_screen_all_apps">全部应用</string>
+    <string name="virtual_screen_favorite_hint">点卡片右侧 ☆ 收藏（最多 3 个），收藏后会出现在 Eta 顶栏，可直接点开</string>
+    <string name="virtual_screen_favorite_limit">最多收藏 %1$d 个应用</string>
+    <string name="virtual_screen_apps">应用</string>
+    <string name="virtual_screen_apps_empty">没有可启动的应用。</string>
+    <string name="virtual_screen_manual_open">虚拟屏</string>
+    <string name="virtual_screen_manual_view">虚拟屏</string>
+    <string name="virtual_screen_open_menu">打开虚拟屏</string>
+    <string name="virtual_screen_manual_description">手动打开虚拟屏并选择要跑在里面的应用</string>
+    <string name="virtual_screen_manual_failed">打不开虚拟屏：请确认 Root 与虚拟屏开关</string>
+    <string name="virtual_screen_frame_rate">帧率</string>
+    <string name="virtual_screen_frame_rate_summary">60-90 帧；越高越流畅、越耗电</string>
+    <string name="virtual_screen_float_window_title">虚拟屏幕悬浮小窗</string>
+    <string name="virtual_screen_float_window_summary">虚拟屏启动时自动弹出可拖拽小窗，拖到屏幕边缘自动折叠</string>
 </resources>

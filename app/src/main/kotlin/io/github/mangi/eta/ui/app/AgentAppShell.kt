@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.MiuixBackButton
 import io.github.mangi.eta.ui.components.TopBarBackdrop
+import io.github.mangi.eta.ui.components.rememberVirtualScreenMenuAction
 import io.github.mangi.eta.ui.components.captureForTopBar
 import io.github.mangi.eta.ui.components.rememberTopBarBackdrop
 import io.github.mangi.eta.ui.components.topBarContainerColor
@@ -217,6 +219,8 @@ private fun AgentTopBar(
             MiuixBackButton(onClick = onBack)
         }
     }
+    // 虚拟屏入口放进「···」菜单；虚拟屏未启用时返回 null，菜单项不显示。
+    val onOpenVirtualScreen = rememberVirtualScreenMenuAction()
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
             TopBarOverflowMenu(
@@ -228,6 +232,7 @@ private fun AgentTopBar(
                 onStopKimiWeb = onStopKimiWeb,
                 onRefreshKimiWeb = onRefreshKimiWeb,
                 onOpenBrowser = onOpenBrowser,
+                onOpenVirtualScreen = onOpenVirtualScreen,
             )
         }
     }
@@ -292,6 +297,7 @@ private fun TopBarOverflowMenu(
     onStopKimiWeb: () -> Unit,
     onRefreshKimiWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenVirtualScreen: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     Box {
@@ -312,13 +318,16 @@ private fun TopBarOverflowMenu(
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
+            val openVirtualScreenText = stringResource(R.string.virtual_screen_open_menu)
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
                 launchKimiWebText,
                 openBrowserText,
                 stopKimiWebText,
+                openVirtualScreenText,
                 canStopKimiWeb,
+                onOpenVirtualScreen,
             ) {
                 listOf(
                     DropdownItem(
@@ -361,7 +370,27 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                ) + if (canStopKimiWeb) listOf(DropdownItem(text = stopKimiWebText)) else emptyList()
+                ) + (if (onOpenVirtualScreen != null) listOf(
+                    DropdownItem(
+                        text = openVirtualScreenText,
+                        icon = { modifier ->
+                            Icon(
+                                imageVector = Icons.Rounded.Smartphone,
+                                contentDescription = null,
+                                modifier = modifier.size(TopBarMenuIconSize),
+                            )
+                        },
+                    ),
+                ) else emptyList()) + (if (canStopKimiWeb) listOf(DropdownItem(text = stopKimiWebText)) else emptyList())
+            }
+            // 菜单项与动作一一对应：加了「打开虚拟屏」后索引不再固定，改为按列表分派。
+            val menuActions: List<() -> Unit> = buildList {
+                add(onNewConversation)
+                add(onOpenTerminal)
+                add(onLaunchKimiWeb)
+                add(onOpenBrowser)
+                if (onOpenVirtualScreen != null) add(onOpenVirtualScreen)
+                if (canStopKimiWeb) add(onStopKimiWeb)
             }
             ListPopupColumn {
                 menuItems.forEachIndexed { index, item ->
@@ -372,13 +401,7 @@ private fun TopBarOverflowMenu(
                         index = index,
                         onSelectedIndexChange = {
                             showMenu = false
-                            when (index) {
-                                0 -> onNewConversation()
-                                1 -> onOpenTerminal()
-                                2 -> onLaunchKimiWeb()
-                                3 -> onOpenBrowser()
-                                4 -> onStopKimiWeb()
-                            }
+                            menuActions.getOrNull(index)?.invoke()
                         },
                     )
                 }
@@ -386,6 +409,7 @@ private fun TopBarOverflowMenu(
         }
     }
 }
+
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
