@@ -455,6 +455,12 @@
     <item quantity="other">已完成 %d 个步骤</item>
   </plurals>
   <string name="work_completed">已完成分析</string>
+  <string name="work_skill_body">已加载技能正文</string>
+  <string name="work_skill_resources">已读取 %1$d 个资源</string>
+  <string name="work_memory_review_new">记忆整理 · 新建了档案《%1$s》</string>
+  <string name="work_memory_review_appended">记忆整理 · 已追加到《%1$s》</string>
+  <string name="work_memory_review_none">记忆整理 · 无需记录</string>
+  <string name="tool_ask_user_waiting">等待你选择</string>
   <string name="tool_elapsed_seconds">%1$d 秒</string>
   <plurals name="tool_group_calls">
     <item quantity="other">%d 次</item>

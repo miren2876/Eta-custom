@@ -104,8 +104,8 @@ class AgentTraceFormatterTest {
             ),
             RedactionCase(
                 toolName = "memory_write",
-                argumentsJson = """{"mode":"append","revision":"secret-revision","content":"private memory"}""",
-                expectedParts = listOf("更新记忆", "追加", "行", "字节"),
+                argumentsJson = """{"target":"entry","mode":"append","revision":"secret-revision","content":"private memory"}""",
+                expectedParts = listOf("追加条目", "行", "字节"),
                 sensitiveParts = listOf("secret-revision", "private memory"),
             ),
         )
@@ -507,6 +507,98 @@ class AgentTraceFormatterTest {
         assertTrue(previewLines.size <= 5)
         assertTrue(summary.endsWith("…"))
         assertTrue(summary.length < longOutput.length)
+    }
+
+    @Test
+    fun skillReadsShareOneTitleSoTheSameSkillMergesIntoOneNode() {
+        val read = formatter.summarizeArguments(AgentModelClient.ToolCall(
+            "s1", "skills_read", """{"skillId":"ponytail","maxChars":16000}""",
+        ))
+        val resource = formatter.summarizeArguments(AgentModelClient.ToolCall(
+            "s2", "skills_read_resource", """{"skillId":"ponytail","relativePath":"references/guide.md"}""",
+        ))
+        assertEquals("技能 · ponytail", read)
+        // 同一技能的正文与资源读取摘要一致，聊天流据此合并成一条节点。
+        assertEquals(read, resource)
+        assertEquals(
+            "读取技能",
+            formatter.summarizeArguments(AgentModelClient.ToolCall("s3", "skills_read", "{}")),
+        )
+        assertEquals(
+            "查看技能列表",
+            formatter.summarizeArguments(AgentModelClient.ToolCall("l1", "skills_list", "{}")),
+        )
+    }
+
+    @Test
+    fun askUserArgumentsShowFirstQuestionAndCount() {
+        val single = formatter.summarizeArguments(AgentModelClient.ToolCall(
+            "a1",
+            "ask_user",
+            """{"questions":[{"question":"要不要现在装？","options":[{"title":"装"},{"title":"不装"}]}]}""",
+        ))
+        assertEquals("向你提问 · 要不要现在装？", single)
+        val multi = formatter.summarizeArguments(AgentModelClient.ToolCall(
+            "a2",
+            "ask_user",
+            """{"questions":[{"question":"要不要现在装？","options":[{"title":"装"},{"title":"不装"}]},""" +
+                """{"question":"第二题","options":[{"title":"A"},{"title":"B"}]}]}""",
+        ))
+        assertEquals("向你提问 · 要不要现在装？ · 共 2 题", multi)
+        assertEquals(
+            "向你提问",
+            formatter.summarizeArguments(AgentModelClient.ToolCall("a3", "ask_user", "{}")),
+        )
+    }
+
+    @Test
+    fun askUserResultSummarizesAnswerSkipAndProgress() {
+        assertEquals(
+            "已回答 · 打开微信",
+            formatter.summarizeResult(
+                "ask_user",
+                AgentModelClient.ToolResult(
+                    """{"ok":true,"answers":[{"id":"q1","selected":["a"],"selected_titles":["打开微信"],""" +
+                        """"custom":"","skipped":false}]}""",
+                ),
+            ),
+        )
+        // 多题：一题跳过一题作答 → 只列作答的标题，并带上进度。
+        assertEquals(
+            "已回答 · 打开微信 · 已答 1/2 题",
+            formatter.summarizeResult(
+                "ask_user",
+                AgentModelClient.ToolResult(
+                    """{"ok":true,"answers":[{"id":"q1","selected":["a"],"selected_titles":["打开微信"],""" +
+                        """"custom":"","skipped":false},{"id":"q2","selected":[],"selected_titles":[],""" +
+                        """"custom":"","skipped":true}]}""",
+                ),
+            ),
+        )
+        // 只填了自定义回答也算作答。
+        assertEquals(
+            "已回答 · 顺带清一下",
+            formatter.summarizeResult(
+                "ask_user",
+                AgentModelClient.ToolResult(
+                    """{"ok":true,"answers":[{"id":"q1","selected":[],"selected_titles":[],""" +
+                        """"custom":"顺带清一下","skipped":false}]}""",
+                ),
+            ),
+        )
+        assertEquals(
+            "已跳过",
+            formatter.summarizeResult(
+                "ask_user",
+                AgentModelClient.ToolResult(
+                    """{"ok":true,"answers":[{"id":"q1","selected":[],"selected_titles":[],"custom":"","skipped":true}]}""",
+                ),
+            ),
+        )
+        assertEquals(
+            "已回答",
+            formatter.summarizeResult("ask_user", AgentModelClient.ToolResult("""{"ok":true}""")),
+        )
     }
 
     private data class RedactionCase(

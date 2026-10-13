@@ -6,6 +6,7 @@ import android.app.Service
 import android.app.ActivityOptions
 import android.app.PendingIntent
 import io.github.mangi.eta.ui.MainActivity
+import io.github.mangi.eta.ui.model.SystemNoticeCode
 import android.os.Build
 import android.content.Context
 import android.content.Intent
@@ -1449,21 +1450,32 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     cancelDelayed = { action -> service.mainHandler.removeCallbacks(action) },
                     launchReview = { _, prompt -> service.startMemoryReviewRun(prompt) },
                     trace = { line -> service.traceIdleReview(line) },
-                    notifyOutcome = { kind, name ->
+                    notifyOutcome = { code, name, sessionKey ->
                         AgentExecutionService.postMemoryReviewResult(
                             service,
-                            when (kind) {
-                                "new" -> service.getString(
+                            when (code) {
+                                SystemNoticeCode.MemoryReviewNew -> service.getString(
                                     io.github.mangi.eta.R.string.memory_review_done_new,
                                     name.orEmpty(),
                                 )
-                                "append" -> service.getString(
+                                SystemNoticeCode.MemoryReviewAppended -> service.getString(
                                     io.github.mangi.eta.R.string.memory_review_done_append,
                                     name.orEmpty(),
                                 )
                                 else -> service.getString(io.github.mangi.eta.R.string.memory_review_done_none)
                             },
                         )
+                        // 流体云之外再给发起整理的会话留一条节点；整理 run 不属于任何会话时丢弃。
+                        sessionKey?.takeIf(String::isNotBlank)?.let { conversationId ->
+                            AgentMemoryIdleReview.publishOutcome(
+                                AgentMemoryReviewOutcome(
+                                    token = java.util.UUID.randomUUID().toString(),
+                                    conversationId = conversationId,
+                                    code = code,
+                                    detail = name,
+                                ),
+                            )
+                        }
                     },
                 ).also { instance -> idleReviewInstance = instance }
             }

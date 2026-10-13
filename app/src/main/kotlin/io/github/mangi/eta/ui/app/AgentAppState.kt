@@ -33,6 +33,8 @@ import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
+import io.github.mangi.eta.agent.runtime.AgentMemoryIdleReview
+import io.github.mangi.eta.agent.runtime.AgentMemoryReviewOutcome
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
@@ -156,6 +158,7 @@ internal class AgentAppState(
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
+        observeMemoryReviewOutcomes()
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -912,6 +915,7 @@ internal class AgentAppState(
                 noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
                 noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
                 noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
+                noticeMemoryReview = noticeText(SystemNoticeCode.MemoryReviewNew),
             ),
         )
     }
@@ -924,6 +928,10 @@ internal class AgentAppState(
             SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
             SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
             SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+            SystemNoticeCode.MemoryReviewNew,
+            SystemNoticeCode.MemoryReviewAppended,
+            SystemNoticeCode.MemoryReviewNone,
+                -> R.string.memory_review_done_title
         },
     )
 
@@ -1941,6 +1949,34 @@ internal class AgentAppState(
         if (conversationId == selectedConversationId) {
             homeState = state
         }
+    }
+
+    /**
+     * 记忆整理跑完后的结论由运行时广播：向发起整理的会话注入一条节点。
+     * 会话不在内存里（已删除，或 run 本来就没有会话归属）时丢弃，绝不写到别的会话。
+     */
+    private fun observeMemoryReviewOutcomes() {
+        scope.launch(Dispatchers.Main) {
+            AgentMemoryIdleReview.outcomes.collect { pending ->
+                pending.forEach { outcome -> appendMemoryReviewOutcome(outcome) }
+            }
+        }
+    }
+
+    private fun appendMemoryReviewOutcome(outcome: AgentMemoryReviewOutcome) {
+        val state = conversationsById[outcome.conversationId]
+        AgentMemoryIdleReview.acknowledgeOutcome(outcome)
+        if (state == null) return
+        // 消息 id 由结论自带：即使广播被重放，同一结论也只注入一次。
+        val message = SystemNoticeMessageUi(
+            id = "memory-review-${outcome.token}",
+            code = outcome.code,
+            detail = outcome.detail,
+        )
+        if (state.messages.any { it.id == message.id }) return
+        updateConversation(outcome.conversationId, state.copy(messages = state.messages + message))
+        refreshConversationSummaries()
+        persistConversations()
     }
 
     private fun setConversationStreaming(runId: String, isStreaming: Boolean) {

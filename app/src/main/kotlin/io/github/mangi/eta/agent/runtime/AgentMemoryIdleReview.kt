@@ -3,6 +3,21 @@ package io.github.mangi.eta.agent.runtime
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.ui.model.SystemNoticeCode
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * 整理 run 完成后的结论：交给聊天流在发起整理的会话里注入一条节点。
+ * 流体云通知由通知层另外单独发出，两者互不替代。
+ */
+internal data class AgentMemoryReviewOutcome(
+    val token: String,
+    val conversationId: String,
+    val code: SystemNoticeCode,
+    val detail: String?,
+)
 
 /**
  * 记忆「空闲审查」：run 结束后按**确定性打分**判断这次值不值得整理，
@@ -16,7 +31,8 @@ internal class AgentMemoryIdleReview(
     private val cancelDelayed: (Runnable) -> Unit,
     private val launchReview: (sessionKey: String, prompt: String) -> Unit,
     private val trace: (String) -> Unit = {},
-    private val notifyOutcome: (kind: String, name: String?) -> Unit = { _, _ -> },
+    private val notifyOutcome: (code: SystemNoticeCode, name: String?, sessionKey: String?) -> Unit =
+        { _, _, _ -> },
 ) {
     private data class Signal(
         var userChars: Int = 0,
@@ -77,7 +93,7 @@ internal class AgentMemoryIdleReview(
             activeReviewSessionKey = null
             // 整理已尝试过：清空累计信号（简化上游的"成功才清"，失败也不重放）。
             if (key != null) signals.remove(key)
-            reportOutcome()
+            reportOutcome(key)
             return
         }
         val binding = bindings.remove(runId) ?: return
@@ -166,8 +182,8 @@ internal class AgentMemoryIdleReview(
         }
     }
 
-    /** 整理跑完后对比档案快照，把结果交给通知层（新建 / 追加 / 无变化）。 */
-    private fun reportOutcome() {
+    /** 整理跑完后对比档案快照，把结果交给通知层与聊天流（新建 / 追加 / 无变化）。 */
+    private fun reportOutcome(sessionKey: String?) {
         val before = reviewSnapshot
         reviewSnapshot = null
         if (before == null) return
@@ -180,15 +196,15 @@ internal class AgentMemoryIdleReview(
         when {
             created.isNotEmpty() -> {
                 trace("整理完成：新建档案《${created.first()}》")
-                notifyOutcome("new", created.first())
+                notifyOutcome(SystemNoticeCode.MemoryReviewNew, created.first(), sessionKey)
             }
             appended.isNotEmpty() -> {
                 trace("整理完成：追加到《${appended.first()}》")
-                notifyOutcome("append", appended.first())
+                notifyOutcome(SystemNoticeCode.MemoryReviewAppended, appended.first(), sessionKey)
             }
             else -> {
                 trace("整理完成：没有需要整理的内容")
-                notifyOutcome("none", null)
+                notifyOutcome(SystemNoticeCode.MemoryReviewNone, null, sessionKey)
             }
         }
     }
@@ -272,6 +288,18 @@ internal class AgentMemoryIdleReview(
 
     companion object {
         const val REVIEW_RUN_PREFIX = "memory-review:"
+
+        /** 待注入聊天流的整理结论；UI 消费后调用 [acknowledgeOutcome] 移除。 */
+        private val pendingOutcomes = MutableStateFlow<List<AgentMemoryReviewOutcome>>(emptyList())
+        val outcomes: StateFlow<List<AgentMemoryReviewOutcome>> = pendingOutcomes.asStateFlow()
+
+        fun publishOutcome(outcome: AgentMemoryReviewOutcome) {
+            pendingOutcomes.value = pendingOutcomes.value + outcome
+        }
+
+        fun acknowledgeOutcome(outcome: AgentMemoryReviewOutcome) {
+            pendingOutcomes.value = pendingOutcomes.value - outcome
+        }
 
         private const val IDLE_DELAY_MS = 30_000L
         private const val MIN_INTERVAL_MS = 5 * 60 * 1000L

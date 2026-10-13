@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.model
 
 import java.net.URI
 import java.util.Locale
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** 工具摘要面向用户展示，不包含敏感参数；终端命令通过独立字段提供给用户核对。 */
@@ -52,11 +53,13 @@ internal class AgentTraceFormatter {
             "memory_get", "character_memory_get" -> summarizeMemoryGetArguments(toolCall.argumentsJson)
             "memory_write", "character_memory_write" -> summarizeMemoryWriteArguments(toolCall.argumentsJson)
             "skills_list" -> "查看技能列表"
-            "skills_read" -> "读取技能"
-            "skills_read_resource" -> "读取技能资源"
+            // 同一技能的正文与资源读取给出一致的摘要：聊天流据此把同轮同技能合并成一条节点。
+            "skills_read" -> summarizeSkillArguments("读取技能", toolCall.argumentsJson)
+            "skills_read_resource" -> summarizeSkillArguments("读取技能资源", toolCall.argumentsJson)
             "skills_list_curated" -> "浏览精选技能"
             "skills_inspect_github" -> "查看技能详情"
             "skills_install_from_github" -> "安装技能"
+            "ask_user" -> summarizeAskUserArguments(toolCall.argumentsJson)
             else -> {
                 val label = DEVICE_ACTION_LABELS[toolCall.name]
                     ?: AgentPhoneToolCatalog.entries.firstOrNull { it.name == toolCall.name }?.title
@@ -275,6 +278,59 @@ internal class AgentTraceFormatter {
             }.joinToString(" · ")
         }.getOrDefault("更新记忆")
 
+    /** 技能读取摘要：只带技能 id，取不到时退回工具标签；同技能的正文与资源读取摘要相同。 */
+    private fun summarizeSkillArguments(label: String, argumentsJson: String): String =
+        runCatching {
+            val skillId = sanitizeSummaryValue(JSONObject(argumentsJson).optString("skillId"))
+            if (skillId.isBlank()) label else "技能 · $skillId"
+        }.getOrDefault(label)
+
+    /** 提问摘要：只带第一题文本，题目多时补一个题数，不把整张卡片塞进一行。 */
+    private fun summarizeAskUserArguments(argumentsJson: String): String =
+        runCatching {
+            val questions = argumentsJson.askUserQuestions() ?: return@runCatching ASK_USER_LABEL
+            val first = sanitizeSummaryValue(
+                questions.optJSONObject(0)?.optString("question").orEmpty(),
+                MAX_QUERY_SUMMARY_CHARS,
+            )
+            if (first.isBlank()) return@runCatching ASK_USER_LABEL
+            buildString {
+                append(ASK_USER_LABEL).append(" · ").append(first)
+                if (questions.length() > 1) append(" · 共 ").append(questions.length()).append(" 题")
+            }
+        }.getOrDefault(ASK_USER_LABEL)
+
+    /** 提问结果：跳过、选中的选项标题，以及多题时的作答进度。 */
+    private fun summarizeAskUserResult(json: JSONObject): String {
+        val answers = json.optJSONArray("answers") ?: return ANSWERED_LABEL
+        val total = answers.length()
+        if (total == 0) return ANSWERED_LABEL
+        val answered = (0 until total).count { index ->
+            answers.optJSONObject(index)?.optBoolean("skipped") != true
+        }
+        if (answered == 0) return SKIPPED_LABEL
+        val titles = (0 until total).flatMap { index ->
+            val answer = answers.optJSONObject(index) ?: return@flatMap emptyList()
+            val selected = answer.optJSONArray("selected_titles")?.let { array ->
+                (0 until array.length()).mapNotNull { position ->
+                    sanitizeSummaryValue(array.optString(position)).takeIf(String::isNotBlank)
+                }
+            }.orEmpty()
+            if (selected.isNotEmpty()) {
+                selected
+            } else {
+                listOfNotNull(sanitizeSummaryValue(answer.optString("custom")).takeIf(String::isNotBlank))
+            }
+        }
+        return buildList {
+            add(if (titles.isEmpty()) ANSWERED_LABEL else "$ANSWERED_LABEL · ${titles.joinToString("、")}")
+            if (total > 1) add("已答 $answered/$total 题")
+        }.joinToString(" · ")
+    }
+
+    private fun String.askUserQuestions(): JSONArray? =
+        runCatching { JSONObject(this).optJSONArray("questions") }.getOrNull()
+
     /** 结果成败供事件与 UI 状态使用，不再依赖摘要文本里的标记。 */
     fun isSuccessResult(result: AgentModelClient.ToolResult): Boolean =
         parseResultJson(result)?.optBoolean("ok", true) ?: true
@@ -296,6 +352,7 @@ internal class AgentTraceFormatter {
             AgentConversationToolCatalog.READ_HISTORY -> "已读取历史分页"
             "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
                 json?.let { summarizeMemoryResult(toolName, it) } ?: "完成"
+            "ask_user" -> json?.let(::summarizeAskUserResult) ?: ANSWERED_LABEL
             "search_apps" -> json?.let(::summarizeSearchAppsResult) ?: "完成"
             "launch_app" -> json?.let(::summarizeLaunchAppResult) ?: "已打开"
             else -> json?.let { summarizeGenericResult(it, result) } ?: "完成"
@@ -594,6 +651,9 @@ internal class AgentTraceFormatter {
 
     private companion object {
         const val BROWSER_TOOL_NAME = "browser_use"
+        const val ASK_USER_LABEL = "向你提问"
+        const val ANSWERED_LABEL = "已回答"
+        const val SKIPPED_LABEL = "已跳过"
         const val MAX_DISPLAY_COMMAND_CHARS = 4_000
         const val MAX_QUERY_SUMMARY_CHARS = 30
         const val MAX_LISTED_APP_NAMES = 3
