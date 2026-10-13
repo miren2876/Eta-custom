@@ -1,10 +1,11 @@
 package io.github.mangi.eta.agent.roleplay
 
 import android.content.Context
-import io.github.mangi.eta.agent.model.AgentMemoryToolCatalog
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentToolSchema
 import io.github.mangi.eta.data.repository.AgentMemoryException
 import io.github.mangi.eta.data.repository.AgentMemoryMutation
+import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.CharacterMemoryRepository
 import org.json.JSONArray
@@ -78,22 +79,110 @@ internal class CharacterMemoryTools(
         const val WRITE = "character_memory_write"
         val NAMES = setOf(GET, WRITE)
 
+        /**
+         * 角色记忆是独立的一套参数面（revision + mode=replace_range/append/clear），
+         * 不能再从真实记忆工具的 schema 克隆：记忆改造后两者已经不同形。
+         */
         fun appendSchemas(tools: JSONArray) {
-            val schemas = JSONArray().also { AgentMemoryToolCatalog.appendTo(it) }
-            for (index in 0 until schemas.length()) {
-                val schema = schemas.getJSONObject(index)
-                val function = schema.getJSONObject("function")
-                val read = function.getString("name") == "memory_get"
-                function.put("name", if (read) GET else WRITE)
-                function.put("description", if (read) {
-                    "Read this character's persistent story memory. It contains fictional events, relationships, and scene continuity shared by this character's conversations. Use query or bounded pages. This does not read the user's real-world MEMORY.md."
-                } else {
-                    "Atomically update this character's persistent story memory with fictional events, relationships, and scene continuity. Keep '# 核心记忆' concise and update stale facts instead of duplicating them. Never put story facts in real-world MEMORY.md or treat fictional actions as completed device operations. Use the revision from character_memory_get or the run-start character memory."
-                })
-                if (!read) function.getJSONObject("parameters").getJSONObject("properties")
-                    .getJSONObject("revision").put("description", "Exact SHA-256 revision from character_memory_get or the run-start character memory.")
-                tools.put(schema)
-            }
+            tools
+                .put(
+                    AgentToolSchema.function(
+                        name = GET,
+                        description = "Read this character's persistent story memory. It contains fictional events, " +
+                            "relationships, and scene continuity shared by this character's conversations. " +
+                            "Use query or bounded pages. This does not read the user's real-world MEMORY.md.",
+                        parameters = JSONObject()
+                            .put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put(
+                                        "query",
+                                        JSONObject()
+                                            .put("type", "string")
+                                            .put("maxLength", 500)
+                                            .put("description", "Optional search text; matching lines come back with their context."),
+                                    )
+                                    .put(
+                                        "start_line",
+                                        JSONObject()
+                                            .put("type", "integer")
+                                            .put("minimum", 1)
+                                            .put("description", "First line to read, 1-based; default 1."),
+                                    )
+                                    .put(
+                                        "max_chars",
+                                        JSONObject()
+                                            .put("type", "integer")
+                                            .put("minimum", 1)
+                                            .put("maximum", AgentMemoryStore.MAX_READ_CHARS)
+                                            .put("description", "Maximum characters returned, default 12000."),
+                                    ),
+                            ),
+                    ),
+                )
+                .put(
+                    AgentToolSchema.function(
+                        name = WRITE,
+                        description = "Atomically update this character's persistent story memory with fictional events, " +
+                            "relationships, and scene continuity. Keep '# 核心记忆' concise and update stale facts instead of " +
+                            "duplicating them. Never put story facts in real-world MEMORY.md or treat fictional actions as " +
+                            "completed device operations. Use the revision from character_memory_get or the run-start " +
+                            "character memory.",
+                        parameters = JSONObject()
+                            .put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put(
+                                        "revision",
+                                        JSONObject()
+                                            .put("type", "string")
+                                            .put("minLength", 64)
+                                            .put("maxLength", 64)
+                                            .put(
+                                                "description",
+                                                "Exact SHA-256 revision from character_memory_get or the run-start character memory.",
+                                            ),
+                                    )
+                                    .put(
+                                        "mode",
+                                        JSONObject()
+                                            .put("type", "string")
+                                            .put(
+                                                "enum",
+                                                JSONArray().put("replace_range").put("append").put("clear"),
+                                            )
+                                            .put(
+                                                "description",
+                                                "replace_range edits inclusive 1-based lines; append adds a distinct section; clear removes all story memory.",
+                                            ),
+                                    )
+                                    .put(
+                                        "start_line",
+                                        JSONObject()
+                                            .put("type", "integer")
+                                            .put("minimum", 1)
+                                            .put("description", "Required for replace_range; inclusive 1-based first line."),
+                                    )
+                                    .put(
+                                        "end_line",
+                                        JSONObject()
+                                            .put("type", "integer")
+                                            .put("minimum", 1)
+                                            .put("description", "Required for replace_range; inclusive 1-based last line."),
+                                    )
+                                    .put(
+                                        "content",
+                                        JSONObject()
+                                            .put("type", "string")
+                                            .put("maxLength", AgentMemoryStore.MAX_WRITE_CONTENT_CHARS)
+                                            .put("description", "Replacement or appended Markdown; empty content deletes a replace_range."),
+                                    ),
+                            )
+                            .put("required", JSONArray().put("mode").put("revision")),
+                    ),
+                )
         }
     }
 }
