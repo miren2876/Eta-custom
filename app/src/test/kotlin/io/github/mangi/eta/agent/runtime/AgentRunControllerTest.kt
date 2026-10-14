@@ -50,8 +50,8 @@ class AgentRunControllerTest {
         assertTrue(controller.steer("second"))
 
         assertEquals(0, cancellations.get())
-        assertEquals("first", controller.pollSteeringMessage())
-        assertEquals("second", controller.pollSteeringMessage())
+        assertEquals("first", controller.pollSteeringMessage()?.text)
+        assertEquals("second", controller.pollSteeringMessage()?.text)
         assertNull(controller.pollSteeringMessage())
     }
 
@@ -145,7 +145,7 @@ class AgentRunControllerTest {
             assertTrue(entered.await(1, TimeUnit.SECONDS))
             assertTrue(controller.steer("补充条件"))
             assertFalse(finished.await(100, TimeUnit.MILLISECONDS))
-            assertEquals("补充条件", controller.pollSteeringMessage())
+            assertEquals("补充条件", controller.pollSteeringMessage()?.text)
             controller.resume()
             assertTrue(finished.await(1, TimeUnit.SECONDS))
         } finally {

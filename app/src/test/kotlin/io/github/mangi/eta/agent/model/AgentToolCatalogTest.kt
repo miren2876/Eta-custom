@@ -181,8 +181,9 @@ class AgentToolCatalogTest {
         val write = enabled.function("memory_write")
         val properties = write.getJSONObject("parameters").getJSONObject("properties")
         assertEquals(3_500, properties.getJSONObject("content").getInt("maxLength"))
+        // 记忆改造后 memory_write 的 mode 是 append / replace / edit（旧的 replace_range / clear 已移除）。
         assertEquals(
-            listOf("replace_range", "append", "clear"),
+            listOf("append", "replace", "edit"),
             properties.getJSONObject("mode").getJSONArray("enum").stringValues(),
         )
     }

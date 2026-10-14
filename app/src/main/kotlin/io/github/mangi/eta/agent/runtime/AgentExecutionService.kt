@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -120,6 +121,9 @@ internal class AgentExecutionService : Service() {
         }
     }
 
+    // 调用点自己按 SDK_INT_FULL 判版本（门槛刻意取 36.0，理由见下）；lint 的 API 库把
+    // setRequestPromotedOngoing 标成 36.1，所以这里显式抑制 NewApi。
+    @SuppressLint("NewApi")
     private fun notification(): Notification {
         val status = runStatus
         val activePrompt = io.github.mangi.eta.agent.prompt.AgentUserPrompt.current()

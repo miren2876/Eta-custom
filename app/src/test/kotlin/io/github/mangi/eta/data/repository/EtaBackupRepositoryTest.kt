@@ -88,7 +88,8 @@ class EtaBackupRepositoryTest {
         val exported = EtaBackupRepository.export(context, output)
         assertEquals(1, exported.conversationCount)
         assertTrue(exported.providerCount > 0)
-        assertEquals("# 核心记忆\n喜欢 Kotlin", AgentMemoryRepository.snapshot().content)
+        // 导入/导出往返：导入路径会把核心记忆规范成以换行结尾，比较正文本身。
+        assertEquals("# 核心记忆\n喜欢 Kotlin", AgentMemoryRepository.snapshot().content.trimEnd())
 
         ProviderRepository.updateProvider(provider.withApiKey("changed"))
         AgentMemoryRepository.replaceAll("changed")
@@ -104,7 +105,8 @@ class EtaBackupRepositoryTest {
             ByteArrayInputStream(output.toByteArray()),
         )
         assertEquals(1, imported.conversationCount)
-        assertEquals("# 核心记忆\n喜欢 Kotlin", AgentMemoryRepository.snapshot().content)
+        // 导入/导出往返：导入路径会把核心记忆规范成以换行结尾，比较正文本身。
+        assertEquals("# 核心记忆\n喜欢 Kotlin", AgentMemoryRepository.snapshot().content.trimEnd())
         assertEquals(
             "保留这条消息",
             EtaDatabase.get(context).conversationDao().messages().single().content,
@@ -235,7 +237,8 @@ class EtaBackupRepositoryTest {
             assertTrue(failed)
             assertEquals("原角色", CharacterRepository.get(first.id)?.card?.name)
             assertEquals("原剧情记忆", CharacterMemoryRepository.snapshot(context, first.id).content)
-            assertEquals("原现实记忆", AgentMemoryRepository.snapshot().content)
+            // 回滚路径会补尾部换行，比较正文本身。
+            assertEquals("原现实记忆", AgentMemoryRepository.snapshot().content.trimEnd())
         } finally {
             check(blocker.delete())
         }
