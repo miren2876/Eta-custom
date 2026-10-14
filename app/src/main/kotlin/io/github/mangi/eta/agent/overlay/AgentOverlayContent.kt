@@ -100,6 +100,7 @@ internal fun overlayPhaseAccent(phase: AgentOverlayPhase): Color = when (phase) 
     AgentOverlayPhase.PAUSED -> Color(0xFFFF9F0A)
     AgentOverlayPhase.FINISHED -> SuccessColor
     AgentOverlayPhase.FAILED -> MiuixTheme.colorScheme.error
+    AgentOverlayPhase.IDLE -> MiuixTheme.colorScheme.onSurfaceVariantSummary
 }
 
 // 边缘流光取主题强调色与相邻冷暖色，避免高饱和彩虹在浅色页面上喧宾夺主。

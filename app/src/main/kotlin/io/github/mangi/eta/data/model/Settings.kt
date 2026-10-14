@@ -24,6 +24,8 @@ data class Settings(
     val virtualScreenFloatWindowBubbleSide: Int = 0,
     /** 球的纵向位置；-1 表示还没落过位，按当前窗口位置推算。 */
     val virtualScreenFloatWindowBubbleY: Int = -1,
+    /** 打开 Eta 后悬浮胶囊常驻显示：没有任务时也留在屏幕上，点它看运行中会话。 */
+    val overlayCapsulePinned: Boolean = false,
     val appearance: AppearanceSettings = AppearanceSettings(),
 )
 

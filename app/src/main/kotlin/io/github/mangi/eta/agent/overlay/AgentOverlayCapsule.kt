@@ -88,6 +88,8 @@ internal fun AgentOverlayCapsule(
     onStop: () -> Unit,
     onSupplementModeChange: (Boolean) -> Unit,
     onSupplement: (String) -> Unit,
+    /** 点列表里的某条会话 → 跳回该会话。 */
+    onOpenConversation: (String) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -183,7 +185,14 @@ internal fun AgentOverlayCapsule(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    ThoughtLine(thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty())
+                    if (state.runningSessions.isNotEmpty()) {
+                        SessionCountLine(sessions = state.runningSessions)
+                    }
+                    ThoughtLine(
+                        thought = state.thought.takeIf {
+                            state.phase == AgentOverlayPhase.RUNNING || state.phase == AgentOverlayPhase.FINISHED
+                        }.orEmpty(),
+                    )
                     }
                 }
 
@@ -199,6 +208,12 @@ internal fun AgentOverlayCapsule(
                             .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                             .graphicsLayer { translationY = (1f - expansion) * -6.dp.toPx() },
                     ) {
+                        if (state.runningSessions.isNotEmpty()) {
+                            OverlayRunningSessionList(
+                                sessions = state.runningSessions,
+                                onOpenConversation = onOpenConversation,
+                            )
+                        }
                         if (supplementMode) {
                             OverlaySupplementInput(
                                 value = supplementText,
@@ -260,7 +275,7 @@ private fun PhaseIndicator(phase: AgentOverlayPhase, accent: Color) {
                 .size(size)
                 .drawBehind {
                     val radius = this.size.minDimension / 2f
-                    if (phase == AgentOverlayPhase.PAUSED) {
+                    if (phase == AgentOverlayPhase.PAUSED || phase == AgentOverlayPhase.IDLE) {
                         drawCircle(accent, radius * 0.78f, style = androidx.compose.ui.graphics.drawscope.Stroke(radius * 0.32f))
                     } else {
                         drawCircle(accent, radius * 0.6f)
@@ -326,6 +341,85 @@ private fun ThoughtLine(thought: String) {
     )
 }
 
+/** 收起态第二行：说明展开后有哪些会话可点。 */
+@Composable
+private fun SessionCountLine(sessions: List<AgentOverlayRunningSession>) {
+    val running = sessions.count { it.running }
+    Text(
+        text = if (running > 0) {
+            stringResource(R.string.overlay_sessions_running, running)
+        } else {
+            stringResource(R.string.overlay_sessions_recent, sessions.size)
+        },
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 1.dp),
+    )
+}
+
+/**
+ * 展开胶囊后的会话列表：点一条直接跳回那个会话。
+ * 运行中的排在前面，其后是最近跑完但仍可点回去的。
+ */
+@Composable
+private fun OverlayRunningSessionList(
+    sessions: List<AgentOverlayRunningSession>,
+    onOpenConversation: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.overlay_sessions_title),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        sessions.forEach { session ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                    .clickable { onOpenConversation(session.conversationId) }
+                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = session.title.ifBlank { session.conversationId },
+                    color = MiuixTheme.colorScheme.onSurface,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!session.running) {
+                    Text(
+                        text = stringResource(R.string.overlay_session_done),
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = stringResource(R.string.overlay_session_open),
+                    color = MiuixTheme.colorScheme.primary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun CapsuleAction(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit) {
     IconButton(
@@ -340,4 +434,6 @@ private fun CapsuleAction(icon: ImageVector, label: String, tint: Color, onClick
 }
 
 private val CapsuleCorner = 22.dp
-private val CapsuleWidth = 248.dp
+
+/** 展开面板宽度：比收起时更宽，方便点会话条目。 */
+private val CapsuleWidth = 372.dp

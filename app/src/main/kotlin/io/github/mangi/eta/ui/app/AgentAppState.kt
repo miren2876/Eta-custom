@@ -1457,7 +1457,11 @@ internal class AgentAppState(
                         handoff = AgentRuntimeWire.EntryHandoff(
                             id = runId,
                             source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
-                            payload = conversationId,
+                            // 带上会话标题：悬浮胶囊里用它区分多个会话。
+                            payload = AgentUiHandoffPayload(
+                                conversationId = conversationId,
+                                title = conversationTitles[conversationId].orEmpty(),
+                            ).toJson(),
                         ),
                     ),
                     onEvent = { event -> enqueueRunEvent(runId, event) },
