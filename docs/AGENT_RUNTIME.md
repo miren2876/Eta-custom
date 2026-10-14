@@ -174,6 +174,8 @@ Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最�
 - Android 普通身份的 Java 文件后端在同目录暂存、同步内容后以原子移动覆盖；不支持原子移动时返回 `ATOMIC_WRITE_UNSUPPORTED`，不退回普通覆盖。追加写返回 `atomic=false`。覆盖前仅在权限确有差异时尝试保留原 POSIX 模式；必要的权限复制失败会保留原文件并明确报错。`atomic=true` 只描述目标路径替换的可见性，不承诺与外部写入者互斥，也不承诺保留原 inode、硬链接关系或全部文件属性。
 - Android Root 与 Linux 的 Shell 文件后端通过既有 inode 写入，保留既有文件的属主、模式与 SELinux 标签，返回 `atomic=false`；中断可能留下部分写入。版本和内容检查不会把这种写入变成原子事务。
 
+Shell 子进程在校验失败或取消时可能提前关闭输入管道，执行器保留其失败退出码，由文件后端转换为 `FILE_CHANGED` 等对应错误。子进程返回成功但输入传输失败时，文件工具返回 `FILE_INPUT_FAILED`，不会将不完整写入报告为成功；此时应重新读取并确认文件状态。
+
 目录续页使用 `next_offset` 和 `expected_revision`；偏移指向原始目录枚举位置，隐藏项过滤可能使一页返回较少条目，不能据此认定结束。`has_more=false` 才表示列举完成。目录变化使游标失效。整份目录分页 JSON 最多 16000 字符，达到输出预算时停在尚未返回的条目前并保留续页位置；`stop_reason` 区分 `eof`、`entry_limit` 和 `output_limit`。底层目录枚举、单条路径或元数据超限则返回明确失败。
 
 递归搜索默认跳过隐藏目录，不追踪符号链接；条目数、读取字节数、结果数量、输出文本及递归深度分别有预算。搜索另有约 5 秒的软时间预算，检查点达到预算时以 `time_limit` 返回已取得结果和续查游标；单次阻塞操作仍由整次 20 秒上限终止，硬超时、取消或执行进程失败不会伪装成普通文件跳过。继续搜索时原样传回 `next_cursor` 并保持查询条件、环境、身份不变。`partial`、`complete`、`stop_reason` 和跳过项共同说明覆盖范围；达到本轮扫描或结果预算并返回有效游标时可以续查，跳过二进制、不可访问项或过深目录等则保留不完整标记，空匹配不代表所有文件均不存在该内容。完整参数及限制以 [AgentFileToolCatalog](../app/src/main/kotlin/io/github/mangi/eta/agent/model/AgentFileToolCatalog.kt) 与对应后端实现为准。
