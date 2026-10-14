@@ -124,6 +124,8 @@ fun AgentAppRoot(
     /** 侧栏（会话抽屉）开合变化时通知宿主，宿主据此收起浮层卡片。 */
     onConversationPaneChanged: (Boolean) -> Unit = {},
     onRequestedConversationOpened: () -> Unit = {},
+    requestedArchivedConversation: ArchivedConversationRequest? = null,
+    onArchivedConversationOpened: () -> Unit = {},
     openSpeechSettings: Boolean = false,
     onSpeechSettingsOpened: () -> Unit = {},
     onAssistantConversationOpened: (Boolean) -> Unit = {},
@@ -232,6 +234,16 @@ fun AgentAppRoot(
         conversationPaneOpen = false
         navigator.popToHome()
         onRequestedConversationOpened()
+    }
+
+    LaunchedEffect(requestedArchivedConversation) {
+        val request = requestedArchivedConversation ?: return@LaunchedEffect
+        // 外部入口的结果要先导入归档才有会话；找不到时停在当前界面，不切到无关的会话。
+        if (agentState.openArchivedConversation(request.source, request.conversationKey)) {
+            conversationPaneOpen = false
+            navigator.popToHome()
+        }
+        onArchivedConversationOpened()
     }
 
     LaunchedEffect(assistantConversationKey) {
