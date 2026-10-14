@@ -12,6 +12,50 @@ import org.junit.Test
 
 class AgentPromptBuilderTest {
     @Test
+    fun rootPromptOnlyDependsOnGrantSoTransientProbeStatesKeepThePrefixStable() {
+        fun prompt(state: RootAccessState) = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = true, browserTools = false),
+            skillContext = SkillContext.EMPTY, memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = state.isGranted,
+        ).toString()
+        val ungranted = listOf(
+            RootAccessState(isChecking = true),
+            RootAccessState(RootAccessStatus.UNKNOWN),
+            RootAccessState(RootAccessStatus.TIMED_OUT),
+            RootAccessState(RootAccessStatus.DENIED),
+            RootAccessState(RootAccessStatus.UNAVAILABLE),
+        ).map(::prompt)
+        assertEquals(1, ungranted.distinct().size)
+        val granted = prompt(RootAccessState(RootAccessStatus.GRANTED, suPresent = true))
+        assertEquals(granted, prompt(RootAccessState(RootAccessStatus.GRANTED, suPresent = true, isChecking = true)))
+        // 文案抽查按本项目的定制版提示词：授权与未授权走不同分支，且两边都提到 terminal 工具。
+        assertTrue(granted.contains("可使用 root 身份"))
+        assertTrue(ungranted.first().contains("只支持 identity=user"))
+        for (contents in ungranted + granted) {
+            assertTrue(contents.contains("terminal"))
+        }
+    }
+
+    @Test
+    fun terminalPromptDescribesTheActualRunWorkspaceAndSeparateLifecycles() {
+        val messages = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = true, browserTools = false),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+            executionContext = TerminalExecutionContext(TerminalEnvironment.DEBIAN, null, "/eta/custom workspace"),
+        )
+        val terminal = messages.systemContents().single { it.contains("Eta 内置文件与终端工具") }
+        assertTrue(terminal.contains("/eta/custom workspace"))
+        assertTrue(terminal.contains("debian"))
+        assertTrue(terminal.contains("identity=user"))
+        assertTrue(terminal.contains("terminal_job"))
+        assertTrue(terminal.contains("terminal_daemon"))
+        assertFalse(terminal.contains("async=true"))
+        assertFalse(terminal.contains("read_async_result"))
+    }
+
+    @Test
     fun currentModelIdentityFollowsConfigWithCustomOrEmptyProviderPrompt() {
         for (providerPrompt in listOf("自定义回答风格", "")) {
             val config = modelConfig(providerPrompt, terminalTools = false, browserTools = false)

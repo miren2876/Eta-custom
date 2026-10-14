@@ -7,6 +7,7 @@ import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
@@ -169,10 +170,44 @@ internal object AgentModelClient {
                 terminalTools = config.terminalTools
             )
         )
+        // 工具目录与系统提示都是请求前缀，按轮重算会让一次瞬时状态抖动废掉整段缓存。
+        // Root 授权真正变化时整体重建；其余能力只增不减：短暂不可用的工具仍保留，执行时自行报告错误码。
         var promptRootAvailable = initialCapabilities.rootAvailable
         var promptVirtualScreenEnabled = initialCapabilities.virtualScreenEnabled
         var promptVirtualScreenFallbackEnabled = initialCapabilities.virtualScreenFallbackEnabled
         var promptAskUser = initialCapabilities.askUser
+        var publishedTools = tools
+        fun toolsForRound(): JSONArray {
+            val capabilities = capabilitiesProvider()
+            // 只有会影响系统提示正文的能力变化才重建前缀：Root、虚拟屏、虚拟屏回退、提问开关。
+            if (capabilities.rootAvailable != promptRootAvailable ||
+                capabilities.virtualScreenEnabled != promptVirtualScreenEnabled ||
+                capabilities.virtualScreenFallbackEnabled != promptVirtualScreenFallbackEnabled ||
+                capabilities.askUser != promptAskUser
+            ) {
+                val systemMessages = AgentPromptBuilder.buildSystemMessages(
+                    config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                    capabilities.virtualScreenEnabled, capabilities.virtualScreenFallbackEnabled, capabilities.askUser,
+                )
+                for (index in 0 until systemMessages.length()) {
+                    messages.put(index, systemMessages.getJSONObject(index))
+                }
+                promptRootAvailable = capabilities.rootAvailable
+                promptVirtualScreenEnabled = capabilities.virtualScreenEnabled
+                promptVirtualScreenFallbackEnabled = capabilities.virtualScreenFallbackEnabled
+                promptAskUser = capabilities.askUser
+                publishedTools = toolsFor(capabilities)
+                return publishedTools
+            }
+            val published = toolNames(publishedTools)
+            val added = toolsFor(capabilities).let { fresh ->
+                (0 until fresh.length()).map(fresh::getJSONObject).filter { toolName(it) !in published }
+            }
+            if (added.isNotEmpty()) {
+                publishedTools = JSONArray(publishedTools.toString()).also { merged -> added.forEach(merged::put) }
+            }
+            return publishedTools
+        }
         val loop = AgentLoop(
             transcript = transcript,
             systemCount = systemCount,
@@ -184,7 +219,20 @@ internal object AgentModelClient {
             messages = messages,
             tools = tools,
             provider = provider,
-            toolExecutor = toolExecutor,
+            // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
+            // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。
+            toolExecutor = AgentModelClient.ToolExecutor { call ->
+                val unavailable = AgentToolRequirements.find(call.name)
+                    ?.let { capabilitiesProvider().unavailableCode(call.name) }
+                if (unavailable == null) {
+                    toolExecutor.execute(call)
+                } else {
+                    ToolResult(
+                        JSONObject().put("ok", false).put("code", unavailable)
+                            .put("message", "该工具当前不可用（$unavailable），本次未执行").toString(),
+                    )
+                }
+            },
             runController = runController,
             traceFormatter = traceFormatter,
             mcpToolLabels = mcpToolLabels,
@@ -192,23 +240,7 @@ internal object AgentModelClient {
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,
             initialSupplementIndex = initialSupplementIndex,
-            toolsForRound = {
-                val capabilities = capabilitiesProvider()
-                if (capabilities.rootAvailable != promptRootAvailable || capabilities.virtualScreenEnabled != promptVirtualScreenEnabled ||
-                    capabilities.virtualScreenFallbackEnabled != promptVirtualScreenFallbackEnabled || capabilities.askUser != promptAskUser) {
-                    val systemMessages = AgentPromptBuilder.buildSystemMessages(
-                        config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext, capabilities.virtualScreenEnabled, capabilities.virtualScreenFallbackEnabled, capabilities.askUser,
-                    )
-                    for (index in 0 until systemMessages.length()) {
-                        messages.put(index, systemMessages.getJSONObject(index))
-                    }
-                    promptRootAvailable = capabilities.rootAvailable
-                    promptVirtualScreenEnabled = capabilities.virtualScreenEnabled
-                    promptVirtualScreenFallbackEnabled = capabilities.virtualScreenFallbackEnabled
-                    promptAskUser = capabilities.askUser
-                }
-                toolsFor(capabilities)
-            },
+            toolsForRound = ::toolsForRound,
         )
         val result = try {
             if (compactOnly) loop.compactOnly() else loop.run()
@@ -235,6 +267,11 @@ internal object AgentModelClient {
             ),
         )
     }
+
+    private fun toolName(tool: JSONObject): String? = tool.optJSONObject("function")?.optString("name")
+
+    private fun toolNames(tools: JSONArray): Set<String> =
+        (0 until tools.length()).mapNotNullTo(mutableSetOf()) { toolName(tools.getJSONObject(it)) }
 
     private fun ModelConfig.validate() {
         require(baseUrl.isNotBlank()) { "请先配置 API 地址" }

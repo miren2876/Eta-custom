@@ -32,6 +32,11 @@ internal object AgentPromptBuilder {
         return messages
     }
 
+    /**
+     * 系统提示是请求前缀的开头，任何字节变化都会让其后的全部历史失去缓存。
+     * 因此这里只放会话内稳定的事实：Root 只区分“已授权/未授权”，检测进度、失败原因等
+     * 瞬时状态由 check_root 的工具结果告知模型，不进入系统提示。
+     */
     fun buildSystemMessages(
         config: AgentModelClient.ModelConfig,
         skillContext: SkillContext,
@@ -212,6 +217,8 @@ internal object AgentPromptBuilder {
             } else {
                 appendLine("这是用户的现实记忆，在角色会话中只读；按需调用 memory_get，禁止把虚构人设或剧情写入此文件。剧情记忆使用 character_memory_get/character_memory_write。")
             }
+            // 快照在会话内保持不变，以免记忆写入后系统提示变化导致历史缓存失效。
+            appendLine("以下为本会话开始时的记忆快照；本会话已写入过记忆时，以最近一次 memory_write 或 memory_get 返回的 revision 与内容为准。")
             appendLine("revision=${context.revision} | bytes=${context.byteSize} | core_budget_chars=${context.coreBudgetChars}")
             if (context.coreContent.isNotBlank()) {
                 appendLine()

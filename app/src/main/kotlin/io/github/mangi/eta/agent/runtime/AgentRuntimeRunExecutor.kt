@@ -12,6 +12,7 @@ import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
+import io.github.mangi.eta.agent.memory.ConversationMemoryPins
 import io.github.mangi.eta.agent.roleplay.CharacterMemoryTools
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.mcp.McpRunSnapshot
@@ -34,6 +35,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 单次 Runtime run 的阻塞执行器。
@@ -76,6 +78,8 @@ internal class AgentRuntimeRunExecutor(
         var checkpointRecorder: AgentRunCheckpointRecorder? = null
         val timing = AgentRunTiming(AndroidAgentLogger)
 
+        // 失败清理需要在 try 外拿到会话 id。
+        var memoryConversationId: String? = null
         val result = try {
             val contextWindow = request.config.knownContextWindow
             checkpointRecorder = AgentRunCheckpointRecorder.create(appContext, request)
@@ -104,6 +108,7 @@ internal class AgentRuntimeRunExecutor(
                 ?.let { AgentUiHandoffPayload.from(it.payload) }
             val conversationId = uiPayload?.conversationId
                 ?.takeIf { it.isNotBlank() }
+            memoryConversationId = conversationId
             val roleplayContext = conversationId?.let { id ->
                 runBlocking { RoleplayRunContext.resolve(appContext, id, contextWindow, memoryEnabled) }
             }
@@ -124,7 +129,8 @@ internal class AgentRuntimeRunExecutor(
                 runCatching {
                     val core = AgentMemoryRepository.coreSnapshot()
                     val coreBudget = AgentMemoryContextBuilder.coreBudgetChars(request.config.contextWindow)
-                    AgentMemoryContextBuilder.build(
+                    ConversationMemoryPins.contextFor(
+                        conversationId = conversationId,
                         // revision/bytes 以核心记忆（USER.md + MEMORY.md）为准，档案写入不会改变它。
                         snapshot = core,
                         contextWindow = request.config.contextWindow,
@@ -251,7 +257,13 @@ internal class AgentRuntimeRunExecutor(
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
                     characterMemoryTools.execute(call)
-                } else routingExecutor.execute(call)
+                } else routingExecutor.execute(call).also { result ->
+                    if (call.name == "memory_write") {
+                        runCatching { JSONObject(result.content) }.getOrNull()
+                            ?.takeIf { it.optBoolean("ok") }
+                            ?.let { ConversationMemoryPins.recordOwnWrite(conversationId, it.optString("revision")) }
+                    }
+                }
             }
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
@@ -263,6 +275,8 @@ internal class AgentRuntimeRunExecutor(
                 rewriteReply = request.operation == AgentRuntimeWire.OP_REWRITE_REPLY,
                 compactOnly = request.operation == AgentRuntimeWire.OP_COMPACT,
                 onContextSnapshot = { snapshot ->
+                    // 压缩会把历史里的记忆写入摘要掉，下一轮需要重新注入最新记忆。
+                    ConversationMemoryPins.forget(conversationId)
                     val committed = snapshot.copy(operationId = request.runId)
                     AgentRunCheckpointStore.saveContext(appContext, request.runId, committed)
                     session.updateContext(committed)
@@ -306,6 +320,8 @@ internal class AgentRuntimeRunExecutor(
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
             )
         } catch (throwable: Throwable) {
+            // 失败时历史是否完整落盘不确定，放弃固定的记忆快照；记忆未变时重新注入的内容逐字节相同。
+            ConversationMemoryPins.forget(memoryConversationId)
             cancelled = runController.isCancelled || throwable is AgentRunCancelledException
             val modelFailure = throwable as? AgentModelExecutionException
             val message = if (cancelled) {

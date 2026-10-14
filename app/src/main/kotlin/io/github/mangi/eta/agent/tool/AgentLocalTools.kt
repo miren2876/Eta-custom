@@ -1108,6 +1108,21 @@ internal class AgentLocalTools(
             cwd = args.optString("cwd").ifBlank { null },
             timeoutSeconds = args.optInt("timeout_seconds", 30)
         )
+    private fun checkRoot(): String {
+        val probe = RootAccess.request(requireContext())
+        kotlinx.coroutines.runBlocking {
+            while (probe.isActive && !closed.get()) kotlinx.coroutines.delay(100)
+        }
+        if (closed.get()) return errorResult("CANCELLED", "已取消等待 Root 检测")
+        val state = RootAccess.state.value
+        return JSONObject().put("ok", true).put("tool", "terminal").put("action", "check_root")
+            .put("root_available", state.isGranted).put("status", state.status.name.lowercase(Locale.ROOT))
+            .put("checking", state.isChecking).put("su_present", state.suPresent)
+            .put("uid", if (state.isGranted) 0 else JSONObject.NULL)
+            .put("message", if (state.isGranted) "已确认 Root 授权；后续新命令默认使用 Root" else
+                "尚未确认 Root 授权；请根据 status 检查授权或检测结果，默认 user 不表示终端不支持 Root")
+            .toString()
+    }
 
     private fun terminal(args: JSONObject): String = terminalController.terminalAction(args)
 
