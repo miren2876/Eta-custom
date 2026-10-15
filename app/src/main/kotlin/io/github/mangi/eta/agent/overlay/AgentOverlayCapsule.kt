@@ -125,8 +125,6 @@ internal fun AgentOverlayCapsule(
     /** 小胶囊当前所在的屏幕位置（像素）。 */
     collapsedX: Int = 0,
     collapsedY: Int = 0,
-    /** 窗口是否处于全屏展开态；全屏时才需要按上面的位置摆放面板。 */
-    fullScreen: Boolean = false,
     /** 最近打开过的对话：面板最上面一栏，最多 3 条。 */
     recentOpened: List<AgentOverlayRunningSession> = emptyList(),
     unreadSessions: List<AgentOverlayRunningSession> = emptyList(),
@@ -193,6 +191,10 @@ internal fun AgentOverlayCapsule(
             val capsuleShape = if (expanded) RoundedCornerShape(CapsuleCorner) else CircleShape
             // 展开态窗口是全屏的：把面板摆在小胶囊原来待的位置，
             // 展开/收起动画都在原地播放，不会先在屏幕中间停一下再弹回去。
+            // 用窗口的实际约束判断是否处于全屏展开态：服务侧的标志与窗口尺寸更新之间
+            // 差一帧，按标志布局时窗口已经变小、内容却仍按屏幕坐标偏移，会只露出半边。
+            val windowFullScreen = constraints.maxWidth >=
+                with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp * 0.9f).dp.toPx() }
             // 面板宽度与位置全部夹在屏幕内：贴边、拖到角落都不会有边跑到屏幕外。
             val panelWidth = minOf(
                 capsuleWidth,
@@ -202,7 +204,7 @@ internal fun AgentOverlayCapsule(
             )
             // 面板本体与屏幕四边保持对称留白，靠边也不贴死。
             val panelEdgePx = with(LocalDensity.current) { 16.dp.toPx() }
-            val panelStartX = if (fullScreen) {
+            val panelStartX = if (windowFullScreen) {
                 val widthPx = with(LocalDensity.current) { panelWidth.toPx() }
                 collapsedX.toFloat().coerceIn(
                     panelEdgePx,
@@ -211,7 +213,7 @@ internal fun AgentOverlayCapsule(
             } else {
                 0f
             }
-            val panelStartY = if (fullScreen) {
+            val panelStartY = if (windowFullScreen) {
                 val maxHeightPx = with(LocalDensity.current) {
                     (LocalConfiguration.current.screenHeightDp * 0.30f).dp.toPx()
                 }
@@ -228,14 +230,23 @@ internal fun AgentOverlayCapsule(
             val panelMaxHeightPx = with(LocalDensity.current) {
                 (LocalConfiguration.current.screenHeightDp * 0.30f).dp.toPx()
             }
-            val panelX = (panelStartX + panelDrag.x).coerceIn(
-                panelEdgePx,
-                (constraints.maxWidth - panelWidthPx - panelEdgePx).coerceAtLeast(panelEdgePx),
-            )
-            val panelY = (panelStartY + panelDrag.y).coerceIn(
-                panelEdgePx,
-                (constraints.maxHeight - panelMaxHeightPx - panelEdgePx).coerceAtLeast(panelEdgePx),
-            )
+            // 小球窗口里内容必须贴着自己的内边距摆放：再夹一次会把球推出窗口，只剩半边。
+            val panelX = if (windowFullScreen) {
+                (panelStartX + panelDrag.x).coerceIn(
+                    panelEdgePx,
+                    (constraints.maxWidth - panelWidthPx - panelEdgePx).coerceAtLeast(panelEdgePx),
+                )
+            } else {
+                0f
+            }
+            val panelY = if (windowFullScreen) {
+                (panelStartY + panelDrag.y).coerceIn(
+                    panelEdgePx,
+                    (constraints.maxHeight - panelMaxHeightPx - panelEdgePx).coerceAtLeast(panelEdgePx),
+                )
+            } else {
+                0f
+            }
             if (expanded) {
                 // 面板外任意位置点一下就收起；面板本体画在它上面，不受影响。
                 Box(

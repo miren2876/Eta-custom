@@ -276,8 +276,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
     }
     private val capsuleExpanded = mutableStateOf(false)
-    /** 展开态改用全屏透明窗口：点面板以外任意位置都能收起。 */
-    private val capsuleFullScreen = mutableStateOf(false)
     /** 收起小球当前的位置（像素），展开时面板按它摆放。 */
     private val capsuleOffsetX = mutableStateOf(0)
     private val capsuleOffsetY = mutableStateOf(0)
@@ -1277,7 +1275,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onCollapseRequest = ::collapseCapsule,
                 collapsedX = capsuleOffsetX.value,
                 collapsedY = capsuleOffsetY.value,
-                fullScreen = capsuleFullScreen.value,
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -1326,7 +1323,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             capsuleOffsetX.value = capsuleCollapsedX
             capsuleOffsetY.value = capsuleCollapsedY
             // 展开态用全屏透明窗口：面板以外点任意位置都能收起。
-            capsuleFullScreen.value = true
             setCapsuleWindowFullScreen()
         }
         capsuleExpanded.value = expand
@@ -1458,8 +1454,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val lp = capsuleParams ?: return
         val capsule = capsuleView ?: return
         val wm = windowManager ?: return
-        // 先让面板偏移归零，随后窗口缩小时内容直接贴回小球自身。
-        capsuleFullScreen.value = false
+        // 窗口缩小时 Compose 会按新的约束重排，内容自然贴回小球自身。
         capsuleOffsetX.value = capsuleCollapsedX.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetX.value
         capsuleOffsetY.value = capsuleCollapsedY.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetY.value
         lp.width = dpToPx(CAPSULE_COLLAPSED_WIDTH_DP)
