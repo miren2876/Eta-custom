@@ -60,6 +60,8 @@ internal object AgentConversationStore {
         /** 会话 → 文件夹 id；未归类会话不在表内。 */
         val folderIds: Map<String, String> = emptyMap(),
         val pinnedIds: Set<String> = emptySet(),
+        /** 已归档会话 id；默认列表隐藏。 */
+        val archivedIds: Set<String> = emptySet(),
     )
 
     private val saveMutex = Mutex()
@@ -187,6 +189,7 @@ internal object AgentConversationStore {
         val unaligned = mutableSetOf<String>()
         val folderIds = mutableMapOf<String, String>()
         val pinnedIds = mutableSetOf<String>()
+        val archivedIds = mutableSetOf<String>()
 
         conversations.forEach { conversation ->
             val messages = buildList {
@@ -226,6 +229,7 @@ internal object AgentConversationStore {
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
             conversation.folderId.takeIf(String::isNotBlank)?.let { folderIds[conversation.id] = it }
+            if (conversation.isArchived) archivedIds += conversation.id
             if (conversation.isPinned) pinnedIds += conversation.id
         }
 
@@ -241,6 +245,7 @@ internal object AgentConversationStore {
             unalignedConversationIds = unaligned,
             folders = folders,
             folderIds = folderIds,
+            archivedIds = archivedIds,
             pinnedIds = pinnedIds,
         )
     }
@@ -259,6 +264,7 @@ internal object AgentConversationStore {
         folders: List<ConversationFolderUi>,
         folderIds: Map<String, String>,
         pinnedIds: Set<String>,
+        archivedIds: Set<String>,
     ) {
         val appContext = context.applicationContext
         saveMutex.withLock {
@@ -278,6 +284,8 @@ internal object AgentConversationStore {
                         if (row.folderId != folderId) dao.updateConversationFolder(row.id, folderId)
                         val pinned = row.id in pinnedIds
                         if (row.isPinned != pinned) dao.updateConversationPinned(row.id, pinned)
+                        val archived = row.id in archivedIds
+                        if (row.isArchived != archived) dao.updateConversationArchived(row.id, archived)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled

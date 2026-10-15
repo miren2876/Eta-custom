@@ -1630,4 +1630,9 @@
   <string name="ui_determined_by_model_or_provider_06c326">Determined by model or provider</string>
   <string name="virtual_screen_completion_chip_ok">Finished</string>
   <string name="virtual_screen_completion_chip_fail">Task failed</string>
+  <string name="drawer_archived_chip">Archived</string>
+  <string name="action_archive_conversation">Archive</string>
+  <string name="action_unarchive_conversation">Unarchive</string>
+  <string name="manage_group_active">Active</string>
+  <string name="manage_selected_count">%1$d selected</string>
 </resources>

@@ -27,6 +27,8 @@ internal data class ConversationEntity(
     /** 所属文件夹 id；空串表示未归类，显示在侧栏「聊天」分组。 */
     @ColumnInfo(name = "folder_id", defaultValue = "''") val folderId: String = "",
     @ColumnInfo(name = "is_pinned", defaultValue = "0") val isPinned: Boolean = false,
+    /** 归档：默认列表隐藏，只在「已归档」入口里出现。 */
+    @ColumnInfo(name = "is_archived", defaultValue = "0") val isArchived: Boolean = false,
 )
 
 internal data class ConversationMetadata(
@@ -42,6 +44,7 @@ internal data class ConversationMetadata(
     @ColumnInfo(name = "model_id") val modelId: String? = null,
     @ColumnInfo(name = "folder_id") val folderId: String = "",
     @ColumnInfo(name = "is_pinned") val isPinned: Boolean = false,
+    @ColumnInfo(name = "is_archived") val isArchived: Boolean = false,
 )
 
 /** 侧栏会话文件夹。会话通过 conversations.folder_id 归属，文件夹删除后会话回到「聊天」。 */

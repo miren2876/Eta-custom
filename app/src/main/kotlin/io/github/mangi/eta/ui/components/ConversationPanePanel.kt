@@ -87,6 +87,7 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 import top.yukonga.miuix.kmp.window.WindowListPopup
+import androidx.compose.material.icons.rounded.Inventory
 
 private object ConversationPanelMetrics {
     val PaneHorizontalPadding = 22.dp
@@ -141,6 +142,8 @@ internal fun ConversationPanePanel(
     onConversationDelete: (ConversationSummaryUi) -> Unit,
     onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
+    onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
+    onSelectArchive: (Boolean) -> Unit,
     onNewConversation: () -> Unit,
     onOpenManageChats: () -> Unit,
     onSelectFolder: (String?) -> Unit,
@@ -187,7 +190,9 @@ internal fun ConversationPanePanel(
                     PaneFolderBar(
                         folders = state.folders,
                         selectedFolderId = state.selectedFolderId,
+                        showingArchived = state.showingArchived,
                         onSelectFolder = onSelectFolder,
+                        onSelectArchive = onSelectArchive,
                         onCreateFolder = onCreateFolder,
                         onRenameFolder = onRenameFolder,
                         onDeleteFolder = onDeleteFolder,
@@ -233,6 +238,7 @@ internal fun ConversationPanePanel(
                                 onDelete = { onConversationDelete(conversation) },
                                 onMoveToFolder = { onConversationMoveToFolder(conversation) },
                                 onTogglePin = { onConversationTogglePin(conversation) },
+                                onToggleArchive = { onConversationToggleArchive(conversation) },
                             )
                         }
                     }
@@ -366,6 +372,7 @@ private fun ConversationTextRow(
     onDelete: () -> Unit,
     onMoveToFolder: () -> Unit,
     onTogglePin: () -> Unit,
+    onToggleArchive: () -> Unit,
 ) {
     var showActionMenu by remember { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
@@ -524,6 +531,25 @@ private fun ConversationTextRow(
                     },
                 )
             }
+            val archiveText = stringResource(
+                if (conversation.isArchived) {
+                    R.string.action_unarchive_conversation
+                } else {
+                    R.string.action_archive_conversation
+                },
+            )
+            val archiveItem = remember(archiveText) {
+                DropdownItem(
+                    text = archiveText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.Inventory,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
             val deleteColors = DropdownDefaults.dropdownColors(
                 contentColor = MiuixTheme.colorScheme.error,
                 selectedContentColor = MiuixTheme.colorScheme.error,
@@ -532,7 +558,7 @@ private fun ConversationTextRow(
             ListPopupColumn {
                 DropdownImpl(
                     item = pinItem,
-                    optionSize = 5,
+                    optionSize = 6,
                     isSelected = false,
                     index = 0,
                     onSelectedIndexChange = {
@@ -542,7 +568,7 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = moveItem,
-                    optionSize = 5,
+                    optionSize = 6,
                     isSelected = false,
                     index = 1,
                     onSelectedIndexChange = {
@@ -552,7 +578,7 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = renameItem,
-                    optionSize = 5,
+                    optionSize = 6,
                     isSelected = false,
                     index = 2,
                     onSelectedIndexChange = {
@@ -562,7 +588,7 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = exportItem,
-                    optionSize = 5,
+                    optionSize = 6,
                     isSelected = false,
                     index = 3,
                     onSelectedIndexChange = {
@@ -571,10 +597,20 @@ private fun ConversationTextRow(
                     },
                 )
                 DropdownImpl(
-                    item = deleteItem,
-                    optionSize = 5,
+                    item = archiveItem,
+                    optionSize = 6,
                     isSelected = false,
                     index = 4,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onToggleArchive()
+                    },
+                )
+                DropdownImpl(
+                    item = deleteItem,
+                    optionSize = 6,
+                    isSelected = false,
+                    index = 5,
                     dropdownColors = deleteColors,
                     onSelectedIndexChange = {
                         showActionMenu = false
@@ -654,7 +690,9 @@ private fun DrawerActionRow(
 private fun PaneFolderBar(
     folders: List<ConversationFolderUi>,
     selectedFolderId: String?,
+    showingArchived: Boolean,
     onSelectFolder: (String?) -> Unit,
+    onSelectArchive: (Boolean) -> Unit,
     onCreateFolder: (String) -> Unit,
     onRenameFolder: (String, String) -> Unit,
     onDeleteFolder: (String) -> Unit,
@@ -671,7 +709,7 @@ private fun PaneFolderBar(
         item(key = "folder-unfiled") {
             DrawerChip(
                 label = stringResource(R.string.drawer_chats_chip),
-                selected = selectedFolderId == null,
+                selected = selectedFolderId == null && !showingArchived,
                 icon = null,
                 onClick = { onSelectFolder(null) },
             )
@@ -681,7 +719,7 @@ private fun PaneFolderBar(
             Box {
                 DrawerChip(
                     label = folder.name,
-                    selected = selectedFolderId == folder.id,
+                    selected = selectedFolderId == folder.id && !showingArchived,
                     icon = Icons.Rounded.Folder,
                     onClick = { onSelectFolder(folder.id) },
                     onLongClick = { showFolderMenu = true },
@@ -750,7 +788,15 @@ private fun PaneFolderBar(
                 }
             }
         }
-        item(key = "folder-new") {
+                item(key = "folder-archived") {
+            DrawerChip(
+                label = stringResource(R.string.drawer_archived_chip),
+                selected = showingArchived,
+                icon = Icons.Rounded.Inventory,
+                onClick = { onSelectArchive(true) },
+            )
+        }
+item(key = "folder-new") {
             DrawerChip(
                 label = stringResource(R.string.drawer_new_folder),
                 selected = false,

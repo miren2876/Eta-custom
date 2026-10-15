@@ -368,6 +368,10 @@ fun AgentAppRoot(
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPinned(conversation.id)
             },
+            onConversationToggleArchive = { conversation ->
+                agentState.setConversationArchived(conversation.id, !conversation.isArchived)
+            },
+            onSelectArchive = { showing -> agentState.selectArchiveView(showing) },
             onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
             onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
             onCreateFolder = { name -> agentState.createFolder(name) },
@@ -464,6 +468,7 @@ fun AgentAppRoot(
             entry<AppRoute.ManageChats>(swipeDismiss = null) {
                 ManageChatsScreen(
                     conversations = agentState.conversationPaneState.historyConversations,
+                    folders = agentState.conversationPaneState.folders,
                     onBack = ::popRoute,
                     onOpenConversation = { conversationId ->
                         popRoute()
@@ -472,6 +477,13 @@ fun AgentAppRoot(
                     onTogglePin = { conversation -> agentState.toggleConversationPinned(conversation.id) },
                     onRename = { conversation -> conversationRenameTarget = conversation },
                     onDelete = { conversation -> conversationDeleteTarget = conversation },
+                    onToggleArchive = { conversation ->
+                        agentState.setConversationArchived(conversation.id, !conversation.isArchived)
+                    },
+                    onArchiveSelected = { ids, archived -> agentState.archiveConversations(ids, archived) },
+                    onPinSelected = { ids, pinned -> agentState.pinConversations(ids, pinned) },
+                    onMoveSelected = { ids, folderId -> agentState.moveConversationsToFolder(ids, folderId) },
+                    onDeleteSelected = { ids -> agentState.deleteConversations(ids) },
                 )
             }
             entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {

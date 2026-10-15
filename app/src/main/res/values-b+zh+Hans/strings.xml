@@ -1608,4 +1608,9 @@
   <string name="ui_determined_by_model_or_provider_06c326">由模型或 Provider 决定</string>
   <string name="virtual_screen_completion_chip_ok">已完成</string>
   <string name="virtual_screen_completion_chip_fail">任务失败</string>
+  <string name="drawer_archived_chip">已归档</string>
+  <string name="action_archive_conversation">归档</string>
+  <string name="action_unarchive_conversation">取消归档</string>
+  <string name="manage_group_active">未归档</string>
+  <string name="manage_selected_count">已选 %1$d 项</string>
 </resources>

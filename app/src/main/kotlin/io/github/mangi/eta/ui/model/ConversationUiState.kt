@@ -10,6 +10,8 @@ data class ConversationPaneUiState(
     val folders: List<ConversationFolderUi> = emptyList(),
     /** null 表示「聊天」分组（未归类会话）；否则只显示该文件夹内的会话。 */
     val selectedFolderId: String? = null,
+    /** 「已归档」入口：为 true 时只显示归档会话，且忽略文件夹分组。 */
+    val showingArchived: Boolean = false,
     /** 全部会话（不受文件夹与搜索过滤），供管理聊天页使用。 */
     val historyConversations: List<ConversationSummaryUi> = emptyList(),
 )
@@ -23,12 +25,15 @@ data class ConversationFolderUi(
 )
 
 /** 「聊天」分组只显示未归类会话，文件夹分组只显示该文件夹的会话。 */
-internal fun List<ConversationSummaryUi>.filterForFolder(selectedFolderId: String?): List<ConversationSummaryUi> =
-    if (selectedFolderId == null) {
-        filter { it.folderId.isBlank() }
-    } else {
-        filter { it.folderId == selectedFolderId }
-    }
+internal fun List<ConversationSummaryUi>.filterForFolder(
+    selectedFolderId: String?,
+    showingArchived: Boolean = false,
+): List<ConversationSummaryUi> = filter { summary ->
+    if (summary.isArchived != showingArchived) return@filter false
+    // 「已归档」入口集中看归档会话，不再按文件夹切分。
+    if (showingArchived) return@filter true
+    if (selectedFolderId == null) summary.folderId.isBlank() else summary.folderId == selectedFolderId
+}
 
 /** 聊天页顶栏标题的最大显示字数（含结尾省略号）。 */
 internal const val CONVERSATION_TITLE_MAX_CHARS = 12
@@ -59,6 +64,8 @@ data class ConversationSummaryUi(
     val characterName: String? = null,
     val folderId: String = "",
     val characterAvatarPath: String? = null,
+    /** 已归档：默认列表不显示，只在侧栏「已归档」入口里出现。 */
+    val isArchived: Boolean = false,
 )
 
 @Immutable
