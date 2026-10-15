@@ -1468,7 +1468,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         if (capsuleCollapsedY != Int.MIN_VALUE) {
             lp.y = capsuleCollapsedY.coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
         }
+        // 窗口的尺寸与位置不是原子的：位置生效比内容重排晚一帧时，
+        // 会看到小球先在屏幕左上角闪一下再回来。先把整窗隐藏，等新布局落定再显示。
+        capsule.alpha = 0f
         runCatching { wm.updateViewLayout(capsule, lp) }
+        capsule.postOnAnimation { capsule.postOnAnimation { capsule.alpha = 1f } }
     }
 
     private fun setCapsuleWindowHeight(heightDp: Int) {
