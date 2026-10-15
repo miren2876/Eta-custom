@@ -259,6 +259,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var resultCardView: ComposeView? = null
     private var glowParams: WindowManager.LayoutParams? = null
     private var capsuleParams: WindowManager.LayoutParams? = null
+    private var panelView: ComposeView? = null
+    private var panelParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
 
@@ -389,8 +391,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         AgentOverlayClearance.detach(clearanceHost)
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        hideCapsulePanel()
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        hideCapsulePanel()
         resultCardView = null
         capsuleView = null
         glowView = null
@@ -1260,10 +1264,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val capsule = createOverlayComposeView {
             AgentOverlayCapsule(
                 state = state.value,
-                expanded = capsuleExpanded.value,
+                // 小球窗口恒为收起态：展开交给独立的全屏面板窗口，小球窗口全程不动。
+                expanded = false,
                 yielded = capsuleYielded.value,
                 onToggleExpanded = ::toggleCapsule,
-                onCollapsedSettled = ::onCapsuleCollapsedSettled,
+                onCollapsedSettled = {},
                 onPause = ::requestPause,
                 onResume = ::requestResume,
                 onStop = ::requestStop,
@@ -1313,37 +1318,98 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun toggleCapsule() {
-        val expand = !capsuleExpanded.value
-        // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) {
-            capsuleParams?.let {
-                capsuleCollapsedX = it.x
-                capsuleCollapsedY = it.y
-            }
-            capsuleOffsetX.value = capsuleCollapsedX
-            capsuleOffsetY.value = capsuleCollapsedY
-            // 展开态用全屏透明窗口：面板以外点任意位置都能收起。
-            setCapsuleWindowFullScreen()
+        if (capsuleExpanded.value) return
+        // 面板按小球当前所在位置摆放；小球窗口本身尺寸与位置都不动。
+        capsuleParams?.let {
+            capsuleCollapsedX = it.x
+            capsuleCollapsedY = it.y
         }
-        capsuleExpanded.value = expand
+        capsuleOffsetX.value = capsuleCollapsedX
+        capsuleOffsetY.value = capsuleCollapsedY
+        capsuleExpanded.value = true
+        showCapsulePanel()
+        setCapsuleVisible(false)
     }
 
-    /** 展开态改成全屏透明窗口：面板外点一下就能收起，面板本体仍然只占一小块。 */
-    private fun setCapsuleWindowFullScreen() {
-        val lp = capsuleParams ?: return
-        val capsule = capsuleView ?: return
-        val wm = windowManager ?: return
-        lp.width = WindowManager.LayoutParams.MATCH_PARENT
-        lp.height = WindowManager.LayoutParams.MATCH_PARENT
-        lp.x = 0
-        lp.y = 0
-        runCatching { wm.updateViewLayout(capsule, lp) }
-    }
-
-    /** 点面板外任意位置：收起大面板（收起动画结束后由 onCollapsedSettled 缩窗复位）。 */
+    /** 点面板外任意位置：收起面板，小球就地显示（它从未移动过，所以不会闪）。 */
     private fun collapseCapsule() {
         if (!capsuleExpanded.value) return
         capsuleExpanded.value = false
+        hideCapsulePanel()
+        setCapsuleVisible(true)
+    }
+
+    /** 展开面板：独立的全屏透明窗口，面板以外点一下就能收起。 */
+    private fun showCapsulePanel() {
+        if (panelView != null) return
+        val wm = windowManager ?: return
+        val view = createOverlayComposeView {
+            AgentOverlayCapsule(
+                state = state.value,
+                expanded = true,
+                yielded = capsuleYielded.value,
+                onToggleExpanded = {},
+                onCollapsedSettled = {},
+                onPause = ::requestPause,
+                onResume = ::requestResume,
+                onStop = ::requestStop,
+                onSupplementModeChange = ::setCapsuleInputMode,
+                onSupplement = ::requestSupplement,
+                onOpenConversation = ::openConversation,
+                onCollapseRequest = ::collapseCapsule,
+                collapsedX = capsuleCollapsedX.takeIf { it != Int.MIN_VALUE } ?: 0,
+                collapsedY = capsuleCollapsedY.takeIf { it != Int.MIN_VALUE } ?: 0,
+            )
+        }
+        val lp = capsulePanelLayoutParams()
+        view.alpha = 0f
+        runCatching { wm.addView(view, lp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_panel_add_failed") {
+                "Agent runtime capsule panel addView failed: type=${throwable.safeLogType()}"
+            }
+            return
+        }
+        panelView = view
+        panelParams = lp
+        view.animate().alpha(1f).setDuration(PanelFadeMs).start()
+    }
+
+    /** 面板淡出后移除：小球就在原位显示，两者交叠时不会露出空档。 */
+    private fun hideCapsulePanel() {
+        val view = panelView ?: return
+        panelView = null
+        panelParams = null
+        view.animate().cancel()
+        if (view.alpha > 0f) {
+            val wm = windowManager
+            view.animate().alpha(0f).setDuration(PanelFadeMs).withEndAction {
+                runCatching { wm?.removeView(view) }
+            }.start()
+        } else {
+            runCatching { windowManager?.removeView(view) }
+        }
+    }
+
+    private fun capsulePanelLayoutParams(): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            windowAnimations = 0
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        }
+
+    /** 展开期间把小球藏起来，避免与面板头部重叠。 */
+    private fun setCapsuleVisible(visible: Boolean) {
+        val capsule = capsuleView ?: return
+        capsule.alpha = if (visible) 1f else 0f
     }
 
     /** 收起后回到用户拖到的位置（贴边就继续贴边）。 */
@@ -1425,10 +1491,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    private fun onCapsuleCollapsedSettled() {
-        if (!capsuleExpanded.value) collapseCapsuleWindow()
-    }
-
     private fun setCapsuleWindowWidth(widthDp: Int) {
         val wm = windowManager ?: return
         val capsule = capsuleView ?: return
@@ -1450,29 +1512,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 尺寸与位置必须同一次更新：分几步改会让全屏窗口先变小、面板还按屏幕坐标偏移，
      * 视觉上就是从左上角缩放一下再弹回小球位置。
      */
+    /** 收起态：关掉展开面板并确保小球可见（小球窗口尺寸与位置本就固定）。 */
     private fun collapseCapsuleWindow() {
-        val lp = capsuleParams ?: return
-        val capsule = capsuleView ?: return
-        val wm = windowManager ?: return
-        // 窗口缩小时 Compose 会按新的约束重排，内容自然贴回小球自身。
-        capsuleOffsetX.value = capsuleCollapsedX.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetX.value
-        capsuleOffsetY.value = capsuleCollapsedY.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetY.value
-        lp.width = dpToPx(CAPSULE_COLLAPSED_WIDTH_DP)
-        lp.height = dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP)
-        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
-        val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
-        if (capsuleCollapsedX != Int.MIN_VALUE) {
-            lp.x = capsuleCollapsedX.coerceIn(edge, maxOf(edge, screenWidth - lp.width - edge))
-        }
-        if (capsuleCollapsedY != Int.MIN_VALUE) {
-            lp.y = capsuleCollapsedY.coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
-        }
-        // 窗口的尺寸与位置不是原子的：位置生效比内容重排晚一帧时，
-        // 会看到小球先在屏幕左上角闪一下再回来。先把整窗隐藏，等新布局落定再显示。
-        capsule.alpha = 0f
-        runCatching { wm.updateViewLayout(capsule, lp) }
-        capsule.postOnAnimation { capsule.postOnAnimation { capsule.alpha = 1f } }
+        hideCapsulePanel()
+        setCapsuleVisible(true)
     }
 
     private fun setCapsuleWindowHeight(heightDp: Int) {
@@ -1713,14 +1756,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun setCapsuleInputMode(focusable: Boolean) {
-        setCapsuleWindowHeight(
-            if (focusable) CAPSULE_SUPPLEMENT_HEIGHT_DP
-            else if (capsuleExpanded.value) capsuleExpandedHeightDp()
-            else CAPSULE_COLLAPSED_HEIGHT_DP,
-        )
+        // 补充输入发生在展开面板里：只切换面板窗口的焦点能力，小球窗口尺寸恒定。
         val wm = windowManager ?: return
-        val capsule = capsuleView ?: return
-        val lp = capsuleParams ?: return
+        val capsule = panelView ?: capsuleView ?: return
+        val lp = panelParams ?: capsuleParams ?: return
         val nextFlags = if (focusable) {
             lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
         } else {
@@ -1796,6 +1835,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun removeAmbientWindows() {
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
+        hideCapsulePanel()
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView = null
@@ -1922,6 +1962,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 332
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 320
         /** 注入点击只是一个点，目标控件常贴着胶囊边缘，判定范围向外多留一点。 */
+        /** 展开面板窗口的淡入淡出时长。 */
+        private const val PanelFadeMs = 140L
         private const val CAPSULE_CLEARANCE_SLOP_DP = 8
         private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
