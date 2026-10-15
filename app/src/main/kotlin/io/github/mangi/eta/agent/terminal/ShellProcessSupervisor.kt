@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.terminal
 
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
