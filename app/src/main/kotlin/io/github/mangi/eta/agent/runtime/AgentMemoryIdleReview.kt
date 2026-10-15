@@ -46,7 +46,6 @@ internal class AgentMemoryIdleReview(
 
     private val bindings = mutableMapOf<String, Binding>()
     private val signals = mutableMapOf<String, Signal>()
-    private val attempts = mutableMapOf<String, Int>()
     private var lastAttemptAtMillis = 0L
     private var pendingAction: Runnable? = null
     private var activeReviewSessionKey: String? = null
@@ -140,12 +139,6 @@ internal class AgentMemoryIdleReview(
             return
         }
         val sessionKey = binding.sessionKey
-        val used = attempts[sessionKey] ?: 0
-        if (used >= MAX_PER_SESSION) {
-            AndroidAgentLogger.info("Memory idle review: session budget used ($used)")
-            trace("本次会话整理次数已用完（$used 次），跳过")
-            return
-        }
         val delay = maxOf(IDLE_DELAY_MS, lastAttemptAtMillis + MIN_INTERVAL_MS - System.currentTimeMillis())
         pendingAction?.let(cancelDelayed)
         val action = Runnable {
@@ -170,7 +163,6 @@ internal class AgentMemoryIdleReview(
         score: Double,
         added: List<AgentModelClient.ConversationMessage>,
     ) {
-        attempts[sessionKey] = (attempts[sessionKey] ?: 0) + 1
         lastAttemptAtMillis = System.currentTimeMillis()
         activeReviewSessionKey = sessionKey
         // 记下整理前的档案快照，跑完对比出「新建了谁 / 追加到谁」。
@@ -308,8 +300,6 @@ internal class AgentMemoryIdleReview(
 
         private const val IDLE_DELAY_MS = 30_000L
         private const val MIN_INTERVAL_MS = 5 * 60 * 1000L
-        /** 每个会话的整理次数上限；长会话跑很多轮也不至于早早用完配额。 */
-        private const val MAX_PER_SESSION = 5
         private const val SCORE_THRESHOLD = 5.0
         private const val MIN_USER_CHARS = 320
         private const val MIN_ASSISTANT_CHARS = 600
