@@ -12,7 +12,7 @@ internal class ShellProcessSupervisor(
     private val allowTreeFallback: Boolean = !isAndroidRuntime(),
     private val setsidCommand: String = "setsid",
     private val rootAvailable: () -> Boolean = { TerminalRuntime.rootAvailable },
-    private val userPtyExecutable: () -> File? = { TerminalRuntime.nativeExecutable("libeta_pty.so") },
+    private val ptyExecutable: () -> File? = { TerminalRuntime.nativeExecutable(PTY_EXECUTABLE) },
 ) {
     private companion object {
         const val PROCESS_REAP_TIMEOUT_MS = 1_000L
@@ -21,6 +21,7 @@ internal class ShellProcessSupervisor(
         const val DEFAULT_PTY_COLS = 120
         const val DEFAULT_PTY_ROWS = 40
         const val PTY_TERM_TYPE = "xterm-256color"
+        const val BUSYBOX_APPLET_DIR = "${TerminalRuntime.ROOT_WORKSPACE_PATH}/.busybox"
 
         fun isAndroidRuntime(): Boolean =
             System.getProperty("java.vm.name").orEmpty().equals("Dalvik", ignoreCase = true) ||
@@ -121,6 +122,12 @@ internal class ShellProcessSupervisor(
         return process
     }
 
+    internal fun ownershipOf(process: Process): ShellProcessOwnership? {
+        val metadata = synchronized(activeProcesses) { processMetadata[process] } ?: return null
+        val ownership = resolveProcessOwnership(metadata) ?: return null
+        return ShellProcessOwnership(ownership.pid, metadata.ownershipToken, ownership.isolatedGroup)
+    }
+
     fun transferActiveProcess(process: Process, transfer: () -> Unit): Boolean =
         synchronized(activeProcesses) {
             if (isClosing) return false
@@ -186,6 +193,7 @@ internal class ShellProcessSupervisor(
             TerminalEnvironment.ANDROID -> buildAndroidPayload(
                 identity = identity,
                 command = managedCommand,
+                interactivePty = pty && command == null,
             )
             else -> buildLinuxPayload(
                 rootfsPath = requireNotNull(linuxRootfsPath) {
@@ -199,6 +207,12 @@ internal class ShellProcessSupervisor(
 
         val path = shellQuote(ownershipFile.absolutePath)
         val exportOwner = "export $ETA_PROCESS_OWNER_ENV=${shellQuote(ownershipToken)}"
+        if (pty) {
+            // PTY 会话由原生组件建立独立 session 并在退出时回收整个进程组，Root 与普通身份共用同一入口。
+            val executable = ptyExecutable() ?: throw IOException("PTY 组件不可用")
+            val script = "printf '%s group\\n' \"${'$'}${'$'}\" > $path; export TERM=$PTY_TERM_TYPE; $payload"
+            return "$exportOwner; exec ${shellQuote(executable.absolutePath)} $ptyRows $ptyCols -- sh -c ${shellQuote(script)}"
+        }
         val cleanupGroup =
                 "eta_cleanup_proc_group() { " +
                 "for stat_file in /proc/[0-9]*/stat; do " +
@@ -226,58 +240,39 @@ internal class ShellProcessSupervisor(
             "printf '%s unavailable\\n' \"${'$'}${'$'}\" > $path; exit 126"
         }
         val safeSetsid = shellQuote(setsidCommand)
-        if (pty) {
-            if (identity == "user") {
-                userPtyExecutable()?.let { executable ->
-                    val script = "printf '%s group\\n' \"${'$'}${'$'}\" > $path; export TERM=$PTY_TERM_TYPE; $payload"
-                    return "$exportOwner; exec ${shellQuote(executable.absolutePath)} $ptyRows $ptyCols -- sh -c ${shellQuote(script)}"
-                }
-            }
-            return buildPtyLauncher(
-                exportOwner = exportOwner,
-                path = path,
-                groupScript = groupScript,
-                safeSetsid = safeSetsid,
-                cols = ptyCols,
-                rows = ptyRows,
-            )
-        }
         return "$exportOwner; if command -v $safeSetsid >/dev/null 2>&1; then " +
             "exec $safeSetsid -w sh -c ${shellQuote(groupScript)}; else $fallback; fi"
     }
 
     /**
-     * PTY 控制台启动器：经 BusyBox script 为负载分配伪终端（stty 设定初始尺寸、TERM 宣告全彩）。
-     * script 缺失时写入 unavailable，由调用方拒绝接纳，控制台入口依赖 [ptySupported] 提前探测。
+     * Root 会话优先进入 Magisk/KernelSU/APatch BusyBox standalone ash，补齐 Android PATH 外的 applet。
+     *
+     * 交互式 PTY 例外：BusyBox 1.35.0–1.36.x 的 ash 在提示符等待输入时，任何信号打断 poll 都会让
+     * 行编辑返回并另起一行新提示符（上游 bug 15256，1.37.0 修复，1.36.1 未回移）。控制台随软键盘和横竖屏
+     * 同步窗口尺寸，每次 SIGWINCH 都会多出一行空提示符。命中这些版本时改用系统 sh（与 su 默认 shell 一致），
+     * 并把 BusyBox applet 链接追加到 PATH 末尾，系统命令仍然优先。
      */
-    private fun buildPtyLauncher(
-        exportOwner: String,
-        path: String,
-        groupScript: String,
-        safeSetsid: String,
-        cols: Int,
-        rows: Int,
-    ): String {
-        val discovery = AndroidBusyBox.discoveryScript()
-        val ptyScript = "stty rows $rows cols $cols 2>/dev/null; export TERM=$PTY_TERM_TYPE; $groupScript"
-        val unavailable = "printf '%s unavailable\\n' \"\$\$\" > $path; exit 126"
-        val run = "\"\$eta_busybox\" script -qfc ${shellQuote(ptyScript)} /dev/null"
-        return "$exportOwner; $discovery; [ -n \"\$eta_busybox\" ] || { $unavailable; }; " +
-            "if command -v $safeSetsid >/dev/null 2>&1; then " +
-            "exec $safeSetsid -w $run; else $run; fi"
-    }
-
-    /** Root 会话优先进入 Magisk/KernelSU/APatch BusyBox standalone ash，补齐 Android PATH 外的 applet。 */
-    internal fun buildAndroidPayload(identity: String, command: String?): String {
+    internal fun buildAndroidPayload(identity: String, command: String?, interactivePty: Boolean = false): String {
         val shellArgument = command?.let { "-c ${shellQuote(it)}" }.orEmpty()
         if (identity != "root") {
             return "sh $shellArgument".trimEnd()
         }
         val discovery = AndroidBusyBox.discoveryScript()
+        val ash = "export ASH_STANDALONE=1; \"${'$'}eta_busybox\" ash $shellArgument"
+        val busyBoxShell = if (interactivePty) {
+            val applets = shellQuote(BUSYBOX_APPLET_DIR)
+            "case \"${'$'}(\"${'$'}eta_busybox\" 2>&1 | head -n 1)\" in " +
+                "*' v1.35.'*|*' v1.36.'*) " +
+                "mkdir -p $applets 2>/dev/null && \"${'$'}eta_busybox\" --install -s $applets 2>/dev/null; " +
+                "export PATH=\"${'$'}PATH:\"$applets; sh;; " +
+                "*) $ash;; esac"
+        } else {
+            ash
+        }
         return "$discovery; " +
             "if [ -n \"${'$'}eta_busybox\" ]; then " +
-            "export ETA_BUSYBOX=\"${'$'}eta_busybox\" ASH_STANDALONE=1; " +
-            "\"${'$'}eta_busybox\" ash $shellArgument; " +
+            "export ETA_BUSYBOX=\"${'$'}eta_busybox\"; " +
+            "$busyBoxShell; " +
             "else sh $shellArgument; fi"
     }
 
@@ -509,6 +504,8 @@ internal class ShellProcessSupervisor(
     )
 }
 
+internal data class ShellProcessOwnership(val pid: Long, val token: String, val isolatedGroup: Boolean)
+
 /** 写入托管进程环境块的归属标记；巡检与停止前用它防止 PID 复用误杀。 */
 internal const val ETA_PROCESS_OWNER_ENV = "ETA_PROCESS_OWNER"
 
@@ -541,6 +538,7 @@ internal fun ptySupported(processSupervisor: ShellProcessSupervisor): Boolean {
 }
 
 /** 子进程提前退出导致输入管道写入失败时的退出码；由调用方区分「命令成功但输入没送进去」。 */
+internal const val PTY_EXECUTABLE = "libeta_pty.so"
 internal const val SHELL_STDIN_FAILED_EXIT_CODE = -4
 
 /**

@@ -1,13 +1,16 @@
 package io.github.mangi.eta.ui.screens.home
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import io.github.mangi.eta.ui.components.AgentChatBody
+import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
 import io.github.mangi.eta.ui.model.AgentHomeAction
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.roleplayChatUi
 
 /**
  * AgentChatHome：首屏为聊天主舞台。
@@ -26,6 +29,7 @@ internal fun AgentHomeScreen(
     modifier: Modifier = Modifier,
 ) {
     key(chatConversationCompositionKey(conversationKey)) {
+        CompositionLocalProvider(LocalRoleplayChat provides state.roleplayChatUi()) {
         AgentChatBody(
             messages = state.messages,
             modelPickerState = modelPickerState,
@@ -65,5 +69,6 @@ internal fun AgentHomeScreen(
             isDrawerOpen = isDrawerOpen,
             modifier = modifier,
         )
+        }
     }
 }

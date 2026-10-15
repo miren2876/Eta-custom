@@ -32,7 +32,6 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsVoice
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.SportsBar
@@ -92,6 +91,7 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.material.icons.rounded.Settings
 
 /**
  * 模块配置界面。

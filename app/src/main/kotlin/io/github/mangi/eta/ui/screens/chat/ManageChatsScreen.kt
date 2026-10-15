@@ -35,7 +35,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.PushPin
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
@@ -45,6 +44,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.material.icons.rounded.PushPin
 
 private val ManageRowHorizontalPadding = 16.dp
 private val ManageRowVerticalPadding = 12.dp

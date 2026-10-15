@@ -66,6 +66,24 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.sp
+import io.github.mangi.eta.ui.markdown.MarkdownTone
+import io.github.mangi.eta.ui.markdown.StaticMarkdown
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.squircle.squircleSurface
 
 @Composable
 internal fun AgentMemoryScreen(
@@ -830,6 +848,9 @@ private fun CoreEditorCard(
     onClear: () -> Unit,
     onSave: () -> Unit,
 ) {
+    val bytes = draft.toByteArray(Charsets.UTF_8).size
+    val overLimit = bytes > limitBytes
+    val changed = draft != saved
     EtaPreferenceGroup(
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -838,8 +859,7 @@ private fun CoreEditorCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -851,69 +871,53 @@ private fun CoreEditorCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = if (draft != saved) stringResource(R.string.memory_unsaved_changes) else summary,
+                    text = if (changed) stringResource(R.string.memory_unsaved_changes) else summary,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     style = MiuixTheme.textStyles.footnote1,
                 )
             }
             Text(
-                text = "${formatBytes(draft.toByteArray(Charsets.UTF_8).size)} / ${formatBytes(limitBytes)}",
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                text = "${formatBytes(bytes)} / ${formatBytes(limitBytes)}",
+                color = if (overLimit) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 style = MiuixTheme.textStyles.footnote1,
             )
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                imageVector = if (expanded) {
-                    Icons.Rounded.KeyboardArrowUp
-                } else {
-                    Icons.Rounded.KeyboardArrowDown
-                },
-                contentDescription = stringResource(
-                    if (expanded) R.string.memory_editor_collapse else R.string.memory_editor_expand,
-                ),
-                modifier = Modifier.size(20.dp),
-                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        if (expanded) {
-            EtaPreferenceDivider(hasLeading = false)
-            Column(modifier = Modifier.padding(16.dp)) {
-                TextField(
-                    value = draft,
-                    onValueChange = onDraftChange,
-                    label = title,
-                    useLabelAsPlaceholder = true,
-                    enabled = enabled,
-                    minLines = 5,
-                    maxLines = 12,
-                    textStyle = MiuixTheme.textStyles.body2,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    EtaTextButton(
-                        text = stringResource(R.string.ui_clear_84fcd7),
-                        enabled = !saving && draft.isNotEmpty(),
-                        onClick = onClear,
-                        modifier = Modifier.weight(1f),
-                    )
-                    EtaTextButton(
-                        text = if (saving) {
-                            stringResource(R.string.memory_saving)
-                        } else {
-                            stringResource(R.string.memory_save)
-                        },
-                        enabled = !saving && draft != saved,
-                        onClick = onSave,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
+            if (expanded && draft.isNotEmpty()) {
+                IconButton(onClick = onClear, enabled = !saving) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = stringResource(R.string.ui_clear_84fcd7),
+                        modifier = Modifier.size(20.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
                 }
             }
+            Spacer(modifier = Modifier.width(4.dp))
+            MemoryModeSwitch(
+                mode = if (expanded) MemoryViewMode.Edit else MemoryViewMode.Preview,
+                enabled = enabled,
+                onModeChange = { onToggle() },
+            )
         }
+        EtaPreferenceDivider(hasLeading = false)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(MemoryDocumentBodyHeight),
+        ) {
+            if (expanded) {
+                MemoryEditor(value = draft, enabled = enabled, placeholder = summary, onValueChange = onDraftChange)
+            } else {
+                MemoryPreview(content = draft, placeholder = summary, onStartEditing = { if (enabled) onToggle() })
+            }
+        }
+        MemorySaveBar(
+            visible = changed || saving || overLimit,
+            overLimit = overLimit,
+            saving = saving,
+            canSave = enabled && changed && !overLimit,
+            onDiscard = { onDraftChange(saved) },
+            onSave = onSave,
+        )
     }
 }
 
@@ -1055,6 +1059,170 @@ private fun FileEditor(
                     stringResource(R.string.memory_save)
                 },
                 enabled = !saving && draft != saved,
+                onClick = onSave,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
+        }
+    }
+}
+
+
+private enum class MemoryViewMode { Preview, Edit }
+
+/** 文档正文区在列表里固定高度，预览与编辑都在这块区域内滚动。 */
+private val MemoryDocumentBodyHeight = 260.dp
+
+/** 预览态：Markdown 渲染，点一下切到编辑。 */
+@Composable
+private fun MemoryPreview(content: String, placeholder: String, onStartEditing: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(onClick = onStartEditing)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        if (content.isBlank()) {
+            Text(
+                text = placeholder,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        } else {
+            StaticMarkdown(content = content, tone = MarkdownTone.Answer, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** 编辑态：无边框整页编辑，与卡片同色；点到空白处也能把光标落进正文。 */
+@Composable
+private fun MemoryEditor(
+    value: String,
+    enabled: Boolean,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val focusRequester = remember { FocusRequester() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(interactionSource = null, indication = null) { focusRequester.requestFocus() }
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        if (value.isEmpty()) {
+            Text(
+                text = placeholder,
+                style = MemoryTextStyle(),
+                color = colors.onSurfaceVariantSummary,
+            )
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            textStyle = MemoryTextStyle().copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.primary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
+        )
+    }
+}
+
+@Composable
+private fun MemoryTextStyle() = MiuixTheme.textStyles.body2.copy(lineHeight = 22.sp)
+
+/** 轻量分段切换：两个选项常驻可见，选中项用浮起的胶囊表示。 */
+@Composable
+private fun MemoryModeSwitch(
+    mode: MemoryViewMode,
+    enabled: Boolean,
+    onModeChange: (MemoryViewMode) -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .squircleSurface(color = colors.surfaceContainerHigh, cornerRadius = 12.dp)
+            .padding(3.dp),
+    ) {
+        MemoryViewMode.entries.forEach { option ->
+            val selected = option == mode
+            val background by animateColorAsState(
+                if (selected) colors.surface else colors.surfaceContainerHigh,
+                label = "memory_mode_tab",
+            )
+            Box(
+                modifier = Modifier
+                    .squircleSurface(color = background, cornerRadius = 9.dp)
+                    .clickable(enabled = enabled && !selected) { onModeChange(option) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(
+                        if (option == MemoryViewMode.Preview) R.string.memory_mode_preview else R.string.memory_mode_edit,
+                    ),
+                    style = MiuixTheme.textStyles.footnote1,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                    color = if (selected) colors.onSurface else colors.onSurfaceVariantSummary,
+                )
+            }
+        }
+    }
+}
+
+/** 有未保存修改或超限时才出现：左侧说明状态，右侧放弃与保存。 */
+@Composable
+private fun MemorySaveBar(
+    visible: Boolean,
+    overLimit: Boolean,
+    saving: Boolean,
+    canSave: Boolean,
+    onDiscard: () -> Unit,
+    onSave: () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(
+                            if (overLimit) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.primary,
+                            CircleShape,
+                        ),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(
+                        if (overLimit) R.string.memory_over_limit else R.string.memory_unsaved_changes,
+                    ),
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = if (overLimit) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                )
+            }
+            EtaTextButton(
+                text = stringResource(R.string.memory_discard),
+                enabled = !saving,
+                onClick = onDiscard,
+            )
+            EtaTextButton(
+                text = stringResource(if (saving) R.string.memory_saving else R.string.memory_save),
+                enabled = canSave,
                 onClick = onSave,
                 colors = ButtonDefaults.textButtonColorsPrimary(),
             )

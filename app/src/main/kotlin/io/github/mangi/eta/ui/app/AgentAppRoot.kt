@@ -1,9 +1,5 @@
 package io.github.mangi.eta.ui.app
 
-import io.github.mangi.eta.ui.voice.SpeechOssScreen
-import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
-import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
-import io.github.mangi.eta.ui.voice.SpeechSynthesisScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -39,9 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +67,7 @@ import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.model.conversationTopBarTitle
 import io.github.mangi.eta.ui.model.LOCAL_NETWORK_PERMISSION_ITEM_ID
 import io.github.mangi.eta.ui.model.PermissionHealthAction
+import io.github.mangi.eta.ui.model.roleplayChatUi
 import io.github.mangi.eta.ui.navigation.AgentNavigator
 import io.github.mangi.eta.ui.navigation.AppRoute
 import io.github.mangi.eta.ui.pages.providers.CommunityCatalogProviderScreen
@@ -81,10 +78,10 @@ import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserScreen
 import io.github.mangi.eta.ui.screens.chat.ManageChatsScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
-import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
-import io.github.mangi.eta.ui.screens.characters.CharacterPersonaScreen
+import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterMemoryScreen
+import io.github.mangi.eta.ui.screens.characters.CharacterPersonaScreen
 import io.github.mangi.eta.ui.screens.enhance.SystemEnhanceScreen
 import io.github.mangi.eta.ui.screens.home.AgentHomeScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
@@ -98,6 +95,10 @@ import io.github.mangi.eta.ui.screens.terminal.SharedFoldersScreen
 import io.github.mangi.eta.ui.screens.terminal.TerminalEntryScreen
 import io.github.mangi.eta.ui.screens.terminal.WorkspaceScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
+import io.github.mangi.eta.ui.voice.SpeechOssScreen
+import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
+import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
+import io.github.mangi.eta.ui.voice.SpeechSynthesisScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -105,12 +106,12 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
-import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
@@ -127,6 +128,8 @@ fun AgentAppRoot(
     requestedArchivedConversation: ArchivedConversationRequest? = null,
     onArchivedConversationOpened: () -> Unit = {},
     openSpeechSettings: Boolean = false,
+    openTerminal: Boolean = false,
+    onTerminalOpened: () -> Unit = {},
     onSpeechSettingsOpened: () -> Unit = {},
     onAssistantConversationOpened: (Boolean) -> Unit = {},
 ) {
@@ -149,6 +152,12 @@ fun AgentAppRoot(
         if (openSpeechSettings) {
             if (backStack.lastOrNull() != AppRoute.SpeechSettings) backStack.add(AppRoute.SpeechSettings)
             onSpeechSettingsOpened()
+        }
+    }
+    LaunchedEffect(openTerminal) {
+        if (openTerminal) {
+            if (backStack.lastOrNull() != AppRoute.Terminal) backStack.add(AppRoute.Terminal)
+            onTerminalOpened()
         }
     }
     val navigator = remember(backStack) { AgentNavigator(backStack) }
@@ -370,6 +379,10 @@ fun AgentAppRoot(
             onOpenPermissions = { pushRoute(AppRoute.Permissions) },
             onOpenSettings = { pushRoute(AppRoute.Settings) },
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
+            homeCharacter = if (route is AppRoute.Home) agentState.homeState.roleplayChatUi() else null,
+            onOpenCharacter = {
+                agentState.homeState.roleplay?.let { pushRoute(AppRoute.CharacterDetail(it.characterId)) }
+            },
         ) { padding ->
             Box(
                 modifier = Modifier

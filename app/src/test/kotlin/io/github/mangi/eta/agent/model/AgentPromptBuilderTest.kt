@@ -3,6 +3,8 @@ package io.github.mangi.eta.agent.model
 import io.github.mangi.eta.agent.device.RootAccessState
 import io.github.mangi.eta.agent.device.RootAccessStatus
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
+import io.github.mangi.eta.agent.terminal.TerminalEnvironment
+import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillIndexEntry
 import org.json.JSONArray
@@ -30,12 +32,32 @@ class AgentPromptBuilderTest {
         assertEquals(1, ungranted.distinct().size)
         val granted = prompt(RootAccessState(RootAccessStatus.GRANTED, suPresent = true))
         assertEquals(granted, prompt(RootAccessState(RootAccessStatus.GRANTED, suPresent = true, isChecking = true)))
-        // 文案抽查按本项目的定制版提示词：授权与未授权走不同分支，且两边都提到 terminal 工具。
-        assertTrue(granted.contains("可使用 root 身份"))
-        assertTrue(ungranted.first().contains("只支持 identity=user"))
+        // 文案抽查：授权与未授权走不同分支，且都说明 check_root 与 terminal 工具。
+        assertTrue(granted.contains("Root 授权已确认"))
+        assertTrue(ungranted.first().contains("这不代表设备不支持 Root"))
         for (contents in ungranted + granted) {
-            assertTrue(contents.contains("terminal"))
+            assertTrue(contents.contains("identity=user 是显式选择"))
+            assertTrue(contents.contains("terminal(action=check_root)"))
         }
+    }
+
+    @Test
+    fun terminalPromptDescribesTheActualRunWorkspaceAndSeparateLifecycles() {
+        val messages = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = true, browserTools = false),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+            executionContext = TerminalExecutionContext(TerminalEnvironment.DEBIAN, null, "/eta/custom workspace"),
+        )
+        val terminal = messages.systemContents().single { it.contains("任务需要在手机上执行命令") }
+        assertTrue(terminal.contains("/eta/custom workspace"))
+        assertTrue(terminal.contains("debian"))
+        assertTrue(terminal.contains("identity=user"))
+        assertTrue(terminal.contains("terminal_job"))
+        assertTrue(terminal.contains("terminal_daemon"))
+        assertFalse(terminal.contains("async=true"))
+        assertFalse(terminal.contains("read_async_result"))
     }
 
     @Test
@@ -118,9 +140,9 @@ class AgentPromptBuilderTest {
         assertTrue(messages.systemContents().any { it.contains("合法且克制的 GitHub Flavored Markdown") })
         assertTrue(messages.systemContents().any { it.contains("不用整句粗体冒充标题") })
         assertTrue(messages.systemContents().any { it.contains("表格前后留空行") })
-        assertTrue(messages.getJSONObject(2).getString("content").contains("action=exec"))
+        assertTrue(messages.getJSONObject(2).getString("content").contains("只需 command"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("同一轮模型回复最多调用一次 read_image"))
-        assertTrue(messages.getJSONObject(2).getString("content").contains("再在下一轮调用下一张"))
+        assertTrue(messages.getJSONObject(2).getString("content").contains("必须等待当前图片返回并观察内容，再在下一轮调用下一张"))
         assertFalse(messages.systemContents().any { it.contains("网页浏览、读取") })
         assertEquals("旧问题", messages.getJSONObject(3).getString("content"))
         assertEquals("旧回答", messages.getJSONObject(4).getString("content"))
@@ -161,7 +183,7 @@ class AgentPromptBuilderTest {
         assertEquals(listOf("system", "system", "system", "user"), messages.roles())
         val systemContents = messages.systemContents()
         assertTrue(systemContents.any { it.contains("browser_use") })
-        assertFalse(systemContents.any { it.contains("action=exec") })
+        assertFalse(systemContents.any { it.contains("只需 command") })
         val skillMessage = systemContents.single { it.contains("id=screen-audit") }
         assertTrue(skillMessage.contains("path=/skills/screen-audit/SKILL.md"))
         assertTrue(skillMessage.contains("capabilities=scripts, assets"))

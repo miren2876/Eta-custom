@@ -168,7 +168,7 @@ class AgentModelClientLoopTest {
         val provider = ScriptedProvider(listOf(
             { _, _ -> assistant(finishReason = "tool_calls", toolCalls = listOf(toolCall("local-search", "web_search", """{"query":"example"}"""))) },
             { request, _ ->
-                assertTrue(request.messages.toString().contains("INVALID_TOOL_ARGUMENTS"))
+                assertTrue(request.messages.toString().contains("TOOL_NOT_AVAILABLE"))
                 assistant(content = "已使用可用能力", finishReason = "stop")
             },
         ))
@@ -180,7 +180,7 @@ class AgentModelClientLoopTest {
     }
 
     @Test
-    fun eachRoundUsesOneCapabilitySnapshotForDeclarationValidationAndPrompt() {
+    fun eachRoundUsesOneCapabilitySnapshotForToolAvailabilityAndPrompt() {
         var root = true
         var captures = 0
         val executed = mutableListOf<String>()
@@ -195,11 +195,11 @@ class AgentModelClientLoopTest {
                 assertFalse(request.messages.toString().contains("相关应用私有文件与数据库"))
                 assertTrue(request.messages.toString().contains("identity=user"))
                 assistant(finishReason = "tool_calls", toolCalls = listOf(
-                    toolCall("stale", "terminal", "{\"action\":\"open\",\"identity\":\"root\"}"),
+                    toolCall("stale", "set_setting", "{}"),
                 ))
             },
             { request, _ ->
-                assertTrue(request.messages.toString().contains("INVALID_TOOL_ARGUMENTS"))
+                assertTrue(request.messages.toString().contains("TOOL_NOT_AVAILABLE"))
                 assistant(content = "完成", finishReason = "stop")
             },
         ))
@@ -620,33 +620,56 @@ class AgentModelClientLoopTest {
     }
 
     @Test
-    fun missingRequiredArgumentsNeverReachDeviceExecutor() {
-        val provider = ScriptedProvider(
-            assistant(
-                finishReason = "tool_calls",
-                toolCalls = listOf(toolCall("call-1", "tap", "{}")),
-            ),
-            assistant(content = "已修正", finishReason = "stop"),
+    fun toolArgumentsReachExecutorWithoutSchemaPreflight() {
+        val calls = listOf(
+            toolCall("write", "write_file", """{"path":"note.md","content":"内容","identity":"USER","extra":true}"""),
+            toolCall("read", "read_file", """{"path":"note.md","start_line":1,"offset_bytes":0,"max_bytes":1000000}"""),
+            toolCall("missing", "tap", "{}"),
         )
-        var executed = false
-
+        val provider = ScriptedProvider(
+            assistant(finishReason = "tool_calls", toolCalls = calls),
+            assistant(content = "完成", finishReason = "stop"),
+        )
+        val executed = mutableListOf<AgentModelClient.ToolCall>()
         AgentModelClient.complete(
-            config = modelConfig(),
-            prompt = "点击",
+            config = modelConfig().copy(terminalTools = true),
+            prompt = "执行工具",
             toolExecutor = AgentModelClient.ToolExecutor {
-                executed = true
-                AgentModelClient.ToolResult("unexpected")
+                executed += it
+                AgentModelClient.ToolResult(
+                    if (it.id == "missing") """{"ok":false,"code":"INVALID_ARGUMENT","message":"缺少坐标"}"""
+                    else """{"ok":true}""",
+                )
             },
             provider = provider,
         )
+        assertEquals(calls.map { call ->
+            val function = call.getJSONObject("function")
+            AgentModelClient.ToolCall(call.getString("id"), function.getString("name"), function.getString("arguments"))
+        }, executed)
+        val messages = provider.requests[1].toString()
+        assertTrue(messages.contains("缺少坐标"))
+        assertFalse(messages.contains("INVALID_TOOL_ARGUMENTS"))
+    }
 
-        assertFalse(executed)
-        assertTrue(
-            provider.requests[1]
-                .getJSONObjectFromEnd(1)
-                .getString("content")
-                .contains("INVALID_TOOL_ARGUMENTS")
+    @Test
+    fun remoteToolSchemasAreNotInterpretedByTheLoop() {
+        val call = toolCall("remote", "mcp_test_write", """{"content":"正文","extra":true}""")
+        val provider = ScriptedProvider(
+            assistant(finishReason = "tool_calls", toolCalls = listOf(call)),
+            assistant(content = "完成", finishReason = "stop"),
         )
+        val executed = mutableListOf<AgentModelClient.ToolCall>()
+        AgentModelClient.complete(
+            config = modelConfig(), prompt = "写文件", provider = provider,
+            additionalTools = JSONArray().put(AgentToolSchema.function("mcp_test_write", "远端文件工具",
+                JSONObject("""{"type":"object","required":["mode"],"additionalProperties":false}"""))),
+            toolExecutor = AgentModelClient.ToolExecutor {
+                executed += it
+                AgentModelClient.ToolResult("""{"ok":true}""")
+            },
+        )
+        assertEquals(listOf(AgentModelClient.ToolCall("remote", "mcp_test_write", """{"content":"正文","extra":true}""")), executed)
     }
 
     @Test

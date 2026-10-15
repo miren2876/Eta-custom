@@ -19,6 +19,7 @@ import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -104,6 +105,7 @@ internal object AgentModelClient {
         initialUserMessageId: String = "user-$operationId",
         initialSupplementIndex: Int = 0,
         roleplayContext: RoleplayRunContext? = null,
+        executionContext: TerminalExecutionContext? = null,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
@@ -121,6 +123,7 @@ internal object AgentModelClient {
             memoryContext,
             rootAvailable = initialCapabilities.rootAvailable,
             roleplayContext = roleplayContext,
+            executionContext = executionContext,
             virtualScreenEnabled = initialCapabilities.virtualScreenEnabled,
             virtualScreenFallbackEnabled = initialCapabilities.virtualScreenFallbackEnabled,
             askUser = initialCapabilities.askUser,
@@ -139,7 +142,7 @@ internal object AgentModelClient {
         val transcript = JSONArray()
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
         val systemCount = AgentPromptBuilder.buildSystemMessages(
-            config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext, initialCapabilities.virtualScreenEnabled, initialCapabilities.virtualScreenFallbackEnabled, initialCapabilities.askUser,
+            config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext, executionContext, initialCapabilities.virtualScreenEnabled, initialCapabilities.virtualScreenFallbackEnabled, initialCapabilities.askUser,
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities): JSONArray {
             if (rewriteReply) return JSONArray()
@@ -186,7 +189,7 @@ internal object AgentModelClient {
                 capabilities.askUser != promptAskUser
             ) {
                 val systemMessages = AgentPromptBuilder.buildSystemMessages(
-                    config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                    config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext, executionContext,
                     capabilities.virtualScreenEnabled, capabilities.virtualScreenFallbackEnabled, capabilities.askUser,
                 )
                 for (index in 0 until systemMessages.length()) {

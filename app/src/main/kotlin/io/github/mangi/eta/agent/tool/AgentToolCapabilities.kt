@@ -8,6 +8,7 @@ import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.device.AgentNotificationHistoryService
+import io.github.mangi.eta.agent.device.RootAccessState
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
 import java.util.Locale
@@ -16,6 +17,7 @@ import org.json.JSONArray
 /** 每轮冻结的运行条件；不包含用户开关，也不触发授权请求。 */
 internal data class AgentToolCapabilities(
     val rootAvailable: Boolean,
+    val rootState: RootAccessState? = null,
     val lsposedAvailable: Boolean = false,
     val accessibilityAvailable: Boolean = true,
     val accessibilityRecoveryAvailable: Boolean = false,
@@ -132,8 +134,10 @@ internal data class AgentToolCapabilities(
         fun capture(context: Context): AgentToolCapabilities {
             val settings =
                 kotlinx.coroutines.runBlocking { io.github.mangi.eta.data.datastore.SettingsDataStore.settings() }
+            val root = RootAccess.state.value
             return AgentToolCapabilities(
-                rootAvailable = RootAccess.isGranted,
+                rootAvailable = root.isGranted,
+                rootState = root,
                 lsposedAvailable = EtaApp.serviceInstance != null,
                 accessibilityAvailable = AgentAccessibilityService.isAvailable(),
                 accessibilityRecoveryAvailable = EtaApp.serviceInstance != null &&

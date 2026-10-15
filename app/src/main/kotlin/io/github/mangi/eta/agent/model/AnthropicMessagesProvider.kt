@@ -261,7 +261,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
 
     /**
      * input_schema 顶层不接受 oneOf/anyOf/allOf，否则整个请求 400。只在发送副本上移除；
-     * 本地 AgentToolCallValidator 仍按原始 schema 校验，组合约束失败时把错误返回给模型。
+     * 参数交给对应工具执行，执行结果随工具回合返回模型。
      */
     private fun inputSchema(parameters: JSONObject?): JSONObject {
         parameters ?: return JSONObject().put("type", "object")

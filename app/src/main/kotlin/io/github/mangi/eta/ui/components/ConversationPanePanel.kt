@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.model.ConversationFolderUi
@@ -396,6 +397,15 @@ private fun ConversationTextRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            conversation.characterName?.let { name ->
+                CharacterAvatar(
+                    name = name,
+                    avatarPath = conversation.characterAvatarPath,
+                    size = 36.dp,
+                    shape = CircleShape,
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
             val title = conversation.title.ifBlank { conversation.preview }
             Text(

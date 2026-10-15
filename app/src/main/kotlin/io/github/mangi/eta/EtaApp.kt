@@ -58,6 +58,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener, Application
         io.github.mangi.eta.agent.display.VirtualScreenNotification.cancel(this)
         io.github.mangi.eta.agent.display.VirtualScreenFloatWindow.init(this)
         RootAccess.initialize(this)
+        applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled

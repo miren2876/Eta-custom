@@ -146,6 +146,15 @@ internal class AgentRuntimeRunExecutor(
             } else {
                 AgentMemoryContext.DISABLED
             }
+            if (request.config.terminalTools) {
+                // 启动探测由 App 拥有；模型首轮等待其结果，避免把检测中的授权当成普通设备。
+                runBlocking {
+                    while (io.github.mangi.eta.agent.device.RootAccess.state.value.isChecking) {
+                        runController.throwIfCancelled()
+                        kotlinx.coroutines.delay(100)
+                    }
+                }
+            }
             val pendingSkillConflict = PendingSkillConflictCapabilityParser.parse(request.history)
             val mcpSnapshot = runBlocking {
                 runCatching { McpRunSnapshot.load() }.getOrElse { throwable ->
@@ -296,6 +305,7 @@ internal class AgentRuntimeRunExecutor(
                 memoryContext = memoryContext,
                 additionalTools = runTools,
                 mcpToolLabels = mcpSnapshot.labels,
+                executionContext = executor.terminalExecutionContext,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(

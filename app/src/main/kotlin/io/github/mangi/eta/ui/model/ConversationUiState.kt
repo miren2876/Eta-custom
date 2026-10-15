@@ -58,6 +58,7 @@ data class ConversationSummaryUi(
     val isActiveRun: Boolean = false,
     val characterName: String? = null,
     val folderId: String = "",
+    val characterAvatarPath: String? = null,
 )
 
 @Immutable
