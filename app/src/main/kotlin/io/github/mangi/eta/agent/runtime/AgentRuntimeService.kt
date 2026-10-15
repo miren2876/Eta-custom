@@ -1349,6 +1349,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 state = state.value,
                 expanded = panelExpanded.value,
                 yielded = capsuleYielded.value,
+                // 面板出现只播缩放，与收起时的缩回小球对称。
+                animateAppear = false,
                 onToggleExpanded = {},
                 onCollapsedSettled = ::onPanelCollapsedSettled,
                 onPause = ::requestPause,

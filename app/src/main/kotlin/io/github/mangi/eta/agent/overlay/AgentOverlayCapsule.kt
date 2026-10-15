@@ -105,6 +105,8 @@ internal fun AgentOverlayCapsule(
     expanded: Boolean,
     /** Agent 的手势经过胶囊时为 true：窗口不可触摸，胶囊淡出让路。 */
     yielded: Boolean = false,
+    /** 出现时是否播「自上而下」的滑入；独立面板窗口只要缩放，把它关掉。 */
+    animateAppear: Boolean = true,
     onToggleExpanded: () -> Unit,
     onCollapsedSettled: () -> Unit,
     onPause: () -> Unit,
@@ -129,8 +131,8 @@ internal fun AgentOverlayCapsule(
     recentOpened: List<AgentOverlayRunningSession> = emptyList(),
     unreadSessions: List<AgentOverlayRunningSession> = emptyList(),
 ) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
+    var visible by remember { mutableStateOf(!animateAppear) }
+    LaunchedEffect(Unit) { if (animateAppear) visible = true }
     var supplementMode by remember { mutableStateOf(false) }
     var supplementText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
