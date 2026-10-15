@@ -1385,7 +1385,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         runCatching { wm.updateViewLayout(capsule, lp) }
     }
 
-    /** 松手贴边：只有靠近左右边缘（屏宽 15% 内）才吸附，放中间就停在中间。 */
+    /** 松手自动吸附：总是贴到更近的那一侧边缘（小球中心在屏幕左半边就吸左）。 */
     private fun snapCapsuleToEdge() {
         if (capsuleExpanded.value) return
         val lp = capsuleParams ?: return
@@ -1393,13 +1393,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val wm = windowManager ?: return
         val screenWidth = resources.displayMetrics.widthPixels
         val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
-        val edgeZone = (screenWidth * 0.15f).toInt()
         val maxX = maxOf(edge, screenWidth - lp.width - edge)
-        val targetX = when {
-            lp.x <= edgeZone -> edge
-            lp.x >= maxX - edgeZone -> maxX
-            else -> lp.x.coerceIn(edge, maxX)
-        }
+        val center = lp.x + lp.width / 2
+        val targetX = if (center < screenWidth / 2) edge else maxX
         if (lp.x != targetX) {
             lp.x = targetX
             runCatching { wm.updateViewLayout(capsule, lp) }
@@ -1918,7 +1914,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         private const val CAPSULE_COLLAPSED_WIDTH_DP = 88
         private const val CAPSULE_EXPANDED_WIDTH_DP = 396
-        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 60
+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 88
         /** 收起小球与屏幕边缘的间距；0 表示贴边。 */
         private const val CAPSULE_EDGE_MARGIN_DP = 0
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 152

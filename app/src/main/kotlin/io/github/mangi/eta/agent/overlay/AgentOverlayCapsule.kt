@@ -91,6 +91,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.foundation.shape.CircleShape
 
 /**
  * 顶部状态胶囊：收起时只显示一句当前步骤，点击展开补充、暂停与停止。
@@ -188,6 +189,8 @@ internal fun AgentOverlayCapsule(
             // 宽度跟着展开动画走：收起时是小尺寸，点开才变宽，方便点会话。
             val capsuleWidth = CapsuleCollapsedWidth +
                 (CapsuleExpandedWidth - CapsuleCollapsedWidth) * expansion
+            // 收起是正圆小球，展开才是圆角面板。
+            val capsuleShape = if (expanded) RoundedCornerShape(CapsuleCorner) else CircleShape
             // 展开态窗口是全屏的：把面板摆在小胶囊原来待的位置，
             // 展开/收起动画都在原地播放，不会先在屏幕中间停一下再弹回去。
             // 面板宽度与位置全部夹在屏幕内：贴边、拖到角落都不会有边跑到屏幕外。
@@ -248,7 +251,8 @@ internal fun AgentOverlayCapsule(
             Column(
                 modifier = Modifier
                     .offset { IntOffset(panelX.toInt(), panelY.toInt()) }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    // 收起态窗口是正方形，四周留一样的边，小球里的图标才会居中。
+                    .padding(horizontal = 12.dp, vertical = if (expanded) 6.dp else 12.dp)
                     .width(panelWidth)
                     .graphicsLayer {
                         // 点击时轻微回弹，展开后保持原尺寸；只改绘制层，不触发重新布局。
@@ -257,8 +261,8 @@ internal fun AgentOverlayCapsule(
                         scaleY = press
                         alpha = if (yielded) 0.2f else 1f
                     }
-                    .shadow(10.dp, RoundedCornerShape(CapsuleCorner), ambientColor = accent, spotColor = accent)
-                    .clip(RoundedCornerShape(CapsuleCorner))
+                    .shadow(10.dp, capsuleShape, ambientColor = accent, spotColor = accent)
+                    .clip(capsuleShape)
                     .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f)),
             ) {
                 Row(
