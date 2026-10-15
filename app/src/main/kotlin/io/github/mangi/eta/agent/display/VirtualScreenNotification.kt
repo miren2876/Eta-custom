@@ -70,6 +70,7 @@ internal object VirtualScreenNotification {
     private const val COMPLETION_ID = 1111
 
     /** 任务跑完（虚拟屏任务或 App 在后台）后发一条高优先级通知，ColorOS 会尽量归入流体云。 */
+    @Suppress("NewApi")
     fun showCompletion(context: Context, ok: Boolean, detail: String) {
         if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED) return
@@ -85,7 +86,7 @@ internal object VirtualScreenNotification {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            manager.notify(COMPLETION_ID, Notification.Builder(context, COMPLETION_CHANNEL)
+            val builder = Notification.Builder(context, COMPLETION_CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(context.getString(
                     if (ok) R.string.virtual_screen_completion_ok_title
@@ -96,7 +97,18 @@ internal object VirtualScreenNotification {
                 })
                 .setCategory(Notification.CATEGORY_STATUS)
                 .setAutoCancel(true)
-                .setContentIntent(open).build())
+                .setContentIntent(open)
+            // 流体云：门槛取 36.0（与执行通知一致）；ongoing + 关键文本才会被系统收进胶囊。
+            if (android.os.Build.VERSION.SDK_INT_FULL >= android.os.Build.VERSION_CODES_FULL.BAKLAVA) {
+                builder
+                    .setOngoing(true)
+                    .setShortCriticalText(context.getString(
+                        if (ok) R.string.virtual_screen_completion_chip_ok
+                        else R.string.virtual_screen_completion_chip_fail,
+                    ))
+                    .setRequestPromotedOngoing(true)
+            }
+            manager.notify(COMPLETION_ID, builder.build())
         }.onFailure { AndroidAgentLogger.warn("Virtual screen completion notification failed: type=${it.safeLogType()}") }
     }
 

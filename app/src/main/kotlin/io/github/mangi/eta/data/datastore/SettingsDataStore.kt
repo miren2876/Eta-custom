@@ -68,6 +68,8 @@ internal object SettingsDataStore {
     private val VIRTUAL_SCREEN_FLOAT_BUBBLE_SIDE = intPreferencesKey("virtual_screen_float_bubble_side")
     private val VIRTUAL_SCREEN_FLOAT_BUBBLE_Y = intPreferencesKey("virtual_screen_float_bubble_y")
     private val OVERLAY_CAPSULE_PINNED = booleanPreferencesKey("overlay_capsule_pinned")
+    private val OVERLAY_CAPSULE_POS_X = intPreferencesKey("overlay_capsule_pos_x")
+    private val OVERLAY_CAPSULE_POS_Y = intPreferencesKey("overlay_capsule_pos_y")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
@@ -143,6 +145,8 @@ internal object SettingsDataStore {
             prefs[VIRTUAL_SCREEN_FLOAT_POS_X] = updated.virtualScreenFloatWindowPosX
             prefs[VIRTUAL_SCREEN_FLOAT_POS_Y] = updated.virtualScreenFloatWindowPosY
             prefs[OVERLAY_CAPSULE_PINNED] = updated.overlayCapsulePinned
+            prefs[OVERLAY_CAPSULE_POS_X] = updated.overlayCapsulePosX
+            prefs[OVERLAY_CAPSULE_POS_Y] = updated.overlayCapsulePosY
             prefs[VIRTUAL_SCREEN_FLOAT_BUBBLE_SIDE] = updated.virtualScreenFloatWindowBubbleSide
             prefs[VIRTUAL_SCREEN_FLOAT_BUBBLE_Y] = updated.virtualScreenFloatWindowBubbleY
             prefs.putAppearance(updated.appearance.normalized())
@@ -304,6 +308,8 @@ internal object SettingsDataStore {
         virtualScreenFloatWindowPosX = this[VIRTUAL_SCREEN_FLOAT_POS_X] ?: 16,
         virtualScreenFloatWindowPosY = this[VIRTUAL_SCREEN_FLOAT_POS_Y] ?: 120,
         overlayCapsulePinned = this[OVERLAY_CAPSULE_PINNED] ?: false,
+        overlayCapsulePosX = this[OVERLAY_CAPSULE_POS_X] ?: -1,
+        overlayCapsulePosY = this[OVERLAY_CAPSULE_POS_Y] ?: -1,
         virtualScreenFloatWindowBubbleSide = (this[VIRTUAL_SCREEN_FLOAT_BUBBLE_SIDE] ?: 0)
             .takeIf { it in 0..1 } ?: 0,
         virtualScreenFloatWindowBubbleY = this[VIRTUAL_SCREEN_FLOAT_BUBBLE_Y] ?: -1,

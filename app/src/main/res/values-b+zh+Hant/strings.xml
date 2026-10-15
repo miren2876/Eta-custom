@@ -1565,4 +1565,6 @@
   <string name="speech_loading">正在讀取設定</string>
   <string name="ui_clear_84fcd7">清空</string>
   <string name="ui_determined_by_model_or_provider_06c326">由模型或 Provider 決定</string>
+  <string name="virtual_screen_completion_chip_ok">已完成</string>
+  <string name="virtual_screen_completion_chip_fail">任務失敗</string>
 </resources>

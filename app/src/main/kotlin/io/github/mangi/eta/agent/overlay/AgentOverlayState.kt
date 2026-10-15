@@ -30,6 +30,8 @@ internal data class AgentOverlayState(
     val thought: String = "",
     /** 胶囊展开后的会话列表：运行中的在前，其后是最近完成的（最多 3 条）。 */
     val runningSessions: List<AgentOverlayRunningSession> = emptyList(),
+    /** 完成后还没看过的条数：收起态小球右上角显示（上限 9）。 */
+    val finishedBadge: Int = 0,
 ) {
     companion object {
         val Initial = AgentOverlayState(status = AgentOverlayStatus.Reasoning)

@@ -218,6 +218,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     /** 读完完成提示：没有任务在跑时回到空闲态（常驻）或收掉服务。 */
     private fun onCapsuleRead() {
         unreadFinished = false
+        if (state.value.finishedBadge != 0) state.value = state.value.copy(finishedBadge = 0)
         if (runningSessionCount() > 0) return
         if (capsulePinned) enterIdleState() else dismissAndStop()
     }
@@ -226,7 +227,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun enterIdleState() {
         state.value = AgentOverlayState(phase = AgentOverlayPhase.IDLE, status = AgentOverlayStatus.Idle)
         capsuleExpanded.value = false
-        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+        collapseCapsuleWindow()
         ensureOverlayVisible()
     }
 
@@ -275,6 +276,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
     }
     private val capsuleExpanded = mutableStateOf(false)
+    /** 展开态改用全屏透明窗口：点面板以外任意位置都能收起。 */
+    private val capsuleFullScreen = mutableStateOf(false)
+    /** 收起小球当前的位置（像素），展开时面板按它摆放。 */
+    private val capsuleOffsetX = mutableStateOf(0)
+    private val capsuleOffsetY = mutableStateOf(0)
+    private var capsuleCollapsedX = Int.MIN_VALUE
+    private var capsuleCollapsedY = Int.MIN_VALUE
     /** Agent 手势穿过胶囊时为 true：窗口不可触摸，胶囊淡出让路。 */
     private val capsuleYielded = mutableStateOf(false)
     private val restoreCapsule = Runnable { setCapsuleYielded(false) }
@@ -665,7 +673,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacksAndMessages(hideToken)
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
-        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+        collapseCapsuleWindow()
         hasExecutedForegroundTool = false
         resultConversationId = request.handoff
             ?.takeIf { it.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
@@ -1264,6 +1272,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = ::requestSupplement,
                 onOpenConversation = ::openConversation,
+                onDragBy = ::moveCapsuleBy,
+                onDragFinished = ::snapCapsuleToEdge,
+                onCollapseRequest = ::collapseCapsule,
+                collapsedX = capsuleOffsetX.value,
+                collapsedY = capsuleOffsetY.value,
+                fullScreen = capsuleFullScreen.value,
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -1304,8 +1318,108 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun toggleCapsule() {
         val expand = !capsuleExpanded.value
         // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) setCapsuleWindowHeight(capsuleExpandedHeightDp())
+        if (expand) {
+            capsuleParams?.let {
+                capsuleCollapsedX = it.x
+                capsuleCollapsedY = it.y
+            }
+            capsuleOffsetX.value = capsuleCollapsedX
+            capsuleOffsetY.value = capsuleCollapsedY
+            // 展开态用全屏透明窗口：面板以外点任意位置都能收起。
+            capsuleFullScreen.value = true
+            setCapsuleWindowFullScreen()
+        }
         capsuleExpanded.value = expand
+    }
+
+    /** 展开态改成全屏透明窗口：面板外点一下就能收起，面板本体仍然只占一小块。 */
+    private fun setCapsuleWindowFullScreen() {
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        lp.width = WindowManager.LayoutParams.MATCH_PARENT
+        lp.height = WindowManager.LayoutParams.MATCH_PARENT
+        lp.x = 0
+        lp.y = 0
+        runCatching { wm.updateViewLayout(capsule, lp) }
+    }
+
+    /** 点面板外任意位置：收起大面板（收起动画结束后由 onCollapsedSettled 缩窗复位）。 */
+    private fun collapseCapsule() {
+        if (!capsuleExpanded.value) return
+        capsuleExpanded.value = false
+    }
+
+    /** 收起后回到用户拖到的位置（贴边就继续贴边）。 */
+    private fun restoreCapsuleCollapsedPosition() {
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
+        if (capsuleCollapsedX != Int.MIN_VALUE) {
+            lp.x = capsuleCollapsedX.coerceIn(edge, maxOf(edge, screenWidth - lp.width - edge))
+        }
+        if (capsuleCollapsedY != Int.MIN_VALUE) {
+            lp.y = capsuleCollapsedY.coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
+        }
+        runCatching { wm.updateViewLayout(capsule, lp) }
+    }
+
+    /** 收起态拖动小球：跟着手指走，超出屏幕会被夹住。 */
+    private fun moveCapsuleBy(dx: Float, dy: Float) {
+        if (capsuleExpanded.value) return
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
+        lp.x = (lp.x + dx.toInt()).coerceIn(edge, maxOf(edge, screenWidth - lp.width - edge))
+        lp.y = (lp.y + dy.toInt()).coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
+        capsuleCollapsedX = lp.x
+        capsuleCollapsedY = lp.y
+        capsuleOffsetX.value = lp.x
+        capsuleOffsetY.value = lp.y
+        runCatching { wm.updateViewLayout(capsule, lp) }
+    }
+
+    /** 松手贴边：只有靠近左右边缘（屏宽 15% 内）才吸附，放中间就停在中间。 */
+    private fun snapCapsuleToEdge() {
+        if (capsuleExpanded.value) return
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
+        val edgeZone = (screenWidth * 0.15f).toInt()
+        val maxX = maxOf(edge, screenWidth - lp.width - edge)
+        val targetX = when {
+            lp.x <= edgeZone -> edge
+            lp.x >= maxX - edgeZone -> maxX
+            else -> lp.x.coerceIn(edge, maxX)
+        }
+        if (lp.x != targetX) {
+            lp.x = targetX
+            runCatching { wm.updateViewLayout(capsule, lp) }
+        }
+        capsuleCollapsedX = lp.x
+        capsuleCollapsedY = lp.y
+        capsuleOffsetX.value = lp.x
+        capsuleOffsetY.value = lp.y
+        persistCapsulePosition(lp.x, lp.y)
+    }
+
+    /** 记住位置：重启 App 后小球还停在上次的地方。 */
+    private fun persistCapsulePosition(x: Int, y: Int) {
+        runCatching {
+            runBlocking {
+                SettingsDataStore.updateSettings { settings ->
+                    settings.copy(overlayCapsulePosX = x, overlayCapsulePosY = y)
+                }
+            }
+        }
     }
 
     /** 展开态窗口高度：有会话条目时按条数加高，保证每条都能完整显示、点得到。 */
@@ -1320,7 +1434,34 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun onCapsuleCollapsedSettled() {
-        if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+        if (!capsuleExpanded.value) collapseCapsuleWindow()
+    }
+
+    private fun setCapsuleWindowWidth(widthDp: Int) {
+        val wm = windowManager ?: return
+        val capsule = capsuleView ?: return
+        val lp = capsuleParams ?: return
+        val width = dpToPx(widthDp)
+        if (lp.width == width) return
+        lp.width = width
+        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
+        lp.x = lp.x.coerceIn(edge, maxOf(edge, resources.displayMetrics.widthPixels - width - edge))
+        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_resize_failed") {
+                "Agent runtime capsule resize failed: type=${throwable.safeLogType()}"
+            }
+        }
+    }
+
+    /** 收起态：窗口缩回小球尺寸并回到拖动位置（窗口外区域不吞触摸）。 */
+    private fun collapseCapsuleWindow() {
+        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+        setCapsuleWindowWidth(CAPSULE_COLLAPSED_WIDTH_DP)
+        restoreCapsuleCollapsedPosition()
+        // 缩窗到位后再解除全屏标记：动画全程都按小球真实位置摆放面板。
+        capsuleOffsetX.value = capsuleCollapsedX.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetX.value
+        capsuleOffsetY.value = capsuleCollapsedY.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetY.value
+        capsuleFullScreen.value = false
     }
 
     private fun setCapsuleWindowHeight(heightDp: Int) {
@@ -1448,7 +1589,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      */
     private fun capsuleLayoutParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
-            dpToPx(CAPSULE_WINDOW_WIDTH_DP),
+            dpToPx(CAPSULE_COLLAPSED_WIDTH_DP),
             dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP),
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
@@ -1457,9 +1598,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // 贴在状态栏下方居中：远离多数应用的主要点击区，也和系统胶囊、流体云的位置习惯一致。
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = statusBarHeightPx()
+            // 常驻小球：优先回到上次拖到的位置；没拖过就贴在右侧、状态栏下方。
+            gravity = Gravity.TOP or Gravity.START
+            if (capsuleCollapsedX == Int.MIN_VALUE) {
+                val saved = runCatching { runBlocking { SettingsDataStore.settings() } }.getOrNull()
+                capsuleCollapsedX = saved?.overlayCapsulePosX ?: -1
+                capsuleCollapsedY = saved?.overlayCapsulePosY ?: -1
+            }
+            val screenWidth = resources.displayMetrics.widthPixels
+            val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
+            val maxX = maxOf(edge, screenWidth - dpToPx(CAPSULE_COLLAPSED_WIDTH_DP) - edge)
+            x = if (capsuleCollapsedX >= 0) capsuleCollapsedX.coerceIn(edge, maxX) else maxX
+            y = if (capsuleCollapsedY >= 0) capsuleCollapsedY else statusBarHeightPx()
             windowAnimations = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
@@ -1583,14 +1733,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun enterFinalState(finalState: AgentOverlayState, keepVisible: Boolean = false) {
         // 后台跑完或胶囊常驻时留一条完成提示；用户正看着 Eta 时保持原来的收尾方式。
         val backgroundNotice = capsulePinned || !EtaApp.isInForeground()
-        if (backgroundNotice) unreadFinished = true
+        if (backgroundNotice) {
+            unreadFinished = true
+            state.value = state.value.copy(finishedBadge = (state.value.finishedBadge + 1).coerceAtMost(9))
+        }
 
         if (hasExecutedForegroundTool) {
             capsuleExpanded.value = false
             mainHandler.removeCallbacksAndMessages(hideToken)
             if (backgroundNotice) {
                 removeGlowWindow()
-                setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+                collapseCapsuleWindow()
                 state.value = finishedNoticeState(finalState)
                 ensureOverlayVisible()
             } else {
@@ -1601,7 +1754,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             // 完成提示不自动消失：保留胶囊显示「已完成」，等用户打开 Eta 或点开会话再收。
             mainHandler.removeCallbacksAndMessages(hideToken)
             capsuleExpanded.value = false
-            setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+            collapseCapsuleWindow()
             state.value = finishedNoticeState(finalState)
             ensureOverlayVisible()
         } else {
@@ -1747,12 +1900,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         const val ACTION_UNPIN_CAPSULE = "io.github.mangi.eta.agent.runtime.UNPIN_CAPSULE"
         const val ACTION_CLEAR_READ = "io.github.mangi.eta.agent.runtime.CLEAR_READ"
 
-        private const val CAPSULE_WINDOW_WIDTH_DP = 360
-        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 76
+        private const val CAPSULE_COLLAPSED_WIDTH_DP = 88
+        private const val CAPSULE_EXPANDED_WIDTH_DP = 396
+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 60
+        /** 收起小球与屏幕边缘的间距；0 表示贴边。 */
+        private const val CAPSULE_EDGE_MARGIN_DP = 0
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 152
-        private const val CAPSULE_SESSIONS_BASE_HEIGHT_DP = 152
-        private const val CAPSULE_SESSION_ROW_HEIGHT_DP = 76
-        private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 560
+        private const val CAPSULE_SESSIONS_BASE_HEIGHT_DP = 132
+        private const val CAPSULE_SESSION_ROW_HEIGHT_DP = 62
+        private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 332
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 320
         /** 注入点击只是一个点，目标控件常贴着胶囊边缘，判定范围向外多留一点。 */
         private const val CAPSULE_CLEARANCE_SLOP_DP = 8
