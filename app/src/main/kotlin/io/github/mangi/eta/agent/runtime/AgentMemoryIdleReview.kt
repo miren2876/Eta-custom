@@ -112,6 +112,11 @@ internal class AgentMemoryIdleReview(
                 ROLE_TOOL -> signal.toolResults += 1
             }
         }
+        // 用户消息在本轮 transcript 的开头，takeLast 取不到：补上最后一条用户发言，
+        // 否则「用户字符」这项恒为 0，打分里最多 3 分永远拿不到。
+        if (added.none { it.role == ROLE_USER }) {
+            transcript.lastOrNull { it.role == ROLE_USER }?.let { signal.userChars += it.content.length }
+        }
         signal.turns += 1
         val score = score(signal)
         if (score < SCORE_THRESHOLD) {
@@ -303,7 +308,8 @@ internal class AgentMemoryIdleReview(
 
         private const val IDLE_DELAY_MS = 30_000L
         private const val MIN_INTERVAL_MS = 5 * 60 * 1000L
-        private const val MAX_PER_SESSION = 2
+        /** 每个会话的整理次数上限；长会话跑很多轮也不至于早早用完配额。 */
+        private const val MAX_PER_SESSION = 5
         private const val SCORE_THRESHOLD = 5.0
         private const val MIN_USER_CHARS = 320
         private const val MIN_ASSISTANT_CHARS = 600
