@@ -1783,8 +1783,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         (dp * resources.displayMetrics.density).toInt()
 
     private fun enterFinalState(finalState: AgentOverlayState, keepVisible: Boolean = false) {
-        // 后台跑完或胶囊常驻时留一条完成提示；用户正看着 Eta 时保持原来的收尾方式。
-        val backgroundNotice = capsulePinned || !EtaApp.isInForeground()
+        // 完成提示只在胶囊本来就在屏幕上时才更新它（运行期间显示过，或常驻开启）；
+        // 运行期间没显示的（用户一直看着 Eta 这类），完成时不再主动弹出来。
+        val capsuleOnScreen = capsuleView != null
+        val backgroundNotice = capsuleOnScreen && (capsulePinned || !EtaApp.isInForeground())
         if (backgroundNotice) {
             unreadFinished = true
             state.value = state.value.copy(finishedBadge = (state.value.finishedBadge + 1).coerceAtMost(9))
