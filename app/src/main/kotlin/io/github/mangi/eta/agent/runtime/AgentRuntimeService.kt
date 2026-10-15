@@ -260,6 +260,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var glowParams: WindowManager.LayoutParams? = null
     private var capsuleParams: WindowManager.LayoutParams? = null
     private var panelView: ComposeView? = null
+    /** 面板窗口内的展开状态：先以收起态组合、下一帧展开，收起时也在这里播完动画。 */
+    private val panelExpanded = mutableStateOf(false)
     private var panelParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
@@ -1331,12 +1333,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         setCapsuleVisible(false)
     }
 
-    /** 点面板外任意位置：收起面板，小球就地显示（它从未移动过，所以不会闪）。 */
+    /** 点面板外任意位置：面板在窗口内缩回小球，动画结束后再移除窗口。 */
     private fun collapseCapsule() {
         if (!capsuleExpanded.value) return
         capsuleExpanded.value = false
-        hideCapsulePanel()
-        setCapsuleVisible(true)
+        panelExpanded.value = false
     }
 
     /** 展开面板：独立的全屏透明窗口，面板以外点一下就能收起。 */
@@ -1346,10 +1347,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val view = createOverlayComposeView {
             AgentOverlayCapsule(
                 state = state.value,
-                expanded = true,
+                expanded = panelExpanded.value,
                 yielded = capsuleYielded.value,
                 onToggleExpanded = {},
-                onCollapsedSettled = {},
+                onCollapsedSettled = ::onPanelCollapsedSettled,
                 onPause = ::requestPause,
                 onResume = ::requestResume,
                 onStop = ::requestStop,
@@ -1362,7 +1363,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
         }
         val lp = capsulePanelLayoutParams()
-        view.alpha = 0f
         runCatching { wm.addView(view, lp) }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_capsule_panel_add_failed") {
                 "Agent runtime capsule panel addView failed: type=${throwable.safeLogType()}"
@@ -1371,23 +1371,23 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         panelView = view
         panelParams = lp
-        view.animate().alpha(1f).setDuration(PanelFadeMs).start()
+        // 先以收起态组合，下一帧再展开：面板从球的位置长出来，动画与原来单窗口时一致。
+        view.postOnAnimation { if (capsuleExpanded.value) panelExpanded.value = true }
     }
 
-    /** 面板淡出后移除：小球就在原位显示，两者交叠时不会露出空档。 */
     private fun hideCapsulePanel() {
         val view = panelView ?: return
         panelView = null
         panelParams = null
-        view.animate().cancel()
-        if (view.alpha > 0f) {
-            val wm = windowManager
-            view.animate().alpha(0f).setDuration(PanelFadeMs).withEndAction {
-                runCatching { wm?.removeView(view) }
-            }.start()
-        } else {
-            runCatching { windowManager?.removeView(view) }
-        }
+        panelExpanded.value = false
+        runCatching { windowManager?.removeView(view) }
+    }
+
+    /** 面板在窗口内缩回小球后的回调：这时才移除面板窗口，小球就地显现。 */
+    private fun onPanelCollapsedSettled() {
+        if (panelExpanded.value) return
+        hideCapsulePanel()
+        setCapsuleVisible(true)
     }
 
     private fun capsulePanelLayoutParams(): WindowManager.LayoutParams =
@@ -1962,8 +1962,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 332
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 320
         /** 注入点击只是一个点，目标控件常贴着胶囊边缘，判定范围向外多留一点。 */
-        /** 展开面板窗口的淡入淡出时长。 */
-        private const val PanelFadeMs = 140L
         private const val CAPSULE_CLEARANCE_SLOP_DP = 8
         private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
