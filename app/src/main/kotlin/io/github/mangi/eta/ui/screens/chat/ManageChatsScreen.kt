@@ -76,6 +76,9 @@ private val ManageRowCornerRadius = 10.dp
 private val ManageRowIconSize = 20.dp
 private val ManageRowMinHeight = 56.dp
 
+/** 多选操作栏占的高度（含外边距），列表末尾按它留白。 */
+private val ManageSelectionBarHeight = 140.dp
+
 /** 左滑露出的三个操作（重命名 / 归档 / 删除）的宽度。 */
 private val ManageSwipeRevealWidth = 228.dp
 private val ManageSwipeActionWidth = 76.dp
@@ -177,6 +180,12 @@ internal fun ManageChatsScreen(
                         onToggleArchive = { onToggleArchive(conversation) },
                         onDelete = { onDelete(conversation) },
                     )
+                }
+            }
+            // 多选栏浮在列表上方：末尾留出它的高度，否则最后几条点不到。
+            if (selecting) {
+                item(key = "selection-spacer") {
+                    Spacer(modifier = Modifier.height(ManageSelectionBarHeight))
                 }
             }
         }

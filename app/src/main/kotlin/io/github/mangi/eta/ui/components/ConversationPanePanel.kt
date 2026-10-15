@@ -240,31 +240,31 @@ internal fun ConversationPanePanel(
                             )
                         }
                     }
-                    if (query.isBlank()) {
-                        val inFolder: (ConversationSummaryUi) -> Boolean = { conversation ->
-                            if (state.selectedFolderId == null) conversation.folderId.isBlank()
-                            else conversation.folderId == state.selectedFolderId
-                        }
-                        val archivedCount = state.historyConversations.count { it.isArchived && inFolder(it) }
-                        val activeCount = state.historyConversations.count { !it.isArchived && inFolder(it) }
-                        if (state.showingArchived || archivedCount > 0) {
-                            item(key = "archive-entry") {
-                                DrawerActionRow(
-                                    label = stringResource(
-                                        if (state.showingArchived) {
-                                            R.string.drawer_active_entry
-                                        } else {
-                                            R.string.drawer_archived_entry
-                                        },
-                                        if (state.showingArchived) activeCount else archivedCount,
-                                    ),
-                                    icon = Icons.Rounded.Inventory,
-                                    onClick = { onSelectArchive(!state.showingArchived) },
-                                )
+                }
+                        if (query.isBlank()) {
+                            val inFolder: (ConversationSummaryUi) -> Boolean = { conversation ->
+                                if (state.selectedFolderId == null) conversation.folderId.isBlank()
+                                else conversation.folderId == state.selectedFolderId
+                            }
+                            val archivedCount = state.historyConversations.count { it.isArchived && inFolder(it) }
+                            val activeCount = state.historyConversations.count { !it.isArchived && inFolder(it) }
+                            if (state.showingArchived || archivedCount > 0) {
+                                item(key = "archive-entry") {
+                                    DrawerActionRow(
+                                        label = stringResource(
+                                            if (state.showingArchived) {
+                                                R.string.drawer_active_entry
+                                            } else {
+                                                R.string.drawer_archived_entry
+                                            },
+                                            if (state.showingArchived) activeCount else archivedCount,
+                                        ),
+                                        icon = Icons.Rounded.Inventory,
+                                        onClick = { onSelectArchive(!state.showingArchived) },
+                                    )
+                                }
                             }
                         }
-                    }
-                }
             }
             PaneFixedRegion {
                 Column(
