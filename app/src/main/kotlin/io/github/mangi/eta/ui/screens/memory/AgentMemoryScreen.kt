@@ -86,6 +86,8 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 
 @Composable
 internal fun AgentMemoryScreen(
@@ -1074,41 +1076,48 @@ private fun FileEditor(
     onDraftChange: (String) -> Unit,
     onSave: () -> Unit,
 ) {
+    var editing by rememberSaveable(label) { mutableStateOf(false) }
+    val changed = draft != saved
     Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-        TextField(
-            value = draft,
-            onValueChange = onDraftChange,
-            label = label,
-            useLabelAsPlaceholder = false,
-            enabled = !saving,
-            minLines = 5,
-            maxLines = 14,
-            textStyle = MiuixTheme.textStyles.body2,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(MemoryDocumentBodyHeight),
         ) {
-            Text(
-                text = if (draft != saved) stringResource(R.string.memory_unsaved_changes) else "",
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                style = MiuixTheme.textStyles.footnote1,
-                modifier = Modifier.weight(1f),
-            )
-            EtaTextButton(
-                text = if (saving) {
-                    stringResource(R.string.memory_saving)
-                } else {
-                    stringResource(R.string.memory_save)
-                },
-                enabled = !saving && draft != saved,
-                onClick = onSave,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
+            if (editing) {
+                MemoryEditor(
+                    value = draft,
+                    enabled = !saving,
+                    placeholder = label,
+                    onValueChange = onDraftChange,
+                )
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                ) {
+                    MemoryBodyAction(
+                        text = stringResource(R.string.memory_mode_preview),
+                        enabled = true,
+                        onClick = { editing = false },
+                    )
+                }
+            } else {
+                MemoryPreview(
+                    content = draft,
+                    placeholder = label,
+                    onStartEditing = { if (!saving) editing = true },
+                )
+            }
         }
+        MemorySaveBar(
+            visible = changed || saving,
+            overLimit = false,
+            saving = saving,
+            canSave = !saving && changed,
+            onDiscard = { onDraftChange(saved) },
+            onSave = onSave,
+        )
     }
 }
 
@@ -1116,13 +1125,15 @@ private fun FileEditor(
 /** 文档正文区在列表里固定高度，预览与编辑都在这块区域内滚动。 */
 private val MemoryDocumentBodyHeight = 260.dp
 
-/** 预览态：Markdown 渲染，点一下切到编辑。 */
+/** 预览态：Markdown 渲染，双击切到编辑（单击留给后续可能的展开等操作）。 */
 @Composable
 private fun MemoryPreview(content: String, placeholder: String, onStartEditing: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clickable(onClick = onStartEditing)
+            .pointerInput(onStartEditing) {
+                detectTapGestures(onDoubleTap = { onStartEditing() })
+            }
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {

@@ -108,7 +108,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -123,6 +122,7 @@ import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import androidx.compose.foundation.border
 
 /**
  * 聊天主体：消息流 + 底部输入框。
@@ -753,10 +753,10 @@ internal fun AgentConversationMessages(
                         shape = CircleShape,
                         shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
                     )
-                    .squircleBorder(
+                    .border(
                         width = 0.5.dp,
                         color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        cornerRadius = IconButtonDefaults.CornerRadius,
+                        shape = CircleShape,
                     ),
                 onClick = {
                     onBottomAnchorChanged(true)
