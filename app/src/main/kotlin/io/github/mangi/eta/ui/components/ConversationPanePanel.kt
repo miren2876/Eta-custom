@@ -185,14 +185,13 @@ internal fun ConversationPanePanel(
                     PaneDrawerActions(
                         onNewConversation = onNewConversation,
                         onOpenManageChats = onOpenManageChats,
+                        onOpenArchived = { onSelectArchive(true) },
                     )
                     Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
                     PaneFolderBar(
                         folders = state.folders,
                         selectedFolderId = state.selectedFolderId,
-                        showingArchived = state.showingArchived,
                         onSelectFolder = onSelectFolder,
-                        onSelectArchive = onSelectArchive,
                         onCreateFolder = onCreateFolder,
                         onRenameFolder = onRenameFolder,
                         onDeleteFolder = onDeleteFolder,
@@ -626,6 +625,7 @@ private fun ConversationTextRow(
 private fun PaneDrawerActions(
     onNewConversation: () -> Unit,
     onOpenManageChats: () -> Unit,
+    onOpenArchived: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -640,6 +640,11 @@ private fun PaneDrawerActions(
             label = stringResource(R.string.drawer_manage_chats),
             icon = Icons.Rounded.History,
             onClick = onOpenManageChats,
+        )
+        DrawerActionRow(
+            label = stringResource(R.string.drawer_archived_chip),
+            icon = Icons.Rounded.Inventory,
+            onClick = onOpenArchived,
         )
     }
 }
@@ -690,9 +695,7 @@ private fun DrawerActionRow(
 private fun PaneFolderBar(
     folders: List<ConversationFolderUi>,
     selectedFolderId: String?,
-    showingArchived: Boolean,
     onSelectFolder: (String?) -> Unit,
-    onSelectArchive: (Boolean) -> Unit,
     onCreateFolder: (String) -> Unit,
     onRenameFolder: (String, String) -> Unit,
     onDeleteFolder: (String) -> Unit,
@@ -709,7 +712,7 @@ private fun PaneFolderBar(
         item(key = "folder-unfiled") {
             DrawerChip(
                 label = stringResource(R.string.drawer_chats_chip),
-                selected = selectedFolderId == null && !showingArchived,
+                selected = selectedFolderId == null,
                 icon = null,
                 onClick = { onSelectFolder(null) },
             )
@@ -719,7 +722,7 @@ private fun PaneFolderBar(
             Box {
                 DrawerChip(
                     label = folder.name,
-                    selected = selectedFolderId == folder.id && !showingArchived,
+                    selected = selectedFolderId == folder.id,
                     icon = Icons.Rounded.Folder,
                     onClick = { onSelectFolder(folder.id) },
                     onLongClick = { showFolderMenu = true },
@@ -788,15 +791,7 @@ private fun PaneFolderBar(
                 }
             }
         }
-                item(key = "folder-archived") {
-            DrawerChip(
-                label = stringResource(R.string.drawer_archived_chip),
-                selected = showingArchived,
-                icon = Icons.Rounded.Inventory,
-                onClick = { onSelectArchive(true) },
-            )
-        }
-item(key = "folder-new") {
+        item(key = "folder-new") {
             DrawerChip(
                 label = stringResource(R.string.drawer_new_folder),
                 selected = false,

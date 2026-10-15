@@ -1635,4 +1635,5 @@
   <string name="action_unarchive_conversation">Unarchive</string>
   <string name="manage_group_active">Active</string>
   <string name="manage_selected_count">%1$d selected</string>
+  <string name="manage_filter_all">All</string>
 </resources>

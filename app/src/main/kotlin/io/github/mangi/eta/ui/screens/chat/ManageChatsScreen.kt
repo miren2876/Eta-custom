@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.screens.chat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,8 +23,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
@@ -37,8 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,24 +73,27 @@ private val ManageRowHorizontalPadding = 16.dp
 private val ManageRowVerticalPadding = 12.dp
 private val ManageRowCornerRadius = 10.dp
 private val ManageRowIconSize = 20.dp
+private val ManageRowMinHeight = 56.dp
 
 /** 左滑露出的三个操作（重命名 / 归档 / 删除）的宽度。 */
 private val ManageSwipeRevealWidth = 228.dp
 private val ManageSwipeActionWidth = 76.dp
 
-private data class ManageGroup(
-    val id: String,
-    val title: String,
-    val conversations: List<ConversationSummaryUi>,
-)
+/** 归档筛选三档。 */
+private enum class ManageArchiveFilter(val labelRes: Int) {
+    All(R.string.manage_filter_all),
+    Active(R.string.manage_group_active),
+    Archived(R.string.drawer_archived_chip),
+}
 
 private fun Set<String>.toggleSelection(id: String): Set<String> =
     if (id in this) this - id else this + id
 
 /**
- * 「管理聊天」页：一级按文件夹分组（含未归类的「聊天」），组内再分「未归档 / 已归档」；
+ * 「管理聊天」页：顶部两行筛选（文件夹 / 归档状态），列表只显示筛选结果；
  * 左滑露出重命名 / 归档 / 删除，长按进入多选做批量操作。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ManageChatsScreen(
     conversations: List<ConversationSummaryUi>,
@@ -104,83 +111,43 @@ internal fun ManageChatsScreen(
 ) {
     var selection by remember { mutableStateOf(emptySet<String>()) }
     var moveTargets by remember { mutableStateOf<Set<String>?>(null) }
+    var folderFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var archiveFilterName by rememberSaveable { mutableStateOf(ManageArchiveFilter.All.name) }
+    val archiveFilter = ManageArchiveFilter.valueOf(archiveFilterName)
     val haptics = LocalHapticFeedback.current
-    val unfiledLabel = stringResource(R.string.drawer_chats_chip)
 
-    val groups = buildList {
-        val unfiled = conversations.filter { it.folderId.isBlank() }
-        if (unfiled.isNotEmpty()) add(ManageGroup("", unfiledLabel, unfiled))
-        folders.forEach { folder ->
-            val items = conversations.filter { it.folderId == folder.id }
-            if (items.isNotEmpty()) add(ManageGroup(folder.id, folder.name, items))
+    // 列表数据可能带上重复项，先去重再建 key：LazyColumn 的 key 重复会直接崩。
+    val unique = remember(conversations) { conversations.distinctBy { it.id } }
+    val visible = unique.filter { conversation ->
+        val folderOk = folderFilter == null || conversation.folderId == folderFilter
+        val archiveOk = when (archiveFilter) {
+            ManageArchiveFilter.All -> true
+            ManageArchiveFilter.Active -> !conversation.isArchived
+            ManageArchiveFilter.Archived -> conversation.isArchived
         }
+        folderOk && archiveOk
     }
-    val byId = conversations.associateBy { it.id }
+
+    val byId = unique.associateBy { it.id }
     val selecting = selection.isNotEmpty()
     val allArchived = selecting && selection.all { byId[it]?.isArchived == true }
     val allPinned = selecting && selection.all { byId[it]?.isPinned == true }
-
-    fun LazyListScope.groupRows(group: ManageGroup) {
-        val active = group.conversations.filter { !it.isArchived }
-        val archived = group.conversations.filter { it.isArchived }
-        if (active.isNotEmpty()) {
-            if (archived.isNotEmpty()) {
-                item(key = "sub-active-${group.id}", contentType = "subtitle") {
-                    ManageSubTitle(stringResource(R.string.manage_group_active))
-                }
-            }
-            items(active, key = { it.id }, contentType = { "row" }) { conversation ->
-                ManageChatRow(
-                    conversation = conversation,
-                    selecting = selecting,
-                    selected = conversation.id in selection,
-                    onClick = {
-                        if (selecting) selection = selection.toggleSelection(conversation.id)
-                        else onOpenConversation(conversation.id)
-                    },
-                    onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        selection = selection.toggleSelection(conversation.id)
-                    },
-                    onTogglePin = { onTogglePin(conversation) },
-                    onRename = { onRename(conversation) },
-                    onToggleArchive = { onToggleArchive(conversation) },
-                    onDelete = { onDelete(conversation) },
-                )
-            }
-        }
-        if (archived.isNotEmpty()) {
-            item(key = "sub-archived-${group.id}", contentType = "subtitle") {
-                ManageSubTitle(stringResource(R.string.drawer_archived_chip))
-            }
-            items(active, key = { it.id }, contentType = { "row" }) { conversation ->
-                ManageChatRow(
-                    conversation = conversation,
-                    selecting = selecting,
-                    selected = conversation.id in selection,
-                    onClick = {
-                        if (selecting) selection = selection.toggleSelection(conversation.id)
-                        else onOpenConversation(conversation.id)
-                    },
-                    onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        selection = selection.toggleSelection(conversation.id)
-                    },
-                    onTogglePin = { onTogglePin(conversation) },
-                    onRename = { onRename(conversation) },
-                    onToggleArchive = { onToggleArchive(conversation) },
-                    onDelete = { onDelete(conversation) },
-                )
-            }
-        }
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         MiuixScaffoldPage(
             title = stringResource(R.string.drawer_manage_chats),
             onBack = { if (selecting) selection = emptySet() else onBack() },
         ) {
-            if (groups.isEmpty()) {
+            stickyHeader(key = "manage-filters") {
+                ManageFilterBar(
+                    folders = folders,
+                    folderFilter = folderFilter,
+                    archiveFilter = archiveFilter,
+                    onFolderFilter = { folderFilter = it },
+                    onArchiveFilter = { archiveFilterName = it.name },
+                )
+            }
+            if (visible.isEmpty()) {
                 item(key = "empty") {
                     Text(
                         text = stringResource(R.string.conversation_empty),
@@ -191,9 +158,24 @@ internal fun ManageChatsScreen(
                     )
                 }
             } else {
-                groups.forEach { group ->
-                    item(key = "group-${group.id}", contentType = "group") { ManageGroupTitle(group.title) }
-                    groupRows(group)
+                items(visible, key = { "row-${it.id}" }, contentType = { "row" }) { conversation ->
+                    ManageChatRow(
+                        conversation = conversation,
+                        selecting = selecting,
+                        selected = conversation.id in selection,
+                        onClick = {
+                            if (selecting) selection = selection.toggleSelection(conversation.id)
+                            else onOpenConversation(conversation.id)
+                        },
+                        onLongClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selection = selection.toggleSelection(conversation.id)
+                        },
+                        onTogglePin = { onTogglePin(conversation) },
+                        onRename = { onRename(conversation) },
+                        onToggleArchive = { onToggleArchive(conversation) },
+                        onDelete = { onDelete(conversation) },
+                    )
                 }
             }
         }
@@ -233,24 +215,81 @@ internal fun ManageChatsScreen(
     }
 }
 
+/** 顶部筛选：第一行文件夹，第二行归档状态；两行都可横向滚动。 */
 @Composable
-private fun ManageGroupTitle(title: String) {
-    Text(
-        text = title,
-        color = MiuixTheme.colorScheme.onSurface,
-        style = MiuixTheme.textStyles.body1,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp),
-    )
+private fun ManageFilterBar(
+    folders: List<ConversationFolderUi>,
+    folderFilter: String?,
+    archiveFilter: ManageArchiveFilter,
+    onFolderFilter: (String?) -> Unit,
+    onArchiveFilter: (ManageArchiveFilter) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MiuixTheme.colorScheme.surface)
+            .padding(vertical = 8.dp),
+    ) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = ManageRowHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item(key = "folder-all") {
+                ManageFilterChip(
+                    label = stringResource(R.string.manage_filter_all),
+                    selected = folderFilter == null,
+                    onClick = { onFolderFilter(null) },
+                )
+            }
+            item(key = "folder-unfiled") {
+                ManageFilterChip(
+                    label = stringResource(R.string.drawer_chats_chip),
+                    selected = folderFilter == "",
+                    onClick = { onFolderFilter("") },
+                )
+            }
+            items(folders, key = { "folder-${it.id}" }) { folder ->
+                ManageFilterChip(
+                    label = folder.name,
+                    selected = folderFilter == folder.id,
+                    onClick = { onFolderFilter(folder.id) },
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = ManageRowHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ManageArchiveFilter.entries.forEach { option ->
+                item(key = "archive-${option.name}") {
+                    ManageFilterChip(
+                        label = stringResource(option.labelRes),
+                        selected = archiveFilter == option,
+                        onClick = { onArchiveFilter(option) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun ManageSubTitle(title: String) {
+private fun ManageFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
-        text = title,
-        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        text = label,
+        color = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
         style = MiuixTheme.textStyles.footnote1,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 4.dp),
+        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(
+                if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainerHighest,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
     )
 }
 
@@ -340,7 +379,7 @@ private fun ManageFolderOption(label: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(ManageRowCornerRadius))
-            .combinedClickable(onClick = onClick)
+            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = ManageRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -512,8 +551,8 @@ private fun ManageSwipeAction(
     Column(
         modifier = Modifier
             .width(ManageSwipeActionWidth)
-            .fillMaxSize()
-            .combinedClickable(onClick = onClick),
+            .height(ManageRowMinHeight)
+            .clickable(onClick = onClick),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -533,5 +572,3 @@ private fun ManageSwipeAction(
         )
     }
 }
-
-private val ManageRowMinHeight = 56.dp

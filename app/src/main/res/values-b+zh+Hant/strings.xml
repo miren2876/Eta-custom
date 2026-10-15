@@ -1572,4 +1572,5 @@
   <string name="action_unarchive_conversation">取消歸檔</string>
   <string name="manage_group_active">未歸檔</string>
   <string name="manage_selected_count">已選 %1$d 項</string>
+  <string name="manage_filter_all">全部</string>
 </resources>
