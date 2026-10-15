@@ -575,7 +575,7 @@ internal class AgentLocalTools(
 
     /** 写独立档案：mode=append 追加，mode=replace 整体替换（不存在则创建）。 */
     private fun memoryWriteArchive(args: JSONObject, name: String): String = try {
-        val content = args.requiredText("content")
+        val content = memoryContent(args)
         val mode = args.optString("mode", "append")
         if (mode == "edit") {
             val oldText = args.optString("old_text")
@@ -610,7 +610,7 @@ internal class AgentLocalTools(
     }
 
     private fun memoryWriteMemory(args: JSONObject): String = try {
-        val content = args.requiredText("content")
+        val content = memoryContent(args)
         when (args.optString("target").takeIf(String::isNotBlank)?.lowercase()) {
             "profile" -> {
                 AgentMemoryRepository.replaceCoreProfile(content)
@@ -639,6 +639,23 @@ internal class AgentLocalTools(
         errorResult(failure.code, failure.message ?: "记忆写入失败")
     } catch (failure: JSONException) {
         errorResult("MEMORY_ARGUMENT_INVALID", "缺少 content 或参数格式不对")
+    }
+
+    /**
+     * 记忆写入的 content：必须显式给文本。
+     * 缺参数与「写入空内容」是两回事——删除条目要显式传 content=""，不能靠省略，
+     * 否则模型漏传时会被当成删除，反而误删条目。
+     */
+    private fun memoryContent(args: JSONObject): String {
+        val raw = args.opt("content")
+            ?: throw AgentMemoryException(
+                "MEMORY_CONTENT_REQUIRED",
+                "缺少 content：要写入的文本放在 content；删除条目请显式传 content=\"\"",
+            )
+        return raw as? String ?: throw AgentMemoryException(
+            "MEMORY_ARGUMENT_INVALID",
+            "content 必须是文本，收到的是 ${raw.javaClass.simpleName}",
+        )
     }
 
     /** 条目写入回执：回报条目数、工作记忆行数与字节数（行数/字节也用于聊天里的结果摘要）。 */
