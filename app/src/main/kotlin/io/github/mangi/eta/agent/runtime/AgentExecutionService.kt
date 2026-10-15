@@ -233,6 +233,8 @@ internal class AgentExecutionService : Service() {
          * 做成 **ongoing + 提升为 Live Update**（流体云胶囊），30 秒后自动消失——
          * 横幅在 ColorOS 上可能被渠道/系统挡掉，胶囊是更稳的可见路径。
          */
+        // 同上：调用点自己按 SDK_INT_FULL 判 36.0，lint 库标 36.1。
+        @SuppressLint("NewApi")
         fun postMemoryReviewResult(context: Context, text: String) {
             runCatching {
                 val builder = Notification.Builder(context, REVIEW_CHANNEL)
