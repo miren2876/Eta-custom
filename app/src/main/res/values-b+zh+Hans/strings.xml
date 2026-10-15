@@ -1614,4 +1614,6 @@
   <string name="manage_group_active">未归档</string>
   <string name="manage_selected_count">已选 %1$d 项</string>
   <string name="manage_filter_all">全部</string>
+  <string name="drawer_archived_entry">已归档 · %1$d</string>
+  <string name="drawer_active_entry">未归档 · %1$d</string>
 </resources>

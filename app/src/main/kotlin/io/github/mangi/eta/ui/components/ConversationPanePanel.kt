@@ -185,7 +185,6 @@ internal fun ConversationPanePanel(
                     PaneDrawerActions(
                         onNewConversation = onNewConversation,
                         onOpenManageChats = onOpenManageChats,
-                        onOpenArchived = { onSelectArchive(true) },
                     )
                     Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
                     PaneFolderBar(
@@ -239,6 +238,30 @@ internal fun ConversationPanePanel(
                                 onTogglePin = { onConversationTogglePin(conversation) },
                                 onToggleArchive = { onConversationToggleArchive(conversation) },
                             )
+                        }
+                    }
+                    if (query.isBlank()) {
+                        val inFolder: (ConversationSummaryUi) -> Boolean = { conversation ->
+                            if (state.selectedFolderId == null) conversation.folderId.isBlank()
+                            else conversation.folderId == state.selectedFolderId
+                        }
+                        val archivedCount = state.historyConversations.count { it.isArchived && inFolder(it) }
+                        val activeCount = state.historyConversations.count { !it.isArchived && inFolder(it) }
+                        if (state.showingArchived || archivedCount > 0) {
+                            item(key = "archive-entry") {
+                                DrawerActionRow(
+                                    label = stringResource(
+                                        if (state.showingArchived) {
+                                            R.string.drawer_active_entry
+                                        } else {
+                                            R.string.drawer_archived_entry
+                                        },
+                                        if (state.showingArchived) activeCount else archivedCount,
+                                    ),
+                                    icon = Icons.Rounded.Inventory,
+                                    onClick = { onSelectArchive(!state.showingArchived) },
+                                )
+                            }
                         }
                     }
                 }
@@ -625,7 +648,6 @@ private fun ConversationTextRow(
 private fun PaneDrawerActions(
     onNewConversation: () -> Unit,
     onOpenManageChats: () -> Unit,
-    onOpenArchived: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -640,11 +662,6 @@ private fun PaneDrawerActions(
             label = stringResource(R.string.drawer_manage_chats),
             icon = Icons.Rounded.History,
             onClick = onOpenManageChats,
-        )
-        DrawerActionRow(
-            label = stringResource(R.string.drawer_archived_chip),
-            icon = Icons.Rounded.Inventory,
-            onClick = onOpenArchived,
         )
     }
 }

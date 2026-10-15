@@ -30,8 +30,7 @@ internal fun List<ConversationSummaryUi>.filterForFolder(
     showingArchived: Boolean = false,
 ): List<ConversationSummaryUi> = filter { summary ->
     if (summary.isArchived != showingArchived) return@filter false
-    // 「已归档」入口集中看归档会话，不再按文件夹切分。
-    if (showingArchived) return@filter true
+    // 归档视图同样只看当前文件夹：每个文件夹底部各有自己的归档入口。
     if (selectedFolderId == null) summary.folderId.isBlank() else summary.folderId == selectedFolderId
 }
 
