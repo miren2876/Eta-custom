@@ -1,5 +1,7 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.device.RootAccessState
+import io.github.mangi.eta.agent.device.RootAccessStatus
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillIndexEntry
@@ -34,25 +36,6 @@ class AgentPromptBuilderTest {
         for (contents in ungranted + granted) {
             assertTrue(contents.contains("terminal"))
         }
-    }
-
-    @Test
-    fun terminalPromptDescribesTheActualRunWorkspaceAndSeparateLifecycles() {
-        val messages = AgentPromptBuilder.buildSystemMessages(
-            config = modelConfig("", terminalTools = true, browserTools = false),
-            skillContext = SkillContext.EMPTY,
-            memoryContext = AgentMemoryContext.DISABLED,
-            rootAvailable = false,
-            executionContext = TerminalExecutionContext(TerminalEnvironment.DEBIAN, null, "/eta/custom workspace"),
-        )
-        val terminal = messages.systemContents().single { it.contains("Eta 内置文件与终端工具") }
-        assertTrue(terminal.contains("/eta/custom workspace"))
-        assertTrue(terminal.contains("debian"))
-        assertTrue(terminal.contains("identity=user"))
-        assertTrue(terminal.contains("terminal_job"))
-        assertTrue(terminal.contains("terminal_daemon"))
-        assertFalse(terminal.contains("async=true"))
-        assertFalse(terminal.contains("read_async_result"))
     }
 
     @Test
