@@ -68,6 +68,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.foundation.layout.fillMaxHeight
 
 private val ManageRowHorizontalPadding = 16.dp
 private val ManageRowVerticalPadding = 12.dp
@@ -183,8 +184,16 @@ internal fun ManageChatsScreen(
         if (selecting) {
             ManageSelectionBar(
                 count = selection.size,
+                allSelected = selection.size == visible.size,
                 allArchived = allArchived,
                 allPinned = allPinned,
+                onToggleSelectAll = {
+                    selection = if (selection.size == visible.size) {
+                        emptySet()
+                    } else {
+                        visible.map { it.id }.toSet()
+                    }
+                },
                 onArchive = {
                     onArchiveSelected(selection, !allArchived)
                     selection = emptySet()
@@ -297,8 +306,10 @@ private fun ManageFilterChip(label: String, selected: Boolean, onClick: () -> Un
 @Composable
 private fun BoxScope.ManageSelectionBar(
     count: Int,
+    allSelected: Boolean,
     allArchived: Boolean,
     allPinned: Boolean,
+    onToggleSelectAll: () -> Unit,
     onArchive: () -> Unit,
     onPin: () -> Unit,
     onMove: () -> Unit,
@@ -314,41 +325,101 @@ private fun BoxScope.ManageSelectionBar(
             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(
-            text = stringResource(R.string.manage_selected_count, count),
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            style = MiuixTheme.textStyles.footnote1,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            EtaTextButton(
+            Text(
+                text = stringResource(R.string.manage_selected_count, count),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
                 text = stringResource(
-                    if (allArchived) R.string.action_unarchive_conversation else R.string.action_archive_conversation,
+                    if (allSelected) R.string.action_clear_selection else R.string.action_select_all,
                 ),
-                onClick = onArchive,
-                modifier = Modifier.weight(1f),
-            )
-            EtaTextButton(
-                text = stringResource(
-                    if (allPinned) R.string.action_unpin_conversation else R.string.action_pin_conversation,
-                ),
-                onClick = onPin,
-                modifier = Modifier.weight(1f),
-            )
-            EtaTextButton(
-                text = stringResource(R.string.action_move_to_folder),
-                onClick = onMove,
-                modifier = Modifier.weight(1f),
-            )
-            EtaTextButton(
-                text = stringResource(R.string.action_delete),
-                onClick = onDelete,
-                modifier = Modifier.weight(1f),
+                color = MiuixTheme.colorScheme.primary,
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onToggleSelectAll)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ManageSelectionAction(
+                label = stringResource(
+                    if (allArchived) R.string.action_unarchive_conversation else R.string.action_archive_conversation,
+                ),
+                icon = Icons.Rounded.Inventory,
+                tint = MiuixTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+                onClick = onArchive,
+            )
+            ManageSelectionAction(
+                label = stringResource(
+                    if (allPinned) R.string.action_unpin_conversation else R.string.action_pin_conversation,
+                ),
+                icon = Icons.Rounded.PushPin,
+                tint = MiuixTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                onClick = onPin,
+            )
+            ManageSelectionAction(
+                label = stringResource(R.string.action_move_short),
+                icon = Icons.AutoMirrored.Rounded.DriveFileMove,
+                tint = MiuixTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                onClick = onMove,
+            )
+            ManageSelectionAction(
+                label = stringResource(R.string.action_delete),
+                icon = Icons.Rounded.Delete,
+                tint = MiuixTheme.colorScheme.error,
+                modifier = Modifier.weight(1f),
+                onClick = onDelete,
+            )
+        }
+    }
+}
+
+/** 多选栏里的一个操作：图标在上、文字在下，四个等宽排开（文字短，不换行）。 */
+@Composable
+private fun ManageSelectionAction(
+    label: String,
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(ManageRowIconSize),
+            tint = tint,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            color = tint,
+            style = MiuixTheme.textStyles.footnote1,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -419,8 +490,7 @@ private fun ManageChatRow(
         // 背景：左滑露出的三个操作
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(ManageRowMinHeight)
+                .matchParentSize()
                 .background(MiuixTheme.colorScheme.surfaceContainerHigh),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End,
@@ -551,7 +621,7 @@ private fun ManageSwipeAction(
     Column(
         modifier = Modifier
             .width(ManageSwipeActionWidth)
-            .height(ManageRowMinHeight)
+            .fillMaxHeight()
             .clickable(onClick = onClick),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,

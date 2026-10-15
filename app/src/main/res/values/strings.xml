@@ -1638,4 +1638,7 @@
   <string name="manage_filter_all">All</string>
   <string name="drawer_archived_entry">Archived · %1$d</string>
   <string name="drawer_active_entry">Active · %1$d</string>
+  <string name="action_select_all">Select all</string>
+  <string name="action_clear_selection">Clear</string>
+  <string name="action_move_short">Move</string>
 </resources>

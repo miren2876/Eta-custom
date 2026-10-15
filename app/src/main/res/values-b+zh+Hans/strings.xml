@@ -1616,4 +1616,7 @@
   <string name="manage_filter_all">全部</string>
   <string name="drawer_archived_entry">已归档 · %1$d</string>
   <string name="drawer_active_entry">未归档 · %1$d</string>
+  <string name="action_select_all">全选</string>
+  <string name="action_clear_selection">取消全选</string>
+  <string name="action_move_short">移动</string>
 </resources>
