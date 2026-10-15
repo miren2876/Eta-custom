@@ -53,13 +53,15 @@ import kotlin.math.roundToInt
 internal fun rememberVirtualScreenMenuAction(): (() -> Unit)? {
     val context = LocalContext.current
     val settings by SettingsDataStore.settingsFlow().collectAsState(initial = Settings())
+    // 文案在组合期取好：协程里不能调 stringResource，而 context.getString 会被 lint 判成非配置感知。
+    val failureText = stringResource(R.string.virtual_screen_manual_failed)
     if (!settings.virtualScreenEnabled) return null
     val scope = rememberCoroutineScope()
     return {
         runCatching { context.startActivity(Intent(context, VirtualScreenViewerActivity::class.java)) }
         scope.launch {
             if (!openVirtualScreen(context)) {
-                Toast.makeText(context, context.getString(R.string.virtual_screen_manual_failed), Toast.LENGTH_LONG).show()
+                Toast.makeText(context, failureText, Toast.LENGTH_LONG).show()
             }
         }
     }
