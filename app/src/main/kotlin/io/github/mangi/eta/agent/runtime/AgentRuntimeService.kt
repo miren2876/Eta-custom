@@ -1453,15 +1453,31 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    /** 收起态：窗口缩回小球尺寸并回到拖动位置（窗口外区域不吞触摸）。 */
+    /**
+     * 收起态：窗口一次缩回小球尺寸并回到拖动位置。
+     * 尺寸与位置必须同一次更新：分几步改会让全屏窗口先变小、面板还按屏幕坐标偏移，
+     * 视觉上就是从左上角缩放一下再弹回小球位置。
+     */
     private fun collapseCapsuleWindow() {
-        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
-        setCapsuleWindowWidth(CAPSULE_COLLAPSED_WIDTH_DP)
-        restoreCapsuleCollapsedPosition()
-        // 缩窗到位后再解除全屏标记：动画全程都按小球真实位置摆放面板。
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        // 先让面板偏移归零，随后窗口缩小时内容直接贴回小球自身。
+        capsuleFullScreen.value = false
         capsuleOffsetX.value = capsuleCollapsedX.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetX.value
         capsuleOffsetY.value = capsuleCollapsedY.takeIf { it != Int.MIN_VALUE } ?: capsuleOffsetY.value
-        capsuleFullScreen.value = false
+        lp.width = dpToPx(CAPSULE_COLLAPSED_WIDTH_DP)
+        lp.height = dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP)
+        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        if (capsuleCollapsedX != Int.MIN_VALUE) {
+            lp.x = capsuleCollapsedX.coerceIn(edge, maxOf(edge, screenWidth - lp.width - edge))
+        }
+        if (capsuleCollapsedY != Int.MIN_VALUE) {
+            lp.y = capsuleCollapsedY.coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
+        }
+        runCatching { wm.updateViewLayout(capsule, lp) }
     }
 
     private fun setCapsuleWindowHeight(heightDp: Int) {

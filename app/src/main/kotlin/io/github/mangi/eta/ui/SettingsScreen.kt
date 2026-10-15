@@ -94,6 +94,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.LaunchedEffect
 import io.github.mangi.eta.data.datastore.SettingsDataStore
+import androidx.compose.material.icons.rounded.ChatBubble
 
 /**
  * 模块配置界面。
@@ -400,6 +401,12 @@ private fun SettingsPageContent(
                     EtaSwitchPreference(
                         title = stringResource(R.string.overlay_capsule_pinned_title),
                         summary = stringResource(R.string.overlay_capsule_pinned_summary),
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.ChatBubble,
+                                tint = EtaPreferenceColors.Blue,
+                            )
+                        },
                         checked = capsulePinned,
                         onCheckedChange = { value ->
                             capsulePinned = value
