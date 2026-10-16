@@ -147,7 +147,7 @@ index b817df96..091cec5d 100644
              }
              contentReady = true
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/SettingsScreen.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/SettingsScreen.kt
-index c2774191..f04ba1f7 100644
+index c2774191..445bdb43 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/SettingsScreen.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/SettingsScreen.kt
 @@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Code
@@ -166,15 +166,29 @@ index c2774191..f04ba1f7 100644
  import androidx.compose.material.icons.rounded.SettingsVoice
  import androidx.compose.material.icons.rounded.Smartphone
  import androidx.compose.material.icons.rounded.SportsBar
-@@ -91,6 +91,7 @@ import kotlinx.coroutines.withContext
+@@ -91,6 +91,10 @@ import kotlinx.coroutines.withContext
  import top.yukonga.miuix.kmp.basic.DropdownItem
  import top.yukonga.miuix.kmp.basic.Text
  import top.yukonga.miuix.kmp.theme.MiuixTheme
 +import androidx.compose.material.icons.rounded.Settings
++import androidx.compose.runtime.LaunchedEffect
++import io.github.mangi.eta.data.datastore.SettingsDataStore
++import androidx.compose.material.icons.rounded.ChatBubble
  
  /**
   * 模块配置界面。
-@@ -246,6 +247,22 @@ private fun SettingsPageContent(
+@@ -120,6 +124,10 @@ private fun SettingsPageContent(
+     var hasUsedSystemizer by remember { mutableStateOf(enhancementHistory.hasUsedSystemizer) }
+     var showSystemizerDialog by remember { mutableStateOf(false) }
+     var installingSystemizer by remember { mutableStateOf(false) }
++    var capsulePinned by remember { mutableStateOf(false) }
++    LaunchedEffect(Unit) {
++        capsulePinned = runCatching { SettingsDataStore.settings().overlayCapsulePinned }.getOrDefault(false)
++    }
+ 
+     // 悬浮窗权限状态：授权后从系统设置返回时（ON_RESUME）刷新。
+     var overlayGranted by remember {
+@@ -246,6 +254,22 @@ private fun SettingsPageContent(
      val powerAssistantItems = powerAssistantTargets.map { target ->
          DropdownItem(text = target.displayName(context))
      }
@@ -197,7 +211,7 @@ index c2774191..f04ba1f7 100644
  
      MiuixScaffoldPage(
          title = stringResource(R.string.ui_set_up_7debf9),
-@@ -303,6 +320,12 @@ private fun SettingsPageContent(
+@@ -303,6 +327,12 @@ private fun SettingsPageContent(
                          },
                          onClick = { onNavigate(AppRoute.Memory) },
                      )
@@ -210,7 +224,7 @@ index c2774191..f04ba1f7 100644
  
                      EtaPreferenceDivider()
                      EtaArrowPreference(
-@@ -342,6 +365,79 @@ private fun SettingsPageContent(
+@@ -342,6 +372,123 @@ private fun SettingsPageContent(
                  }
              }
  
@@ -237,6 +251,50 @@ index c2774191..f04ba1f7 100644
 +                        key = Prefs.Keys.AGENT_ASK_USER,
 +                        icon = Icons.Rounded.Forum,
 +                        iconTint = EtaPreferenceColors.Blue,
++                    )
++
++                    EtaPreferenceDivider()
++                    EtaSwitchPreference(
++                        title = stringResource(R.string.overlay_capsule_pinned_title),
++                        summary = stringResource(R.string.overlay_capsule_pinned_summary),
++                        startAction = {
++                            EtaPreferenceIcon(
++                                icon = Icons.Rounded.ChatBubble,
++                                tint = EtaPreferenceColors.Blue,
++                            )
++                        },
++                        checked = capsulePinned,
++                        onCheckedChange = { value ->
++                            capsulePinned = value
++                            // 胶囊走系统悬浮窗（无障碍可用时免授权）：没授权先跳去授权，用户回来再拨一次。
++                            if (value && !Settings.canDrawOverlays(context)) {
++                                runCatching {
++                                    context.startActivity(
++                                        Intent(
++                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
++                                            android.net.Uri.parse("package:${'$'}{context.packageName}"),
++                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
++                                    )
++                                }
++                            }
++                            coroutineScope.launch(Dispatchers.IO) {
++                                SettingsDataStore.updateSettings { it.copy(overlayCapsulePinned = value) }
++                                runCatching {
++                                    context.startService(
++                                        Intent(
++                                            context,
++                                            io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java,
++                                        ).setAction(
++                                            if (value) {
++                                                io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_PIN_CAPSULE
++                                            } else {
++                                                io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_UNPIN_CAPSULE
++                                            },
++                                        ),
++                                    )
++                                }
++                            }
++                        },
 +                    )
 +
 +                    EtaPreferenceDivider()
@@ -290,7 +348,7 @@ index c2774191..f04ba1f7 100644
              // ── 工具 ───────────────────────────────────────────────────
              item(key = "section_tools") {
                  EtaPreferenceGroupTitle(stringResource(R.string.ui_tool_a72ef1))
-@@ -413,6 +509,17 @@ private fun SettingsPageContent(
+@@ -413,6 +560,17 @@ private fun SettingsPageContent(
                          },
                          onClick = { onNavigate(AppRoute.LinuxEnvironment) },
                      )
@@ -308,7 +366,7 @@ index c2774191..f04ba1f7 100644
                  }
              }
  
-@@ -498,7 +605,7 @@ private fun SettingsPageContent(
+@@ -498,7 +656,7 @@ private fun SettingsPageContent(
                              context = context,
                              prefs = prefs,
                              title = stringResource(R.string.ui_enable_vendor_assistant_custom_models_c8e465),
@@ -317,7 +375,7 @@ index c2774191..f04ba1f7 100644
                              icon = Icons.Rounded.Cloud,
                              iconTint = EtaPreferenceColors.Blue,
                          )
-@@ -508,7 +615,7 @@ private fun SettingsPageContent(
+@@ -508,7 +666,7 @@ private fun SettingsPageContent(
                              context = context,
                              prefs = prefs,
                              title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
@@ -327,7 +385,7 @@ index c2774191..f04ba1f7 100644
                              iconTint = EtaPreferenceColors.Blue,
                          )
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppRoot.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppRoot.kt
-index 3361d444..d6252ae2 100644
+index 3361d444..48276d59 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppRoot.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppRoot.kt
 @@ -9,11 +9,17 @@ import android.provider.Settings
@@ -472,7 +530,7 @@ index 3361d444..d6252ae2 100644
              onBack = { popRoute() },
              onOpenConversationPane = { conversationPaneOpen = true },
              onDismissConversationPane = { conversationPaneOpen = false },
-@@ -314,6 +362,17 @@ fun AgentAppRoot(
+@@ -314,6 +362,21 @@ fun AgentAppRoot(
              onConversationDelete = { conversation ->
                  conversationDeleteTarget = conversation
              },
@@ -482,6 +540,10 @@ index 3361d444..d6252ae2 100644
 +            onConversationTogglePin = { conversation ->
 +                agentState.toggleConversationPinned(conversation.id)
 +            },
++            onConversationToggleArchive = { conversation ->
++                agentState.setConversationArchived(conversation.id, !conversation.isArchived)
++            },
++            onSelectArchive = { showing -> agentState.selectArchiveView(showing) },
 +            onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
 +            onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
 +            onCreateFolder = { name -> agentState.createFolder(name) },
@@ -490,7 +552,7 @@ index 3361d444..d6252ae2 100644
              onOpenTools = { pushRoute(AppRoute.Tools) },
              onOpenSkills = { pushRoute(AppRoute.Skills) },
              onOpenCharacters = { pushRoute(AppRoute.Characters) },
-@@ -398,9 +457,23 @@ fun AgentAppRoot(
+@@ -398,9 +461,31 @@ fun AgentAppRoot(
                              }
                          },
                          isDrawerOpen = conversationPaneOpen,
@@ -501,6 +563,7 @@ index 3361d444..d6252ae2 100644
 +            entry<AppRoute.ManageChats>(swipeDismiss = null) {
 +                ManageChatsScreen(
 +                    conversations = agentState.conversationPaneState.historyConversations,
++                    folders = agentState.conversationPaneState.folders,
 +                    onBack = ::popRoute,
 +                    onOpenConversation = { conversationId ->
 +                        popRoute()
@@ -509,12 +572,19 @@ index 3361d444..d6252ae2 100644
 +                    onTogglePin = { conversation -> agentState.toggleConversationPinned(conversation.id) },
 +                    onRename = { conversation -> conversationRenameTarget = conversation },
 +                    onDelete = { conversation -> conversationDeleteTarget = conversation },
++                    onToggleArchive = { conversation ->
++                        agentState.setConversationArchived(conversation.id, !conversation.isArchived)
++                    },
++                    onArchiveSelected = { ids, archived -> agentState.archiveConversations(ids, archived) },
++                    onPinSelected = { ids, pinned -> agentState.pinConversations(ids, pinned) },
++                    onMoveSelected = { ids, folderId -> agentState.moveConversationsToFolder(ids, folderId) },
++                    onDeleteSelected = { ids -> agentState.deleteConversations(ids) },
 +                )
 +            }
              entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {
                  RoutedShell(route = AppRoute.Browser) {
                      AgentBrowserScreen()
-@@ -664,10 +737,32 @@ fun AgentAppRoot(
+@@ -664,10 +749,32 @@ fun AgentAppRoot(
                              AgentMemoryAction.Save -> memory.saveMemory()
                              AgentMemoryAction.Clear -> memory.clearMemory()
                              AgentMemoryAction.DismissNotice -> memory.dismissMemoryNotice()
@@ -547,7 +617,7 @@ index 3361d444..d6252ae2 100644
              entry<AppRoute.LinuxEnvironment>(swipeDismiss = swipeDismiss) {
                  LinuxEnvironmentScreen(
                      context = context,
-@@ -750,6 +845,36 @@ fun AgentAppRoot(
+@@ -750,6 +857,36 @@ fun AgentAppRoot(
          }
      }
  
@@ -584,7 +654,7 @@ index 3361d444..d6252ae2 100644
      conversationRenameTarget?.let { conversation ->
          var renameInput by remember(conversation.id) { mutableStateOf(conversation.title) }
          WindowDialog(
-@@ -857,6 +982,40 @@ fun AgentAppRoot(
+@@ -857,6 +994,40 @@ fun AgentAppRoot(
      }
  }
  
@@ -626,7 +696,7 @@ index 3361d444..d6252ae2 100644
      val messageId: String,
      val laterTurnCount: Int,
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppShell.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppShell.kt
-index 41759144..c0f90223 100644
+index 41759144..53fa210c 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppShell.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppShell.kt
 @@ -1,8 +1,11 @@
@@ -688,12 +758,14 @@ index 41759144..c0f90223 100644
      onBack: () -> Unit,
      onOpenConversationPane: () -> Unit,
      onDismissConversationPane: () -> Unit,
-@@ -97,6 +107,13 @@ internal fun AgentAppShell(
+@@ -97,6 +107,15 @@ internal fun AgentAppShell(
      onConversationRename: (ConversationSummaryUi) -> Unit,
      onConversationExport: (ConversationSummaryUi) -> Unit,
      onConversationDelete: (ConversationSummaryUi) -> Unit,
 +    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
 +    onConversationTogglePin: (ConversationSummaryUi) -> Unit,
++    onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
++    onSelectArchive: (Boolean) -> Unit,
 +    onOpenManageChats: () -> Unit,
 +    onSelectFolder: (String?) -> Unit,
 +    onCreateFolder: (String) -> Unit,
@@ -702,7 +774,7 @@ index 41759144..c0f90223 100644
      onOpenTools: () -> Unit,
      onOpenSkills: () -> Unit,
      onOpenCharacters: () -> Unit,
-@@ -122,6 +139,8 @@ internal fun AgentAppShell(
+@@ -122,6 +141,8 @@ internal fun AgentAppShell(
                      TopBarBackdrop(backdrop) {
                          AgentTopBar(
                              route = currentRoute,
@@ -711,12 +783,14 @@ index 41759144..c0f90223 100644
                              scrollBehavior = scrollBehavior,
                              color = topBarColor,
                              onBack = onBack,
-@@ -165,6 +184,14 @@ internal fun AgentAppShell(
+@@ -165,6 +186,16 @@ internal fun AgentAppShell(
                  onConversationRename = onConversationRename,
                  onConversationExport = onConversationExport,
                  onConversationDelete = onConversationDelete,
 +                onConversationMoveToFolder = onConversationMoveToFolder,
 +                onConversationTogglePin = onConversationTogglePin,
++                onConversationToggleArchive = onConversationToggleArchive,
++                onSelectArchive = onSelectArchive,
 +                onNewConversation = onNewConversation,
 +                onOpenManageChats = onOpenManageChats,
 +                onSelectFolder = onSelectFolder,
@@ -726,7 +800,7 @@ index 41759144..c0f90223 100644
                  onOpenSettings = onOpenSettings,
                  onOpenModelProviders = onOpenModelProviders,
                  onOpenTools = onOpenTools,
-@@ -183,6 +210,8 @@ internal fun AgentAppShell(
+@@ -183,6 +214,8 @@ internal fun AgentAppShell(
  @Composable
  private fun AgentTopBar(
      route: AppRoute?,
@@ -735,7 +809,7 @@ index 41759144..c0f90223 100644
      scrollBehavior: ScrollBehavior,
      color: Color,
      onBack: () -> Unit,
-@@ -218,6 +247,8 @@ private fun AgentTopBar(
+@@ -218,6 +251,8 @@ private fun AgentTopBar(
              MiuixBackButton(onClick = onBack)
          }
      }
@@ -744,7 +818,7 @@ index 41759144..c0f90223 100644
      val actions: @Composable RowScope.() -> Unit = {
          if (isHome) {
              SpeechAutoReadToggle()
-@@ -230,14 +261,42 @@ private fun AgentTopBar(
+@@ -230,14 +265,42 @@ private fun AgentTopBar(
                  onStopKimiWeb = onStopKimiWeb,
                  onRefreshKimiWeb = onRefreshKimiWeb,
                  onOpenBrowser = onOpenBrowser,
@@ -791,7 +865,7 @@ index 41759144..c0f90223 100644
          SmallTopAppBar(
              title = titleForRoute(route),
              color = color,
-@@ -258,6 +317,10 @@ private fun AgentTopBar(
+@@ -258,6 +321,10 @@ private fun AgentTopBar(
  
  private val TopBarMenuIconSize = 20.dp
  
@@ -802,7 +876,7 @@ index 41759144..c0f90223 100644
  /**
   * 首页顶栏溢出菜单。WindowListPopup 以父布局为锚点，因此与触发按钮包在同一个 Box 中，
   * 弹层从按钮下方右对齐展开。
-@@ -272,6 +335,7 @@ private fun TopBarOverflowMenu(
+@@ -272,6 +339,7 @@ private fun TopBarOverflowMenu(
      onStopKimiWeb: () -> Unit,
      onRefreshKimiWeb: () -> Unit,
      onOpenBrowser: () -> Unit,
@@ -810,7 +884,7 @@ index 41759144..c0f90223 100644
  ) {
      var showMenu by remember { mutableStateOf(false) }
      Box {
-@@ -292,13 +356,16 @@ private fun TopBarOverflowMenu(
+@@ -292,13 +360,16 @@ private fun TopBarOverflowMenu(
              val launchKimiWebText = kimiWebLabel
              val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
              val openBrowserText = stringResource(R.string.action_open_browser)
@@ -827,7 +901,7 @@ index 41759144..c0f90223 100644
              ) {
                  listOf(
                      DropdownItem(
-@@ -341,22 +408,38 @@ private fun TopBarOverflowMenu(
+@@ -341,22 +412,38 @@ private fun TopBarOverflowMenu(
                              )
                          },
                      ),
@@ -882,7 +956,7 @@ index 41759144..c0f90223 100644
              }
              ListPopupColumn {
                  menuItems.forEachIndexed { index, item ->
-@@ -367,13 +450,7 @@ private fun TopBarOverflowMenu(
+@@ -367,13 +454,7 @@ private fun TopBarOverflowMenu(
                          index = index,
                          onSelectedIndexChange = {
                              showMenu = false
@@ -897,7 +971,7 @@ index 41759144..c0f90223 100644
                          },
                      )
                  }
-@@ -382,9 +459,11 @@ private fun TopBarOverflowMenu(
+@@ -382,9 +463,11 @@ private fun TopBarOverflowMenu(
      }
  }
  
@@ -909,7 +983,7 @@ index 41759144..c0f90223 100644
      is AppRoute.Browser -> stringResource(R.string.route_browser)
      is AppRoute.Terminal -> stringResource(R.string.route_terminal)
      is AppRoute.Tools -> stringResource(R.string.route_tools)
-@@ -404,6 +483,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
+@@ -404,6 +487,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
      is AppRoute.AppearanceSettings -> stringResource(R.string.appearance_title)
      is AppRoute.DataBackup -> stringResource(R.string.data_backup_title)
      is AppRoute.Memory -> stringResource(R.string.route_memory)
@@ -918,7 +992,7 @@ index 41759144..c0f90223 100644
      is AppRoute.Workspace -> stringResource(R.string.capability_workspace)
      is AppRoute.SharedFolders -> stringResource(R.string.route_shared_folders)
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppState.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppState.kt
-index 5096b606..c91e3c1d 100644
+index 5096b606..a4f0f2a0 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppState.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppState.kt
 @@ -33,6 +33,8 @@ import io.github.mangi.eta.agent.runtime.AgentExecutionService
@@ -955,7 +1029,7 @@ index 5096b606..c91e3c1d 100644
      private var currentRunJob: Job? = null
      private val persistenceLock = Any()
      private var persistenceJob: Job? = null
-@@ -133,9 +141,24 @@ internal class AgentAppState(
+@@ -133,9 +141,25 @@ internal class AgentAppState(
      )
          private set
  
@@ -963,6 +1037,7 @@ index 5096b606..c91e3c1d 100644
 +    private var conversationFolders: List<ConversationFolderUi> = initialConversations.folders
 +    private var conversationFolderIds: Map<String, String> = initialConversations.folderIds
 +    private var conversationPinned: Set<String> = initialConversations.pinnedIds
++    private var conversationArchived: Set<String> = initialConversations.archivedIds
 +    /**
 +     * 侧栏当前选中的文件夹：启动时跟随选中会话所属的文件夹，
 +     * 未归类会话（或没有会话）时回到「聊天」。
@@ -980,7 +1055,7 @@ index 5096b606..c91e3c1d 100644
          runtimeRecoveryInProgress.set(true)
          scope.launch(Dispatchers.IO) {
              try {
-@@ -220,7 +243,7 @@ internal class AgentAppState(
+@@ -220,7 +244,7 @@ internal class AgentAppState(
  
      suspend fun importBackup(input: InputStream): EtaBackupSummary {
          val locallyBusy = withContext(Dispatchers.Main.immediate) {
@@ -989,19 +1064,20 @@ index 5096b606..c91e3c1d 100644
          }
          if (locallyBusy) {
              throw IllegalStateException("请先停止正在运行的 Agent 任务")
-@@ -273,6 +296,11 @@ internal class AgentAppState(
+@@ -273,6 +297,12 @@ internal class AgentAppState(
              conversationsById = snapshot.conversationsById
              conversationTitles = snapshot.titles
              conversationUpdatedAt = snapshot.updatedAt
 +            conversationFolders = snapshot.folders
 +            conversationFolderIds = snapshot.folderIds
 +            conversationPinned = snapshot.pinnedIds
++            conversationArchived = snapshot.archivedIds
 +            selectedFolderId = snapshot.selectedConversationId?.let { snapshot.folderIds[it] }
 +            pendingNewConversationFolderId = null
              conversationPersistence = AgentConversationPersistence(snapshot)
              fileAttachmentOwnerVersion += 1
              homeState = selectedConversationId
-@@ -324,7 +352,7 @@ internal class AgentAppState(
+@@ -324,7 +354,7 @@ internal class AgentAppState(
          val activeStateKnown = activeRunQuery is AgentRuntimeClient.ActiveRunQuery.Known
          val terminalStateKnown = terminalRaceQuery is AgentRuntimeClient.CompletedRunsQuery.Known
          val activeRunId = (activeRunQuery as? AgentRuntimeClient.ActiveRunQuery.Known)?.runId
@@ -1010,7 +1086,7 @@ index 5096b606..c91e3c1d 100644
          val plan = AgentRunRecoveryCoordinator.plan(
              checkpoints = checkpoints,
              completedRuns = completedRuns,
-@@ -337,7 +365,7 @@ internal class AgentAppState(
+@@ -337,7 +367,7 @@ internal class AgentAppState(
              val observed = checkpoints.mapTo(mutableSetOf()) { it.runId }.apply {
                  addAll(completedRuns.map { it.result.runId })
                  activeRunId?.let(::add)
@@ -1019,7 +1095,7 @@ index 5096b606..c91e3c1d 100644
              }
              conversationsById.flatMap { (id, state) ->
                  state.roleplayMessages.pendingRewrites.keys.filterNot { it in observed }.map { id to it }
-@@ -484,10 +512,10 @@ internal class AgentAppState(
+@@ -484,10 +514,10 @@ internal class AgentAppState(
              .from(checkpoint.handoff.payload)
              .conversationId
          val existing = conversationsById[conversationId] ?: return
@@ -1032,7 +1108,7 @@ index 5096b606..c91e3c1d 100644
          val restored = if (checkpoint.operation == AgentRuntimeWire.OP_REWRITE_REPLY) {
              RoleplayConversationReducer.restorePendingRewrite(existing, runId, checkpoint.rewriteTargetMessageId)
          } else existing
-@@ -510,8 +538,8 @@ internal class AgentAppState(
+@@ -510,8 +540,8 @@ internal class AgentAppState(
                  }
                  AgentRuntimeClient.AttachOutcome.NotActive -> {
                      withContext(Dispatchers.Main) {
@@ -1043,7 +1119,7 @@ index 5096b606..c91e3c1d 100644
                              currentRunJob = null
                              setConversationStreaming(runId, false)
                          }
-@@ -519,8 +547,8 @@ internal class AgentAppState(
+@@ -519,8 +549,8 @@ internal class AgentAppState(
                      recoverRuntimeRuns()
                  }
                  AgentRuntimeClient.AttachOutcome.Unavailable -> withContext(Dispatchers.Main) {
@@ -1054,13 +1130,16 @@ index 5096b606..c91e3c1d 100644
                          currentRunJob = null
                          setConversationStreaming(runId, false)
                          refreshConversationSummaries()
-@@ -671,6 +699,93 @@ internal class AgentAppState(
+@@ -671,6 +701,145 @@ internal class AgentAppState(
          }
      }
  
 +    fun selectFolder(folderId: String?) {
-+        if (selectedFolderId == folderId) return
++        // 选文件夹即离开「已归档」视图。
++        val wasArchived = conversationPaneState.showingArchived
++        if (selectedFolderId == folderId && !wasArchived) return
 +        selectedFolderId = folderId
++        if (wasArchived) conversationPaneState = conversationPaneState.copy(showingArchived = false)
 +        refreshConversationSummaries()
 +    }
 +
@@ -1120,14 +1199,63 @@ index 5096b606..c91e3c1d 100644
 +        persistOrganization()
 +    }
 +
++    /** 切到「已归档」入口：只看归档会话，忽略文件夹分组。 */
++    fun selectArchiveView(showing: Boolean) {
++        if (conversationPaneState.showingArchived == showing) return
++        conversationPaneState = conversationPaneState.copy(showingArchived = showing)
++        refreshConversationSummaries()
++    }
++
++    /** 单个归档 / 取消归档。 */
++    fun setConversationArchived(conversationId: String, archived: Boolean) {
++        archiveConversations(listOf(conversationId), archived)
++    }
++
++    /** 批量归档 / 取消归档。 */
++    fun archiveConversations(conversationIds: Collection<String>, archived: Boolean) {
++        val ids = conversationIds.filter { it in conversationsById }.toSet()
++        if (ids.isEmpty()) return
++        conversationArchived = if (archived) conversationArchived + ids else conversationArchived - ids
++        refreshConversationSummaries()
++        persistOrganization()
++    }
++
++    /** 批量置顶 / 取消置顶。 */
++    fun pinConversations(conversationIds: Collection<String>, pinned: Boolean) {
++        val ids = conversationIds.filter { it in conversationsById }.toSet()
++        if (ids.isEmpty()) return
++        conversationPinned = if (pinned) conversationPinned + ids else conversationPinned - ids
++        refreshConversationSummaries()
++        persistOrganization()
++    }
++
++    /** 批量移动到文件夹；folderId 为空表示移出文件夹。 */
++    fun moveConversationsToFolder(conversationIds: Collection<String>, folderId: String?) {
++        val ids = conversationIds.filter { it in conversationsById }
++        if (ids.isEmpty()) return
++        conversationFolderIds = if (folderId.isNullOrBlank()) {
++            conversationFolderIds - ids.toSet()
++        } else {
++            conversationFolderIds + ids.associateWith { folderId }
++        }
++        refreshConversationSummaries()
++        persistOrganization()
++    }
++
++    /** 批量删除：逐个走单条逻辑（含选中态切换）；会话量很大时再改成一次性重写。 */
++    fun deleteConversations(conversationIds: Collection<String>) {
++        conversationIds.toList().forEach(::deleteConversation)
++    }
++
 +    /** 组织信息独立落库，避免置顶/移动文件夹触发整份会话重写。 */
 +    private fun persistOrganization() {
 +        val folders = conversationFolders
 +        val folderIds = conversationFolderIds
 +        val pinned = conversationPinned
++        val archived = conversationArchived
 +        scope.launch(Dispatchers.IO) {
 +            try {
-+                AgentConversationStore.saveOrganization(appContext, folders, folderIds, pinned)
++                AgentConversationStore.saveOrganization(appContext, folders, folderIds, pinned, archived)
 +            } catch (cancelled: CancellationException) {
 +                throw cancelled
 +            } catch (throwable: Throwable) {
@@ -1148,7 +1276,7 @@ index 5096b606..c91e3c1d 100644
      fun updateSearchQuery(query: String) {
          conversationPaneState = conversationPaneState.copy(searchQuery = query)
          refreshConversationSummaries()
-@@ -700,6 +815,7 @@ internal class AgentAppState(
+@@ -700,6 +869,7 @@ internal class AgentAppState(
          if (homeState.messageEdit != null) cancelMessageEdit()
          fileAttachmentOwnerVersion += 1
          selectedConversationId = null
@@ -1156,7 +1284,7 @@ index 5096b606..c91e3c1d 100644
          homeState = emptyChatState(defaultThinkingEnabled)
          refreshConversationModel()
          conversationPaneState = conversationPaneState.copy(
-@@ -732,6 +848,7 @@ internal class AgentAppState(
+@@ -732,6 +902,7 @@ internal class AgentAppState(
          )
          conversationTitles = conversationTitles + (id to binding.characterName)
          updateConversation(id, homeState)
@@ -1164,7 +1292,7 @@ index 5096b606..c91e3c1d 100644
          conversationPaneState = conversationPaneState.copy(selectedConversationId = id, searchQuery = "")
          refreshConversationSummaries()
          persistConversations()
-@@ -802,6 +919,7 @@ internal class AgentAppState(
+@@ -802,6 +973,7 @@ internal class AgentAppState(
                  noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
                  noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
                  noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
@@ -1172,7 +1300,7 @@ index 5096b606..c91e3c1d 100644
              ),
          )
      }
-@@ -814,6 +932,10 @@ internal class AgentAppState(
+@@ -814,6 +986,10 @@ internal class AgentAppState(
              SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
              SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
              SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
@@ -1183,7 +1311,7 @@ index 5096b606..c91e3c1d 100644
          },
      )
  
-@@ -822,10 +944,46 @@ internal class AgentAppState(
+@@ -822,10 +998,46 @@ internal class AgentAppState(
          val prompt = (submittedText ?: homeState.input).trim()
          val pendingImages = homeState.pendingImages
          val pendingFileReferences = homeState.pendingFileReferences
@@ -1234,7 +1362,7 @@ index 5096b606..c91e3c1d 100644
              return
          }
          homeState.messageEdit?.takeIf { it.preserveFollowingMessages }?.let { edit ->
-@@ -871,6 +1029,7 @@ internal class AgentAppState(
+@@ -871,6 +1083,7 @@ internal class AgentAppState(
  
          val conversationId = selectedConversationId ?: newConversationId().also {
              selectedConversationId = it
@@ -1242,7 +1370,7 @@ index 5096b606..c91e3c1d 100644
          }
          val runId = "run-${UUID.randomUUID()}"
          val userMessage = UserMessageUi(
-@@ -927,6 +1086,78 @@ internal class AgentAppState(
+@@ -927,6 +1140,78 @@ internal class AgentAppState(
          )
      }
  
@@ -1321,7 +1449,7 @@ index 5096b606..c91e3c1d 100644
      fun beginMessageEdit(messageId: String) {
          if (homeState.isStreaming || homeState.messageEdit != null) return
          if (homeState.roleplay != null) {
-@@ -1083,7 +1314,7 @@ internal class AgentAppState(
+@@ -1083,7 +1368,7 @@ internal class AgentAppState(
  
      fun compactCurrentContext() {
          val conversationId = selectedConversationId ?: return
@@ -1330,7 +1458,7 @@ index 5096b606..c91e3c1d 100644
          launchConversationRun(
              conversationId = conversationId,
              runId = java.util.UUID.randomUUID().toString(),
-@@ -1107,7 +1338,7 @@ internal class AgentAppState(
+@@ -1107,7 +1392,7 @@ internal class AgentAppState(
          rewriteTargetMessageId: String? = null,
      ) {
          runConversationIds[runId] = conversationId
@@ -1339,7 +1467,7 @@ index 5096b606..c91e3c1d 100644
          // 发送即绑定：会话记住本轮实际使用的模型，回落到默认模型时也随之更新。
          val runModelId = state.effectiveModelId
  
-@@ -1230,7 +1461,11 @@ internal class AgentAppState(
+@@ -1230,7 +1515,11 @@ internal class AgentAppState(
                          handoff = AgentRuntimeWire.EntryHandoff(
                              id = runId,
                              source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
@@ -1352,7 +1480,7 @@ index 5096b606..c91e3c1d 100644
                          ),
                      ),
                      onEvent = { event -> enqueueRunEvent(runId, event) },
-@@ -1245,7 +1480,7 @@ internal class AgentAppState(
+@@ -1245,7 +1534,7 @@ internal class AgentAppState(
              val leaseId = "prepare:$runId"
              val acquired = AgentExecutionService.acquire(appContext, leaseId) {
                  scope.launch(Dispatchers.Main.immediate) {
@@ -1361,7 +1489,7 @@ index 5096b606..c91e3c1d 100644
                  }
              }
              if (!acquired) {
-@@ -1460,7 +1695,7 @@ internal class AgentAppState(
+@@ -1460,7 +1749,7 @@ internal class AgentAppState(
      private val stopRequestedRunIds = mutableSetOf<String>()
  
      fun stopCurrentRun() {
@@ -1370,7 +1498,7 @@ index 5096b606..c91e3c1d 100644
          if (!stopRequestedRunIds.add(runId)) return
          scope.launch(Dispatchers.IO) {
              AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
-@@ -1550,10 +1785,14 @@ internal class AgentAppState(
+@@ -1550,10 +1839,14 @@ internal class AgentAppState(
          acknowledgeRuntimeResult: Boolean = false,
      ) {
          flushPendingRunDelta(runId)
@@ -1387,7 +1515,7 @@ index 5096b606..c91e3c1d 100644
              currentRunJob = null
          }
          if (rewriting) {
-@@ -1720,6 +1959,34 @@ internal class AgentAppState(
+@@ -1720,6 +2013,34 @@ internal class AgentAppState(
          }
      }
  
@@ -1422,7 +1550,7 @@ index 5096b606..c91e3c1d 100644
      private fun setConversationStreaming(runId: String, isStreaming: Boolean) {
          val conversationId = conversationIdForRun(runId) ?: return
          val state = conversationsById[conversationId] ?: return
-@@ -1735,9 +2002,10 @@ internal class AgentAppState(
+@@ -1735,9 +2056,10 @@ internal class AgentAppState(
  
      private fun refreshConversationSummaries() {
          val summaries = conversationsById.entries
@@ -1436,17 +1564,18 @@ index 5096b606..c91e3c1d 100644
              .map { (id, state) ->
                  val lastMessage = state.messages.lastOrNull()
                  ConversationSummaryUi(
-@@ -1783,21 +2051,28 @@ internal class AgentAppState(
+@@ -1783,21 +2105,30 @@ internal class AgentAppState(
                      characterName = state.roleplay?.characterName,
                      characterAvatarPath = state.roleplay?.avatarPath,
                      isActiveRun = state.isStreaming,
 +                    isPinned = id in conversationPinned,
 +                    folderId = conversationFolderIds[id].orEmpty(),
++                    isArchived = id in conversationArchived,
                  )
              }
          val query = conversationPaneState.searchQuery.trim()
 +        // 文件夹过滤先于搜索：搜索只在当前分组内生效，「聊天」分组只看未归类会话。
-+        val visible = summaries.filterForFolder(selectedFolderId)
++        val visible = summaries.filterForFolder(selectedFolderId, conversationPaneState.showingArchived)
          conversationPaneState = conversationPaneState.copy(
              selectedConversationId = selectedConversationId,
              conversations = if (query.isBlank()) {
@@ -1463,12 +1592,13 @@ index 5096b606..c91e3c1d 100644
              },
 +            folders = conversationFolders,
 +            selectedFolderId = selectedFolderId,
++            showingArchived = conversationPaneState.showingArchived,
 +            historyConversations = summaries,
          )
      }
  
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentConversationStore.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentConversationStore.kt
-index 0fe2b5fc..9ed4b84f 100644
+index 0fe2b5fc..b4b2b3b5 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentConversationStore.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentConversationStore.kt
 @@ -8,6 +8,7 @@ import io.github.mangi.eta.agent.roleplay.RoleplayBinding
@@ -1487,7 +1617,7 @@ index 0fe2b5fc..9ed4b84f 100644
  import io.github.mangi.eta.ui.model.AgentMessageUi
  import io.github.mangi.eta.ui.model.ThinkingMessageUi
  import io.github.mangi.eta.ui.model.SystemNoticeCode
-@@ -53,6 +55,11 @@ internal object AgentConversationStore {
+@@ -53,6 +55,13 @@ internal object AgentConversationStore {
           * 重启后列表被压紧；增量保存按下标截断后缀，这些会话必须先整段重写一次。
           */
          val unalignedConversationIds: Set<String> = emptySet(),
@@ -1496,10 +1626,12 @@ index 0fe2b5fc..9ed4b84f 100644
 +        /** 会话 → 文件夹 id；未归类会话不在表内。 */
 +        val folderIds: Map<String, String> = emptyMap(),
 +        val pinnedIds: Set<String> = emptySet(),
++        /** 已归档会话 id；默认列表隐藏。 */
++        val archivedIds: Set<String> = emptySet(),
      )
  
      private val saveMutex = Mutex()
-@@ -103,6 +110,9 @@ internal object AgentConversationStore {
+@@ -103,6 +112,9 @@ internal object AgentConversationStore {
                                      createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                      updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                      modelId = state.modelId,
@@ -1509,7 +1641,7 @@ index 0fe2b5fc..9ed4b84f 100644
                                  )
                                  phase = "write_metadata"
                                  dao.insertConversations(listOf(row))
-@@ -160,12 +170,14 @@ internal object AgentConversationStore {
+@@ -160,12 +172,14 @@ internal object AgentConversationStore {
      private suspend fun loadSnapshot(context: Context): Snapshot {
          val dao = EtaDatabase.get(context).conversationDao()
          val conversations = dao.conversations()
@@ -1524,30 +1656,33 @@ index 0fe2b5fc..9ed4b84f 100644
              )
          }
  
-@@ -173,6 +185,8 @@ internal object AgentConversationStore {
+@@ -173,6 +187,9 @@ internal object AgentConversationStore {
          val titles = mutableMapOf<String, String>()
          val updatedAt = mutableMapOf<String, Long>()
          val unaligned = mutableSetOf<String>()
 +        val folderIds = mutableMapOf<String, String>()
 +        val pinnedIds = mutableSetOf<String>()
++        val archivedIds = mutableSetOf<String>()
  
          conversations.forEach { conversation ->
              val messages = buildList {
-@@ -211,6 +225,8 @@ internal object AgentConversationStore {
+@@ -211,6 +228,9 @@ internal object AgentConversationStore {
              ).let(RoleplayConversationReducer::decorate)
              titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
              updatedAt[conversation.id] = conversation.updatedAt
 +            conversation.folderId.takeIf(String::isNotBlank)?.let { folderIds[conversation.id] = it }
++            if (conversation.isArchived) archivedIds += conversation.id
 +            if (conversation.isPinned) pinnedIds += conversation.id
          }
  
          val selected = dao.state()?.selectedConversationId
-@@ -223,9 +239,58 @@ internal object AgentConversationStore {
+@@ -223,9 +243,62 @@ internal object AgentConversationStore {
              titles = titles,
              updatedAt = updatedAt,
              unalignedConversationIds = unaligned,
 +            folders = folders,
 +            folderIds = folderIds,
++            archivedIds = archivedIds,
 +            pinnedIds = pinnedIds,
          )
      }
@@ -1566,6 +1701,7 @@ index 0fe2b5fc..9ed4b84f 100644
 +        folders: List<ConversationFolderUi>,
 +        folderIds: Map<String, String>,
 +        pinnedIds: Set<String>,
++        archivedIds: Set<String>,
 +    ) {
 +        val appContext = context.applicationContext
 +        saveMutex.withLock {
@@ -1585,6 +1721,8 @@ index 0fe2b5fc..9ed4b84f 100644
 +                        if (row.folderId != folderId) dao.updateConversationFolder(row.id, folderId)
 +                        val pinned = row.id in pinnedIds
 +                        if (row.isPinned != pinned) dao.updateConversationPinned(row.id, pinned)
++                        val archived = row.id in archivedIds
++                        if (row.isArchived != archived) dao.updateConversationArchived(row.id, archived)
 +                    }
 +                } catch (cancelled: CancellationException) {
 +                    throw cancelled
@@ -1688,7 +1826,7 @@ index 61eb33e8..0abc1daf 100644
      }
  
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/components/AgentChatBody.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/components/AgentChatBody.kt
-index ec1dbd76..8a6cf461 100644
+index ec1dbd76..b47fa454 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/components/AgentChatBody.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/components/AgentChatBody.kt
 @@ -1,5 +1,7 @@
@@ -1723,6 +1861,22 @@ index ec1dbd76..8a6cf461 100644
  import kotlin.math.exp
  import kotlin.math.min
  import kotlinx.coroutines.CancellationException
+@@ -105,7 +108,6 @@ import kotlinx.coroutines.isActive
+ import kotlinx.coroutines.launch
+ import top.yukonga.miuix.kmp.basic.Icon
+ import top.yukonga.miuix.kmp.basic.IconButton
+-import top.yukonga.miuix.kmp.basic.IconButtonDefaults
+ import top.yukonga.miuix.kmp.basic.Scaffold
+ import top.yukonga.miuix.kmp.basic.Text
+ import top.yukonga.miuix.kmp.blur.BlendColorEntry
+@@ -120,6 +122,7 @@ import top.yukonga.miuix.kmp.squircle.squircleSurface
+ import top.yukonga.miuix.kmp.theme.MiuixTheme
+ import top.yukonga.miuix.kmp.utils.overScrollVertical
+ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
++import androidx.compose.foundation.border
+ 
+ /**
+  * 聊天主体：消息流 + 底部输入框。
 @@ -160,7 +163,10 @@ internal fun AgentChatBody(
      onSuggestionClick: (String) -> Unit,
      onRunTraceClick: () -> Unit,
@@ -1821,6 +1975,19 @@ index ec1dbd76..8a6cf461 100644
                  keepBottomAnchored = keepBottomAnchored,
                  isUserDragging = isUserDragging,
              )
+@@ -722,10 +753,10 @@ internal fun AgentConversationMessages(
+                         shape = CircleShape,
+                         shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
+                     )
+-                    .squircleBorder(
++                    .border(
+                         width = 0.5.dp,
+                         color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
+-                        cornerRadius = IconButtonDefaults.CornerRadius,
++                        shape = CircleShape,
+                     ),
+                 onClick = {
+                     onBottomAnchorChanged(true)
 @@ -880,6 +911,7 @@ internal fun resolveFinalResultMessageIds(
  @Composable
  private fun AgentChatBottomBar(
@@ -2350,7 +2517,7 @@ index 4ef01f29..438b9763 100644
  
  @Composable
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationPanePanel.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationPanePanel.kt
-index ece695b6..6e3661ee 100644
+index ece695b6..86108a9d 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationPanePanel.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationPanePanel.kt
 @@ -24,18 +24,27 @@ import androidx.compose.foundation.layout.size
@@ -2393,7 +2560,7 @@ index ece695b6..6e3661ee 100644
  import androidx.compose.ui.graphics.luminance
  import androidx.compose.ui.graphics.vector.ImageVector
  import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-@@ -58,40 +68,47 @@ import androidx.compose.ui.text.style.TextOverflow
+@@ -58,40 +68,48 @@ import androidx.compose.ui.text.style.TextOverflow
  import androidx.compose.ui.unit.DpSize
  import androidx.compose.ui.unit.dp
  import io.github.mangi.eta.R
@@ -2418,6 +2585,7 @@ index ece695b6..6e3661ee 100644
  import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 +import top.yukonga.miuix.kmp.window.WindowDialog
  import top.yukonga.miuix.kmp.window.WindowListPopup
++import androidx.compose.material.icons.rounded.Inventory
  
  private object ConversationPanelMetrics {
 -    val PaneHorizontalPadding = 16.dp
@@ -2448,12 +2616,14 @@ index ece695b6..6e3661ee 100644
      val ActiveDotSize = 6.dp
      val ActiveDotGap = 10.dp
      val EmptyVerticalPadding = 28.dp
-@@ -122,6 +139,14 @@ internal fun ConversationPanePanel(
+@@ -122,6 +140,16 @@ internal fun ConversationPanePanel(
      onConversationRename: (ConversationSummaryUi) -> Unit,
      onConversationExport: (ConversationSummaryUi) -> Unit,
      onConversationDelete: (ConversationSummaryUi) -> Unit,
 +    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
 +    onConversationTogglePin: (ConversationSummaryUi) -> Unit,
++    onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
++    onSelectArchive: (Boolean) -> Unit,
 +    onNewConversation: () -> Unit,
 +    onOpenManageChats: () -> Unit,
 +    onSelectFolder: (String?) -> Unit,
@@ -2463,7 +2633,7 @@ index ece695b6..6e3661ee 100644
      onOpenSettings: () -> Unit,
      onOpenModelProviders: () -> Unit,
      onOpenTools: () -> Unit,
-@@ -152,8 +177,22 @@ internal fun ConversationPanePanel(
+@@ -152,8 +180,22 @@ internal fun ConversationPanePanel(
                          .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
                  ) {
                      Spacer(Modifier.height(ConversationPanelMetrics.TopInset))
@@ -2487,16 +2657,45 @@ index ece695b6..6e3661ee 100644
                  }
              }
              LazyColumn(
-@@ -192,6 +231,8 @@ internal fun ConversationPanePanel(
+@@ -192,10 +234,37 @@ internal fun ConversationPanePanel(
                                  onRename = { onConversationRename(conversation) },
                                  onExport = { onConversationExport(conversation) },
                                  onDelete = { onConversationDelete(conversation) },
 +                                onMoveToFolder = { onConversationMoveToFolder(conversation) },
 +                                onTogglePin = { onConversationTogglePin(conversation) },
++                                onToggleArchive = { onConversationToggleArchive(conversation) },
                              )
                          }
                      }
-@@ -231,35 +272,50 @@ private fun PaneFixedRegion(content: @Composable () -> Unit) {
+                 }
++                        if (query.isBlank()) {
++                            val inFolder: (ConversationSummaryUi) -> Boolean = { conversation ->
++                                if (state.selectedFolderId == null) conversation.folderId.isBlank()
++                                else conversation.folderId == state.selectedFolderId
++                            }
++                            val archivedCount = state.historyConversations.count { it.isArchived && inFolder(it) }
++                            val activeCount = state.historyConversations.count { !it.isArchived && inFolder(it) }
++                            if (state.showingArchived || archivedCount > 0) {
++                                item(key = "archive-entry") {
++                                    DrawerActionRow(
++                                        label = stringResource(
++                                            if (state.showingArchived) {
++                                                R.string.drawer_active_entry
++                                            } else {
++                                                R.string.drawer_archived_entry
++                                            },
++                                            if (state.showingArchived) activeCount else archivedCount,
++                                        ),
++                                        icon = Icons.Rounded.Inventory,
++                                        onClick = { onSelectArchive(!state.showingArchived) },
++                                    )
++                                }
++                            }
++                        }
+             }
+             PaneFixedRegion {
+                 Column(
+@@ -231,35 +300,50 @@ private fun PaneFixedRegion(content: @Composable () -> Unit) {
      }
  }
  
@@ -2568,16 +2767,17 @@ index ece695b6..6e3661ee 100644
      }
  }
  
-@@ -308,6 +364,8 @@ private fun ConversationTextRow(
+@@ -308,6 +392,9 @@ private fun ConversationTextRow(
      onRename: () -> Unit,
      onExport: () -> Unit,
      onDelete: () -> Unit,
 +    onMoveToFolder: () -> Unit,
 +    onTogglePin: () -> Unit,
++    onToggleArchive: () -> Unit,
  ) {
      var showActionMenu by remember { mutableStateOf(false) }
      val hapticFeedback = LocalHapticFeedback.current
-@@ -376,6 +434,16 @@ private fun ConversationTextRow(
+@@ -376,6 +463,16 @@ private fun ConversationTextRow(
                          .background(MiuixTheme.colorScheme.primary),
                  )
              }
@@ -2594,7 +2794,7 @@ index ece695b6..6e3661ee 100644
          }
  
          WindowListPopup(
-@@ -387,6 +455,14 @@ private fun ConversationTextRow(
+@@ -387,6 +484,14 @@ private fun ConversationTextRow(
              val renameText = stringResource(R.string.action_rename)
              val exportText = stringResource(R.string.action_export)
              val deleteText = stringResource(R.string.action_delete)
@@ -2609,7 +2809,7 @@ index ece695b6..6e3661ee 100644
              val renameItem = remember(renameText) {
                  DropdownItem(
                      text = renameText,
-@@ -424,6 +500,30 @@ private fun ConversationTextRow(
+@@ -424,6 +529,49 @@ private fun ConversationTextRow(
                      },
                  )
              }
@@ -2637,17 +2837,36 @@ index ece695b6..6e3661ee 100644
 +                    },
 +                )
 +            }
++            val archiveText = stringResource(
++                if (conversation.isArchived) {
++                    R.string.action_unarchive_conversation
++                } else {
++                    R.string.action_archive_conversation
++                },
++            )
++            val archiveItem = remember(archiveText) {
++                DropdownItem(
++                    text = archiveText,
++                    icon = { modifier ->
++                        Icon(
++                            imageVector = Icons.Rounded.Inventory,
++                            contentDescription = null,
++                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
++                        )
++                    },
++                )
++            }
              val deleteColors = DropdownDefaults.dropdownColors(
                  contentColor = MiuixTheme.colorScheme.error,
                  selectedContentColor = MiuixTheme.colorScheme.error,
-@@ -431,10 +531,30 @@ private fun ConversationTextRow(
+@@ -431,10 +579,30 @@ private fun ConversationTextRow(
              )
              ListPopupColumn {
                  DropdownImpl(
 -                    item = renameItem,
 -                    optionSize = 3,
 +                    item = pinItem,
-+                    optionSize = 5,
++                    optionSize = 6,
                      isSelected = false,
                      index = 0,
 +                    onSelectedIndexChange = {
@@ -2657,7 +2876,7 @@ index ece695b6..6e3661ee 100644
 +                )
 +                DropdownImpl(
 +                    item = moveItem,
-+                    optionSize = 5,
++                    optionSize = 6,
 +                    isSelected = false,
 +                    index = 1,
 +                    onSelectedIndexChange = {
@@ -2667,37 +2886,47 @@ index ece695b6..6e3661ee 100644
 +                )
 +                DropdownImpl(
 +                    item = renameItem,
-+                    optionSize = 5,
++                    optionSize = 6,
 +                    isSelected = false,
 +                    index = 2,
                      onSelectedIndexChange = {
                          showActionMenu = false
                          onRename()
-@@ -442,9 +562,9 @@ private fun ConversationTextRow(
+@@ -442,19 +610,29 @@ private fun ConversationTextRow(
                  )
                  DropdownImpl(
                      item = exportItem,
 -                    optionSize = 3,
-+                    optionSize = 5,
++                    optionSize = 6,
                      isSelected = false,
 -                    index = 1,
 +                    index = 3,
                      onSelectedIndexChange = {
                          showActionMenu = false
                          onExport()
-@@ -452,9 +572,9 @@ private fun ConversationTextRow(
+                     },
                  )
++                DropdownImpl(
++                    item = archiveItem,
++                    optionSize = 6,
++                    isSelected = false,
++                    index = 4,
++                    onSelectedIndexChange = {
++                        showActionMenu = false
++                        onToggleArchive()
++                    },
++                )
                  DropdownImpl(
                      item = deleteItem,
 -                    optionSize = 3,
-+                    optionSize = 5,
++                    optionSize = 6,
                      isSelected = false,
 -                    index = 2,
-+                    index = 4,
++                    index = 5,
                      dropdownColors = deleteColors,
                      onSelectedIndexChange = {
                          showActionMenu = false
-@@ -466,6 +586,307 @@ private fun ConversationTextRow(
+@@ -466,6 +644,307 @@ private fun ConversationTextRow(
      }
  }
  
@@ -3006,15 +3235,17 @@ index ece695b6..6e3661ee 100644
  private fun EmptyConversations(isSearching: Boolean) {
      Text(
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationSidePaneScaffold.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationSidePaneScaffold.kt
-index 6c035c00..073654a2 100644
+index 6c035c00..6f7c66f1 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationSidePaneScaffold.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/components/ConversationSidePaneScaffold.kt
-@@ -77,6 +77,14 @@ fun ConversationSidePaneScaffold(
+@@ -77,6 +77,16 @@ fun ConversationSidePaneScaffold(
      onConversationRename: (ConversationSummaryUi) -> Unit,
      onConversationExport: (ConversationSummaryUi) -> Unit,
      onConversationDelete: (ConversationSummaryUi) -> Unit,
 +    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
 +    onConversationTogglePin: (ConversationSummaryUi) -> Unit,
++    onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
++    onSelectArchive: (Boolean) -> Unit,
 +    onNewConversation: () -> Unit,
 +    onOpenManageChats: () -> Unit,
 +    onSelectFolder: (String?) -> Unit,
@@ -3024,12 +3255,14 @@ index 6c035c00..073654a2 100644
      onOpenSettings: () -> Unit,
      onOpenModelProviders: () -> Unit,
      onOpenTools: () -> Unit,
-@@ -229,6 +237,14 @@ fun ConversationSidePaneScaffold(
+@@ -229,6 +239,16 @@ fun ConversationSidePaneScaffold(
                          onConversationRename = onConversationRename,
                          onConversationExport = onConversationExport,
                          onConversationDelete = onConversationDelete,
 +                        onConversationMoveToFolder = onConversationMoveToFolder,
 +                        onConversationTogglePin = onConversationTogglePin,
++                        onConversationToggleArchive = onConversationToggleArchive,
++                        onSelectArchive = onSelectArchive,
 +                        onNewConversation = onNewConversation,
 +                        onOpenManageChats = onOpenManageChats,
 +                        onSelectFolder = onSelectFolder,
@@ -3137,16 +3370,18 @@ index c7589447..b0993d49 100644
 +    data object CollapseSection : AgentMemoryAction
  }
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/model/ConversationUiState.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/model/ConversationUiState.kt
-index a2da0b32..32bbe737 100644
+index a2da0b32..dfec36c5 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/model/ConversationUiState.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/ui/model/ConversationUiState.kt
-@@ -7,8 +7,45 @@ data class ConversationPaneUiState(
+@@ -7,8 +7,49 @@ data class ConversationPaneUiState(
      val conversations: List<ConversationSummaryUi>,
      val selectedConversationId: String?,
      val searchQuery: String,
 +    val folders: List<ConversationFolderUi> = emptyList(),
 +    /** null 表示「聊天」分组（未归类会话）；否则只显示该文件夹内的会话。 */
 +    val selectedFolderId: String? = null,
++    /** 「已归档」入口：为 true 时只显示归档会话，且忽略文件夹分组。 */
++    val showingArchived: Boolean = false,
 +    /** 全部会话（不受文件夹与搜索过滤），供管理聊天页使用。 */
 +    val historyConversations: List<ConversationSummaryUi> = emptyList(),
  )
@@ -3160,12 +3395,14 @@ index a2da0b32..32bbe737 100644
 +)
 +
 +/** 「聊天」分组只显示未归类会话，文件夹分组只显示该文件夹的会话。 */
-+internal fun List<ConversationSummaryUi>.filterForFolder(selectedFolderId: String?): List<ConversationSummaryUi> =
-+    if (selectedFolderId == null) {
-+        filter { it.folderId.isBlank() }
-+    } else {
-+        filter { it.folderId == selectedFolderId }
-+    }
++internal fun List<ConversationSummaryUi>.filterForFolder(
++    selectedFolderId: String?,
++    showingArchived: Boolean = false,
++): List<ConversationSummaryUi> = filter { summary ->
++    if (summary.isArchived != showingArchived) return@filter false
++    // 归档视图同样只看当前文件夹：每个文件夹底部各有自己的归档入口。
++    if (selectedFolderId == null) summary.folderId.isBlank() else summary.folderId == selectedFolderId
++}
 +
 +/** 聊天页顶栏标题的最大显示字数（含结尾省略号）。 */
 +internal const val CONVERSATION_TITLE_MAX_CHARS = 12
@@ -3186,14 +3423,17 @@ index a2da0b32..32bbe737 100644
  @Immutable
  data class ConversationSummaryUi(
      val id: String,
-@@ -20,6 +57,7 @@ data class ConversationSummaryUi(
+@@ -20,7 +61,10 @@ data class ConversationSummaryUi(
      val isPinned: Boolean = false,
      val isActiveRun: Boolean = false,
      val characterName: String? = null,
 +    val folderId: String = "",
      val characterAvatarPath: String? = null,
++    /** 已归档：默认列表不显示，只在侧栏「已归档」入口里出现。 */
++    val isArchived: Boolean = false,
  )
  
+ @Immutable
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/navigation/AppRoute.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/navigation/AppRoute.kt
 index 87e4b86a..273f440f 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/navigation/AppRoute.kt
@@ -3217,225 +3457,6 @@ index 87e4b86a..273f440f 100644
  
      @Serializable
      data object LinuxEnvironment : AppRoute
-diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/screens/chat/ManageChatsScreen.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/screens/chat/ManageChatsScreen.kt
-new file mode 100644
-index 00000000..0853c620
---- /dev/null
-+++ b/app/src/main/kotlin/io/github/mangi/eta/ui/screens/chat/ManageChatsScreen.kt
-@@ -0,0 +1,213 @@
-+package io.github.mangi.eta.ui.screens.chat
-+
-+import androidx.compose.foundation.background
-+import androidx.compose.foundation.gestures.Orientation
-+import androidx.compose.foundation.gestures.draggable
-+import androidx.compose.foundation.gestures.rememberDraggableState
-+import androidx.compose.foundation.layout.Arrangement
-+import androidx.compose.foundation.layout.Box
-+import androidx.compose.foundation.layout.Row
-+import androidx.compose.foundation.layout.Spacer
-+import androidx.compose.foundation.layout.fillMaxWidth
-+import androidx.compose.foundation.layout.offset
-+import androidx.compose.foundation.layout.padding
-+import androidx.compose.foundation.layout.size
-+import androidx.compose.foundation.layout.width
-+import androidx.compose.foundation.lazy.items
-+import androidx.compose.foundation.shape.RoundedCornerShape
-+import androidx.compose.runtime.Composable
-+import androidx.compose.runtime.remember
-+import androidx.compose.runtime.rememberCoroutineScope
-+import androidx.compose.ui.Alignment
-+import androidx.compose.ui.Modifier
-+import androidx.compose.ui.draw.clip
-+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-+import androidx.compose.ui.platform.LocalDensity
-+import androidx.compose.ui.platform.LocalHapticFeedback
-+import androidx.compose.ui.res.stringResource
-+import androidx.compose.ui.text.font.FontWeight
-+import androidx.compose.ui.text.style.TextOverflow
-+import androidx.compose.ui.unit.IntOffset
-+import androidx.compose.ui.unit.dp
-+import androidx.compose.animation.core.Animatable
-+import androidx.compose.foundation.ExperimentalFoundationApi
-+import androidx.compose.foundation.combinedClickable
-+import androidx.compose.material.icons.Icons
-+import androidx.compose.material.icons.outlined.PushPin
-+import androidx.compose.material.icons.rounded.Delete
-+import io.github.mangi.eta.R
-+import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-+import io.github.mangi.eta.ui.model.ConversationSummaryUi
-+import kotlin.math.roundToInt
-+import kotlinx.coroutines.launch
-+import top.yukonga.miuix.kmp.basic.Icon
-+import top.yukonga.miuix.kmp.basic.IconButton
-+import top.yukonga.miuix.kmp.basic.Text
-+import top.yukonga.miuix.kmp.theme.MiuixTheme
-+import androidx.compose.material.icons.rounded.PushPin
-+
-+private val ManageRowHorizontalPadding = 16.dp
-+private val ManageRowVerticalPadding = 12.dp
-+private val ManageRowCornerRadius = 10.dp
-+private val ManageSwipeRevealWidth = 96.dp
-+private val ManageSwipeTriggerWidth = 64.dp
-+private val ManageRowIconSize = 20.dp
-+
-+/**
-+ * 「管理聊天」页：左滑删除、点右侧图钉切换置顶、长按重命名。
-+ *
-+ * 与侧栏一致按会话当前顺序展示；顺序由调用方给出，页面只负责交互。
-+ */
-+@Composable
-+internal fun ManageChatsScreen(
-+    conversations: List<ConversationSummaryUi>,
-+    onBack: () -> Unit,
-+    onOpenConversation: (String) -> Unit,
-+    onTogglePin: (ConversationSummaryUi) -> Unit,
-+    onRename: (ConversationSummaryUi) -> Unit,
-+    onDelete: (ConversationSummaryUi) -> Unit,
-+) {
-+    MiuixScaffoldPage(
-+        title = stringResource(R.string.drawer_manage_chats),
-+        onBack = onBack,
-+    ) {
-+        if (conversations.isEmpty()) {
-+            item(key = "empty") {
-+                Text(
-+                    text = stringResource(R.string.conversation_empty),
-+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-+                    style = MiuixTheme.textStyles.body2,
-+                    fontWeight = FontWeight.Medium,
-+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
-+                )
-+            }
-+        } else {
-+            items(
-+                items = conversations,
-+                key = { it.id },
-+            ) { conversation ->
-+                ManageChatRow(
-+                    conversation = conversation,
-+                    onClick = { onOpenConversation(conversation.id) },
-+                    onTogglePin = { onTogglePin(conversation) },
-+                    onRename = { onRename(conversation) },
-+                    onDelete = { onDelete(conversation) },
-+                )
-+            }
-+        }
-+    }
-+}
-+
-+@OptIn(ExperimentalFoundationApi::class)
-+@Composable
-+private fun ManageChatRow(
-+    conversation: ConversationSummaryUi,
-+    onClick: () -> Unit,
-+    onTogglePin: () -> Unit,
-+    onRename: () -> Unit,
-+    onDelete: () -> Unit,
-+) {
-+    val hapticFeedback = LocalHapticFeedback.current
-+    val scope = rememberCoroutineScope()
-+    val offsetX = remember(conversation.id) { Animatable(0f) }
-+    val revealPx = with(LocalDensity.current) { ManageSwipeRevealWidth.toPx() }
-+    val triggerPx = with(LocalDensity.current) { ManageSwipeTriggerWidth.toPx() }
-+
-+    Box(
-+        modifier = Modifier
-+            .fillMaxWidth()
-+            .padding(horizontal = ManageRowHorizontalPadding)
-+            .clip(RoundedCornerShape(ManageRowCornerRadius)),
-+    ) {
-+        Row(
-+            modifier = Modifier
-+                .fillMaxWidth()
-+                .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-+                .padding(horizontal = 20.dp, vertical = 18.dp),
-+            verticalAlignment = Alignment.CenterVertically,
-+            horizontalArrangement = Arrangement.End,
-+        ) {
-+            Text(
-+                text = stringResource(R.string.action_delete),
-+                color = MiuixTheme.colorScheme.error,
-+                style = MiuixTheme.textStyles.footnote1,
-+                fontWeight = FontWeight.SemiBold,
-+            )
-+            Spacer(modifier = Modifier.width(6.dp))
-+            Icon(
-+                imageVector = Icons.Rounded.Delete,
-+                contentDescription = null,
-+                modifier = Modifier.size(ManageRowIconSize),
-+                tint = MiuixTheme.colorScheme.error,
-+            )
-+        }
-+        Row(
-+            modifier = Modifier
-+                .fillMaxWidth()
-+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-+                .clip(RoundedCornerShape(ManageRowCornerRadius))
-+                .background(MiuixTheme.colorScheme.surface)
-+                .draggable(
-+                    orientation = Orientation.Horizontal,
-+                    state = rememberDraggableState { delta ->
-+                        scope.launch {
-+                            offsetX.snapTo((offsetX.value + delta).coerceIn(-revealPx, 0f))
-+                        }
-+                    },
-+                    onDragStopped = {
-+                        if (offsetX.value <= -triggerPx) {
-+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-+                            offsetX.snapTo(0f)
-+                            onDelete()
-+                        } else {
-+                            offsetX.animateTo(0f)
-+                        }
-+                    },
-+                )
-+                .combinedClickable(
-+                    onClick = onClick,
-+                    onLongClick = {
-+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-+                        onRename()
-+                    },
-+                )
-+                .padding(
-+                    horizontal = 16.dp,
-+                    vertical = ManageRowVerticalPadding,
-+                ),
-+            verticalAlignment = Alignment.CenterVertically,
-+        ) {
-+            Text(
-+                text = conversation.title.ifBlank { conversation.preview },
-+                color = MiuixTheme.colorScheme.onSurface,
-+                style = MiuixTheme.textStyles.body1,
-+                fontWeight = FontWeight.Medium,
-+                maxLines = 1,
-+                overflow = TextOverflow.Ellipsis,
-+                modifier = Modifier.weight(1f),
-+            )
-+            IconButton(onClick = onTogglePin) {
-+                Icon(
-+                    imageVector = if (conversation.isPinned) {
-+                        Icons.Rounded.PushPin
-+                    } else {
-+                        Icons.Outlined.PushPin
-+                    },
-+                    contentDescription = stringResource(
-+                        if (conversation.isPinned) {
-+                            R.string.action_unpin_conversation
-+                        } else {
-+                            R.string.action_pin_conversation
-+                        },
-+                    ),
-+                    modifier = Modifier.size(ManageRowIconSize),
-+                    tint = if (conversation.isPinned) {
-+                        MiuixTheme.colorScheme.primary
-+                    } else {
-+                        MiuixTheme.colorScheme.onSurfaceVariantActions
-+                    },
-+                )
-+            }
-+        }
-+    }
-+}
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/screens/home/AgentHomeScreen.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/screens/home/AgentHomeScreen.kt
 index e5006c5b..6d7b3b8a 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/ui/screens/home/AgentHomeScreen.kt

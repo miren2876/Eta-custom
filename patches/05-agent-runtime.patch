@@ -1496,7 +1496,7 @@ index c84bef76..ca041f46 100644
                  runId = request.runId,
                  ok = true,
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeService.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeService.kt
-index d1540db5..a7ba7f35 100644
+index d1540db5..eeaf9ef0 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeService.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeService.kt
 @@ -6,6 +6,7 @@ import android.app.Service
@@ -1563,7 +1563,7 @@ index d1540db5..a7ba7f35 100644
  
      private data class PendingStartRequest(
          val generation: Long,
-@@ -93,6 +114,144 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -93,12 +114,155 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          val replyTo: Messenger?,
      )
  
@@ -1671,6 +1671,7 @@ index d1540db5..a7ba7f35 100644
 +    /** 读完完成提示：没有任务在跑时回到空闲态（常驻）或收掉服务。 */
 +    private fun onCapsuleRead() {
 +        unreadFinished = false
++        if (state.value.finishedBadge != 0) state.value = state.value.copy(finishedBadge = 0)
 +        if (runningSessionCount() > 0) return
 +        if (capsulePinned) enterIdleState() else dismissAndStop()
 +    }
@@ -1679,7 +1680,7 @@ index d1540db5..a7ba7f35 100644
 +    private fun enterIdleState() {
 +        state.value = AgentOverlayState(phase = AgentOverlayPhase.IDLE, status = AgentOverlayStatus.Idle)
 +        capsuleExpanded.value = false
-+        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
++        collapseCapsuleWindow()
 +        ensureOverlayVisible()
 +    }
 +
@@ -1708,7 +1709,29 @@ index d1540db5..a7ba7f35 100644
      private var windowManager: WindowManager? = null
      private var glowView: ComposeView? = null
      private var capsuleView: ComposeView? = null
-@@ -170,8 +329,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+     private var resultCardView: ComposeView? = null
+     private var glowParams: WindowManager.LayoutParams? = null
+     private var capsuleParams: WindowManager.LayoutParams? = null
++    private var panelView: ComposeView? = null
++    /** 面板窗口内的展开状态：先以收起态组合、下一帧展开，收起时也在这里播完动画。 */
++    private val panelExpanded = mutableStateOf(false)
++    private var panelParams: WindowManager.LayoutParams? = null
+     private var resultCardParams: WindowManager.LayoutParams? = null
+     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
+ 
+@@ -116,6 +280,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+             }
+     }
+     private val capsuleExpanded = mutableStateOf(false)
++    /** 收起小球当前的位置（像素），展开时面板按它摆放。 */
++    private val capsuleOffsetX = mutableStateOf(0)
++    private val capsuleOffsetY = mutableStateOf(0)
++    private var capsuleCollapsedX = Int.MIN_VALUE
++    private var capsuleCollapsedY = Int.MIN_VALUE
+     /** Agent 手势穿过胶囊时为 true：窗口不可触摸，胶囊淡出让路。 */
+     private val capsuleYielded = mutableStateOf(false)
+     private val restoreCapsule = Runnable { setCapsuleYielded(false) }
+@@ -170,8 +339,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      }
  
      override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -1731,7 +1754,7 @@ index d1540db5..a7ba7f35 100644
          }
          return START_NOT_STICKY
      }
-@@ -187,7 +358,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -187,7 +368,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
  
      override fun onDestroy() {
          startRequestGeneration++
@@ -1743,7 +1766,7 @@ index d1540db5..a7ba7f35 100644
              pending.incoming.close()
              sendRequestIngestedTo(pending.replyTo, pending.incoming.request.runId)
              sendResultTo(
-@@ -200,9 +374,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -200,16 +384,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                  ),
              )
          }
@@ -1757,7 +1780,16 @@ index d1540db5..a7ba7f35 100644
          resultIo.shutdownNow()
          mainHandler.removeCallbacksAndMessages(null)
          AgentOverlayClearance.detach(clearanceHost)
-@@ -290,6 +465,28 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+         unregisterResultCardBack()
+         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
++        hideCapsulePanel()
+         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
++        hideCapsulePanel()
+         resultCardView = null
+         capsuleView = null
+         glowView = null
+@@ -290,6 +477,28 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                          replyTo = msg.replyTo,
                      )
                  }
@@ -1786,7 +1818,7 @@ index d1540db5..a7ba7f35 100644
              }
          }
      }
-@@ -298,8 +495,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -298,8 +507,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          incoming: AgentRuntimeWire.IncomingRunRequest,
          replyTo: Messenger?,
      ) {
@@ -1804,7 +1836,7 @@ index d1540db5..a7ba7f35 100644
              previous.incoming.close()
              sendRequestIngestedTo(previous.replyTo, previous.incoming.request.runId)
              sendResultTo(
-@@ -312,8 +516,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -312,8 +528,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                  ),
              )
          }
@@ -1815,7 +1847,7 @@ index d1540db5..a7ba7f35 100644
          thread(name = "agent-runtime-image-ingest") {
              val prepared = runCatching {
                  val request = AgentRuntimeImageTransfer.materialize(incoming)
-@@ -327,8 +531,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -327,8 +543,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                  }
              }
              mainHandler.post {
@@ -1825,7 +1857,7 @@ index d1540db5..a7ba7f35 100644
                  sendRequestIngestedTo(replyTo, incoming.request.runId)
                  prepared.fold(
                      onSuccess = { request ->
-@@ -362,17 +565,74 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -362,17 +577,74 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          }
      }
  
@@ -1902,7 +1934,7 @@ index d1540db5..a7ba7f35 100644
          // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
          val allowBoundFallback = RootAccess.isGranted
          val executionHeld = AgentExecutionService.acquire(
-@@ -385,7 +645,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -385,7 +657,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
              )) {}
              return
          }
@@ -1919,7 +1951,16 @@ index d1540db5..a7ba7f35 100644
          lastCompletedRunContext = null
          runCatching {
              startService(Intent(this, AgentRuntimeService::class.java).setAction(ACTION_KEEP_ALIVE))
-@@ -425,6 +693,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -397,7 +677,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+         mainHandler.removeCallbacksAndMessages(hideToken)
+         state.value = AgentOverlayState.Initial
+         capsuleExpanded.value = false
+-        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
++        collapseCapsuleWindow()
+         hasExecutedForegroundTool = false
+         resultConversationId = request.handoff
+             ?.takeIf { it.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
+@@ -425,6 +705,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
              try {
                  executeRun(session, request)
              } finally {
@@ -1932,7 +1973,7 @@ index d1540db5..a7ba7f35 100644
                  AgentExecutionService.updateRunStatus(this, null)
                  AgentExecutionService.release("run:${request.runId}")
              }
-@@ -465,19 +739,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -465,19 +751,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          event: AgentEvent,
          entrySurfaceGuard: EntrySurfaceGuard?,
      ) {
@@ -1961,7 +2002,7 @@ index d1540db5..a7ba7f35 100644
                      event,
                      entrySurfaceReady,
                  )
-@@ -487,7 +764,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -487,7 +776,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
              if (session.isTerminal) return@post
              runCatching {
                  state.value = state.value.applyEvent(event)
@@ -1970,7 +2011,7 @@ index d1540db5..a7ba7f35 100644
                      if (capsuleView == null) {
                          AgentHapticFeedback.perform(
                              this,
-@@ -519,6 +796,42 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -519,6 +808,42 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
              }
      }
  
@@ -2013,7 +2054,7 @@ index d1540db5..a7ba7f35 100644
      private fun postTerminalOverlay(
          session: AgentRuntimeSession,
          result: AgentRuntimeWire.RunResult,
-@@ -526,9 +839,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -526,9 +851,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          completedContext: CompletedRunContext? = null,
      ) {
          mainHandler.post {
@@ -2035,7 +2076,7 @@ index d1540db5..a7ba7f35 100644
              runCatching {
                  if (result.ok) {
                      enterFinalState(
-@@ -564,10 +887,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -564,10 +899,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      private fun sendEventTo(
          target: Messenger?,
          event: AgentEvent,
@@ -2048,7 +2089,7 @@ index d1540db5..a7ba7f35 100644
              target?.send(msg)
          }.onFailure { throwable ->
              AndroidAgentLogger.warnThrottled("runtime_event_delivery_failed") {
-@@ -668,12 +992,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -668,12 +1004,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      }
  
      private fun attachRun(runId: String, replyTo: Messenger?) {
@@ -2064,7 +2105,7 @@ index d1540db5..a7ba7f35 100644
                  resultSink = { result -> sendResultTo(replyTo, result) },
                  onReplayComplete = { sendAttachRunResponse(runId, replyTo, attached = true) },
              )
-@@ -747,7 +1071,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -747,7 +1083,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
              replyTo,
              AgentRuntimeWire.RunResult(runId = "", ok = false, content = "", error = message),
          )
@@ -2073,7 +2114,7 @@ index d1540db5..a7ba7f35 100644
          enterFinalState(
              AgentOverlayState(
                  phase = AgentOverlayPhase.FAILED,
-@@ -768,9 +1092,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -768,9 +1104,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
  
      private fun cancelRun(runId: String) {
          if (runId.isBlank()) return
@@ -2087,7 +2128,7 @@ index d1540db5..a7ba7f35 100644
              pending.incoming.close()
              sendRequestIngestedTo(pending.replyTo, runId)
              sendResultTo(
-@@ -784,11 +1109,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -784,11 +1121,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
              )
              return
          }
@@ -2101,7 +2142,7 @@ index d1540db5..a7ba7f35 100644
          if (!session.isTerminal) {
              session.controller.cancel()
              state.value = state.value.copy(status = AgentOverlayStatus.Stopping)
-@@ -811,6 +1133,44 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -811,6 +1145,44 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          )
      }
  
@@ -2146,7 +2187,7 @@ index d1540db5..a7ba7f35 100644
      private fun requestSupplement(text: String) {
          val supplementText = text.trim()
          if (supplementText.isBlank()) return
-@@ -867,6 +1227,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -867,6 +1239,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          showOverlay()
      }
  
@@ -2156,23 +2197,203 @@ index d1540db5..a7ba7f35 100644
      private fun showOverlay() {
          if (capsuleView != null) return
          // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
-@@ -900,6 +1263,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -891,15 +1266,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+         val capsule = createOverlayComposeView {
+             AgentOverlayCapsule(
+                 state = state.value,
+-                expanded = capsuleExpanded.value,
++                // 小球窗口恒为收起态：展开交给独立的全屏面板窗口，小球窗口全程不动。
++                expanded = false,
+                 yielded = capsuleYielded.value,
+                 onToggleExpanded = ::toggleCapsule,
+-                onCollapsedSettled = ::onCapsuleCollapsedSettled,
++                onCollapsedSettled = {},
+                 onPause = ::requestPause,
+                 onResume = ::requestResume,
                  onStop = ::requestStop,
                  onSupplementModeChange = ::setCapsuleInputMode,
                  onSupplement = ::requestSupplement,
 +                onOpenConversation = ::openConversation,
++                onDragBy = ::moveCapsuleBy,
++                onDragFinished = ::snapCapsuleToEdge,
++                onCollapseRequest = ::collapseCapsule,
++                collapsedX = capsuleOffsetX.value,
++                collapsedY = capsuleOffsetY.value,
              )
          }
          val capsuleLp = capsuleLayoutParams()
-@@ -940,10 +1304,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
-     private fun toggleCapsule() {
-         val expand = !capsuleExpanded.value
-         // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
--        if (expand) setCapsuleWindowHeight(CAPSULE_CONTROLS_HEIGHT_DP)
-+        if (expand) setCapsuleWindowHeight(capsuleExpandedHeightDp())
-         capsuleExpanded.value = expand
+@@ -938,14 +1320,204 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      }
  
+     private fun toggleCapsule() {
+-        val expand = !capsuleExpanded.value
+-        // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
+-        if (expand) setCapsuleWindowHeight(CAPSULE_CONTROLS_HEIGHT_DP)
+-        capsuleExpanded.value = expand
++        if (capsuleExpanded.value) return
++        // 面板按小球当前所在位置摆放；小球窗口本身尺寸与位置都不动。
++        capsuleParams?.let {
++            capsuleCollapsedX = it.x
++            capsuleCollapsedY = it.y
++        }
++        capsuleOffsetX.value = capsuleCollapsedX
++        capsuleOffsetY.value = capsuleCollapsedY
++        capsuleExpanded.value = true
++        showCapsulePanel()
++        setCapsuleVisible(false)
+     }
+ 
+-    private fun onCapsuleCollapsedSettled() {
+-        if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
++    /** 点面板外任意位置：面板在窗口内缩回小球，动画结束后再移除窗口。 */
++    private fun collapseCapsule() {
++        if (!capsuleExpanded.value) return
++        capsuleExpanded.value = false
++        panelExpanded.value = false
++    }
++
++    /** 展开面板：独立的全屏透明窗口，面板以外点一下就能收起。 */
++    private fun showCapsulePanel() {
++        if (panelView != null) return
++        val wm = windowManager ?: return
++        val view = createOverlayComposeView {
++            AgentOverlayCapsule(
++                state = state.value,
++                expanded = panelExpanded.value,
++                yielded = capsuleYielded.value,
++                // 面板出现只播缩放，与收起时的缩回小球对称。
++                animateAppear = false,
++                onToggleExpanded = {},
++                onCollapsedSettled = ::onPanelCollapsedSettled,
++                onPause = ::requestPause,
++                onResume = ::requestResume,
++                onStop = ::requestStop,
++                onSupplementModeChange = ::setCapsuleInputMode,
++                onSupplement = ::requestSupplement,
++                onOpenConversation = ::openConversation,
++                onCollapseRequest = ::collapseCapsule,
++                collapsedX = capsuleCollapsedX.takeIf { it != Int.MIN_VALUE } ?: 0,
++                collapsedY = capsuleCollapsedY.takeIf { it != Int.MIN_VALUE } ?: 0,
++            )
++        }
++        val lp = capsulePanelLayoutParams()
++        runCatching { wm.addView(view, lp) }.onFailure { throwable ->
++            AndroidAgentLogger.warnThrottled("runtime_capsule_panel_add_failed") {
++                "Agent runtime capsule panel addView failed: type=${throwable.safeLogType()}"
++            }
++            return
++        }
++        panelView = view
++        panelParams = lp
++        // 先以收起态组合，下一帧再展开：面板从球的位置长出来，动画与原来单窗口时一致。
++        view.postOnAnimation { if (capsuleExpanded.value) panelExpanded.value = true }
++    }
++
++    private fun hideCapsulePanel() {
++        val view = panelView ?: return
++        panelView = null
++        panelParams = null
++        panelExpanded.value = false
++        runCatching { windowManager?.removeView(view) }
++    }
++
++    /** 面板在窗口内缩回小球后的回调：这时才移除面板窗口，小球就地显现。 */
++    private fun onPanelCollapsedSettled() {
++        if (panelExpanded.value) return
++        hideCapsulePanel()
++        setCapsuleVisible(true)
++    }
++
++    private fun capsulePanelLayoutParams(): WindowManager.LayoutParams =
++        WindowManager.LayoutParams(
++            WindowManager.LayoutParams.MATCH_PARENT,
++            WindowManager.LayoutParams.MATCH_PARENT,
++            overlayType(),
++            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
++                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply {
++            gravity = Gravity.TOP or Gravity.START
++            windowAnimations = 0
++            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
++        }
++
++    /** 展开期间把小球藏起来，避免与面板头部重叠。 */
++    private fun setCapsuleVisible(visible: Boolean) {
++        val capsule = capsuleView ?: return
++        capsule.alpha = if (visible) 1f else 0f
++    }
++
++    /** 收起后回到用户拖到的位置（贴边就继续贴边）。 */
++    private fun restoreCapsuleCollapsedPosition() {
++        val lp = capsuleParams ?: return
++        val capsule = capsuleView ?: return
++        val wm = windowManager ?: return
++        val screenWidth = resources.displayMetrics.widthPixels
++        val screenHeight = resources.displayMetrics.heightPixels
++        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
++        if (capsuleCollapsedX != Int.MIN_VALUE) {
++            lp.x = capsuleCollapsedX.coerceIn(edge, maxOf(edge, screenWidth - lp.width - edge))
++        }
++        if (capsuleCollapsedY != Int.MIN_VALUE) {
++            lp.y = capsuleCollapsedY.coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
++        }
++        runCatching { wm.updateViewLayout(capsule, lp) }
++    }
++
++    /** 收起态拖动小球：跟着手指走，超出屏幕会被夹住。 */
++    private fun moveCapsuleBy(dx: Float, dy: Float) {
++        if (capsuleExpanded.value) return
++        val lp = capsuleParams ?: return
++        val capsule = capsuleView ?: return
++        val wm = windowManager ?: return
++        val screenWidth = resources.displayMetrics.widthPixels
++        val screenHeight = resources.displayMetrics.heightPixels
++        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
++        lp.x = (lp.x + dx.toInt()).coerceIn(edge, maxOf(edge, screenWidth - lp.width - edge))
++        lp.y = (lp.y + dy.toInt()).coerceIn(edge, maxOf(edge, screenHeight - lp.height - edge))
++        capsuleCollapsedX = lp.x
++        capsuleCollapsedY = lp.y
++        capsuleOffsetX.value = lp.x
++        capsuleOffsetY.value = lp.y
++        runCatching { wm.updateViewLayout(capsule, lp) }
++    }
++
++    /** 松手自动吸附：总是贴到更近的那一侧边缘（小球中心在屏幕左半边就吸左）。 */
++    private fun snapCapsuleToEdge() {
++        if (capsuleExpanded.value) return
++        val lp = capsuleParams ?: return
++        val capsule = capsuleView ?: return
++        val wm = windowManager ?: return
++        val screenWidth = resources.displayMetrics.widthPixels
++        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
++        val maxX = maxOf(edge, screenWidth - lp.width - edge)
++        val center = lp.x + lp.width / 2
++        val targetX = if (center < screenWidth / 2) edge else maxX
++        if (lp.x != targetX) {
++            lp.x = targetX
++            runCatching { wm.updateViewLayout(capsule, lp) }
++        }
++        capsuleCollapsedX = lp.x
++        capsuleCollapsedY = lp.y
++        capsuleOffsetX.value = lp.x
++        capsuleOffsetY.value = lp.y
++        persistCapsulePosition(lp.x, lp.y)
++    }
++
++    /** 记住位置：重启 App 后小球还停在上次的地方。 */
++    private fun persistCapsulePosition(x: Int, y: Int) {
++        runCatching {
++            runBlocking {
++                SettingsDataStore.updateSettings { settings ->
++                    settings.copy(overlayCapsulePosX = x, overlayCapsulePosY = y)
++                }
++            }
++        }
++    }
++
 +    /** 展开态窗口高度：有会话条目时按条数加高，保证每条都能完整显示、点得到。 */
 +    private fun capsuleExpandedHeightDp(): Int {
 +        val count = state.value.runningSessions.size
@@ -2184,26 +2405,96 @@ index d1540db5..a7ba7f35 100644
 +        }
 +    }
 +
-     private fun onCapsuleCollapsedSettled() {
-         if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
++    private fun setCapsuleWindowWidth(widthDp: Int) {
++        val wm = windowManager ?: return
++        val capsule = capsuleView ?: return
++        val lp = capsuleParams ?: return
++        val width = dpToPx(widthDp)
++        if (lp.width == width) return
++        lp.width = width
++        val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
++        lp.x = lp.x.coerceIn(edge, maxOf(edge, resources.displayMetrics.widthPixels - width - edge))
++        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
++            AndroidAgentLogger.warnThrottled("runtime_capsule_resize_failed") {
++                "Agent runtime capsule resize failed: type=${throwable.safeLogType()}"
++            }
++        }
++    }
++
++    /**
++     * 收起态：窗口一次缩回小球尺寸并回到拖动位置。
++     * 尺寸与位置必须同一次更新：分几步改会让全屏窗口先变小、面板还按屏幕坐标偏移，
++     * 视觉上就是从左上角缩放一下再弹回小球位置。
++     */
++    /** 收起态：关掉展开面板并确保小球可见（小球窗口尺寸与位置本就固定）。 */
++    private fun collapseCapsuleWindow() {
++        hideCapsulePanel()
++        setCapsuleVisible(true)
      }
-@@ -1179,7 +1554,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+ 
+     private fun setCapsuleWindowHeight(heightDp: Int) {
+@@ -1073,7 +1645,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+      */
+     private fun capsuleLayoutParams(): WindowManager.LayoutParams =
+         WindowManager.LayoutParams(
+-            dpToPx(CAPSULE_WINDOW_WIDTH_DP),
++            dpToPx(CAPSULE_COLLAPSED_WIDTH_DP),
+             dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP),
+             overlayType(),
+             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+@@ -1082,9 +1654,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+             PixelFormat.TRANSLUCENT
+         ).apply {
+-            // 贴在状态栏下方居中：远离多数应用的主要点击区，也和系统胶囊、流体云的位置习惯一致。
+-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+-            y = statusBarHeightPx()
++            // 常驻小球：优先回到上次拖到的位置；没拖过就贴在右侧、状态栏下方。
++            gravity = Gravity.TOP or Gravity.START
++            if (capsuleCollapsedX == Int.MIN_VALUE) {
++                val saved = runCatching { runBlocking { SettingsDataStore.settings() } }.getOrNull()
++                capsuleCollapsedX = saved?.overlayCapsulePosX ?: -1
++                capsuleCollapsedY = saved?.overlayCapsulePosY ?: -1
++            }
++            val screenWidth = resources.displayMetrics.widthPixels
++            val edge = dpToPx(CAPSULE_EDGE_MARGIN_DP)
++            val maxX = maxOf(edge, screenWidth - dpToPx(CAPSULE_COLLAPSED_WIDTH_DP) - edge)
++            x = if (capsuleCollapsedX >= 0) capsuleCollapsedX.coerceIn(edge, maxX) else maxX
++            y = if (capsuleCollapsedY >= 0) capsuleCollapsedY else statusBarHeightPx()
+             windowAnimations = 0
+             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+         }
+@@ -1177,14 +1758,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+     }
+ 
      private fun setCapsuleInputMode(focusable: Boolean) {
-         setCapsuleWindowHeight(
-             if (focusable) CAPSULE_SUPPLEMENT_HEIGHT_DP
+-        setCapsuleWindowHeight(
+-            if (focusable) CAPSULE_SUPPLEMENT_HEIGHT_DP
 -            else if (capsuleExpanded.value) CAPSULE_CONTROLS_HEIGHT_DP
-+            else if (capsuleExpanded.value) capsuleExpandedHeightDp()
-             else CAPSULE_COLLAPSED_HEIGHT_DP,
-         )
+-            else CAPSULE_COLLAPSED_HEIGHT_DP,
+-        )
++        // 补充输入发生在展开面板里：只切换面板窗口的焦点能力，小球窗口尺寸恒定。
          val wm = windowManager ?: return
-@@ -1206,19 +1581,54 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+-        val capsule = capsuleView ?: return
+-        val lp = capsuleParams ?: return
++        val capsule = panelView ?: capsuleView ?: return
++        val lp = panelParams ?: capsuleParams ?: return
+         val nextFlags = if (focusable) {
+             lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+         } else {
+@@ -1206,22 +1783,63 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          (dp * resources.displayMetrics.density).toInt()
  
      private fun enterFinalState(finalState: AgentOverlayState, keepVisible: Boolean = false) {
 -        state.value = finalState
-+        // 后台跑完或胶囊常驻时留一条完成提示；用户正看着 Eta 时保持原来的收尾方式。
-+        val backgroundNotice = capsulePinned || !EtaApp.isInForeground()
-+        if (backgroundNotice) unreadFinished = true
++        // 完成提示只在胶囊本来就在屏幕上时才更新它（运行期间显示过，或常驻开启）；
++        // 运行期间没显示的（用户一直看着 Eta 这类），完成时不再主动弹出来。
++        val capsuleOnScreen = capsuleView != null
++        val backgroundNotice = capsuleOnScreen && (capsulePinned || !EtaApp.isInForeground())
++        if (backgroundNotice) {
++            unreadFinished = true
++            state.value = state.value.copy(finishedBadge = (state.value.finishedBadge + 1).coerceAtMost(9))
++        }
  
          if (hasExecutedForegroundTool) {
 -            // 撤掉胶囊和边缘光，改显半屏结果卡片，不自动关闭，用户手动关闭
@@ -2212,7 +2503,7 @@ index d1540db5..a7ba7f35 100644
 +            mainHandler.removeCallbacksAndMessages(hideToken)
 +            if (backgroundNotice) {
 +                removeGlowWindow()
-+                setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
++                collapseCapsuleWindow()
 +                state.value = finishedNoticeState(finalState)
 +                ensureOverlayVisible()
 +            } else {
@@ -2223,7 +2514,7 @@ index d1540db5..a7ba7f35 100644
 +            // 完成提示不自动消失：保留胶囊显示「已完成」，等用户打开 Eta 或点开会话再收。
              mainHandler.removeCallbacksAndMessages(hideToken)
 +            capsuleExpanded.value = false
-+            setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
++            collapseCapsuleWindow()
 +            state.value = finishedNoticeState(finalState)
 +            ensureOverlayVisible()
          } else {
@@ -2254,7 +2545,11 @@ index d1540db5..a7ba7f35 100644
      private fun removeAmbientWindows() {
          mainHandler.removeCallbacks(restoreCapsule)
          capsuleYielded.value = false
-@@ -1230,20 +1640,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
++        hideCapsulePanel()
+         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
+         capsuleView = null
+@@ -1230,20 +1848,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          glowParams = null
      }
  
@@ -2289,7 +2584,7 @@ index d1540db5..a7ba7f35 100644
          stopSelf()
      }
  
-@@ -1279,16 +1694,66 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
+@@ -1279,16 +1902,69 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          )
      }
  
@@ -2351,12 +2646,15 @@ index d1540db5..a7ba7f35 100644
 +        const val ACTION_UNPIN_CAPSULE = "io.github.mangi.eta.agent.runtime.UNPIN_CAPSULE"
 +        const val ACTION_CLEAR_READ = "io.github.mangi.eta.agent.runtime.CLEAR_READ"
 +
-+        private const val CAPSULE_WINDOW_WIDTH_DP = 360
-+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 76
++        private const val CAPSULE_COLLAPSED_WIDTH_DP = 88
++        private const val CAPSULE_EXPANDED_WIDTH_DP = 396
++        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 88
++        /** 收起小球与屏幕边缘的间距；0 表示贴边。 */
++        private const val CAPSULE_EDGE_MARGIN_DP = 0
 +        private const val CAPSULE_CONTROLS_HEIGHT_DP = 152
-+        private const val CAPSULE_SESSIONS_BASE_HEIGHT_DP = 152
-+        private const val CAPSULE_SESSION_ROW_HEIGHT_DP = 76
-+        private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 560
++        private const val CAPSULE_SESSIONS_BASE_HEIGHT_DP = 132
++        private const val CAPSULE_SESSION_ROW_HEIGHT_DP = 62
++        private const val CAPSULE_SESSIONS_MAX_HEIGHT_DP = 332
 +        private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 320
          /** 注入点击只是一个点，目标控件常贴着胶囊边缘，判定范围向外多留一点。 */
          private const val CAPSULE_CLEARANCE_SLOP_DP = 8
@@ -2788,7 +3086,7 @@ index 415a51a4..3c45d9c0 100644
  internal const val SHELL_STDIN_FAILED_EXIT_CODE = -4
  
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt
-index 26dac6fa..c2a5d2a3 100644
+index 26dac6fa..f028f144 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt
 @@ -1,6 +1,13 @@
@@ -3003,7 +3301,7 @@ index 26dac6fa..c2a5d2a3 100644
                  "tap" -> afterAction(tap(args))
                  "tap_area" -> afterAction(tapArea(args))
                  "tap_element" -> afterAction(tapElement(args))
-@@ -300,61 +435,240 @@ internal class AgentLocalTools(
+@@ -300,61 +435,257 @@ internal class AgentLocalTools(
          )
      }
  
@@ -3069,7 +3367,10 @@ index 26dac6fa..c2a5d2a3 100644
 +                    .put("hit_count", entry.hitCount)
 +                    .put("ei", entry.effectiveImportance)
 +                    .put("idle_days", idleDays(entry.lastHitAtMillis, entry.writtenAtMillis)),
-+            )
+             )
+-            "append" -> AgentMemoryMutation.Append(
+-                revision = revision,
+-                content = args.requiredText("content"),
 +        }
 +        return JSONObject()
 +            .put("ok", true)
@@ -3107,10 +3408,7 @@ index 26dac6fa..c2a5d2a3 100644
 +                    .put("importance", hit.entry.importance)
 +                    .put("ei", hit.entry.effectiveImportance)
 +                    .put("score", hit.score),
-             )
--            "append" -> AgentMemoryMutation.Append(
--                revision = revision,
--                content = args.requiredText("content"),
++            )
 +        }
 +        val hitsJson = JSONArray()
 +        hits.forEach { hit ->
@@ -3176,7 +3474,7 @@ index 26dac6fa..c2a5d2a3 100644
 +
 +    /** 写独立档案：mode=append 追加，mode=replace 整体替换（不存在则创建）。 */
 +    private fun memoryWriteArchive(args: JSONObject, name: String): String = try {
-+        val content = args.requiredText("content")
++        val content = memoryContent(args)
 +        val mode = args.optString("mode", "append")
 +        if (mode == "edit") {
 +            val oldText = args.optString("old_text")
@@ -3222,7 +3520,7 @@ index 26dac6fa..c2a5d2a3 100644
 +    }
 +
 +    private fun memoryWriteMemory(args: JSONObject): String = try {
-+        val content = args.requiredText("content")
++        val content = memoryContent(args)
 +        when (args.optString("target").takeIf(String::isNotBlank)?.lowercase()) {
 +            "profile" -> {
 +                AgentMemoryRepository.replaceCoreProfile(content)
@@ -3251,6 +3549,23 @@ index 26dac6fa..c2a5d2a3 100644
          errorResult(failure.code, failure.message ?: "记忆写入失败")
 +    } catch (failure: JSONException) {
 +        errorResult("MEMORY_ARGUMENT_INVALID", "缺少 content 或参数格式不对")
++    }
++
++    /**
++     * 记忆写入的 content：必须显式给文本。
++     * 缺参数与「写入空内容」是两回事——删除条目要显式传 content=""，不能靠省略，
++     * 否则模型漏传时会被当成删除，反而误删条目。
++     */
++    private fun memoryContent(args: JSONObject): String {
++        val raw = args.opt("content")
++            ?: throw AgentMemoryException(
++                "MEMORY_CONTENT_REQUIRED",
++                "缺少 content：要写入的文本放在 content；删除条目请显式传 content=\"\"",
++            )
++        return raw as? String ?: throw AgentMemoryException(
++            "MEMORY_ARGUMENT_INVALID",
++            "content 必须是文本，收到的是 ${raw.javaClass.simpleName}",
++        )
 +    }
 +
 +    /** 条目写入回执：回报条目数、工作记忆行数与字节数（行数/字节也用于聊天里的结果摘要）。 */
@@ -3284,7 +3599,7 @@ index 26dac6fa..c2a5d2a3 100644
      }
  
      private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
-@@ -717,7 +1031,8 @@ internal class AgentLocalTools(
+@@ -717,7 +1048,8 @@ internal class AgentLocalTools(
          val appName = args.optString("app_name").trim().ifBlank { null }
  
          val app = if (packageName != null) {
@@ -3294,7 +3609,7 @@ index 26dac6fa..c2a5d2a3 100644
          } else {
              if (appName == null) {
                  return errorResult("INVALID_ARGUMENT", "package_name 和 app_name 至少提供一个")
-@@ -748,6 +1063,10 @@ internal class AgentLocalTools(
+@@ -748,6 +1080,10 @@ internal class AgentLocalTools(
                  message = "应用不可启动或未安装：${app.packageName}"
              )
          }
@@ -3305,7 +3620,7 @@ index 26dac6fa..c2a5d2a3 100644
          launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
          context.startActivity(launchIntent)
          logger.info("Agent local tool action=launch_app outcome=started")
-@@ -771,6 +1090,14 @@ internal class AgentLocalTools(
+@@ -771,6 +1107,14 @@ internal class AgentLocalTools(
          val context = requireContext()
          val intent = Intent(Intent.ACTION_VIEW, uri)
              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -3320,7 +3635,7 @@ index 26dac6fa..c2a5d2a3 100644
          if (!HookSupport.resolvesActivity(context, intent)) {
              return errorResult("NO_ACTIVITY", "没有应用可以处理该 URI")
          }
-@@ -804,9 +1131,6 @@ internal class AgentLocalTools(
+@@ -804,9 +1148,6 @@ internal class AgentLocalTools(
              .toString()
      }
  
@@ -3330,7 +3645,7 @@ index 26dac6fa..c2a5d2a3 100644
      private fun findAppsByName(query: String, includeSystem: Boolean): List<AppInfo> {
          val normalizedQuery = query.normalized()
          return installedLauncherApps()
-@@ -919,6 +1243,25 @@ internal class AgentLocalTools(
+@@ -919,6 +1260,25 @@ internal class AgentLocalTools(
          }
      }
  
@@ -3356,7 +3671,7 @@ index 26dac6fa..c2a5d2a3 100644
      // ==================== Skills tools ====================
  
      private fun skillsList(args: JSONObject): String {
-@@ -1412,6 +1755,7 @@ internal class AgentLocalTools(
+@@ -1412,6 +1772,7 @@ internal class AgentLocalTools(
  
      private companion object {
          val DEVICE_DIRECT_TOOL_NAMES = io.github.mangi.eta.agent.model.AgentPhoneToolCatalog.direct + setOf(

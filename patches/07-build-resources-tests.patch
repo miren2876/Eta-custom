@@ -90,7 +90,7 @@ index bc719ebf..d5c169fd 100644
          <service
              android:name=".agent.voice.EtaVoiceInteractionService"
 diff --git a/app/src/main/res/values-b+zh+Hans/strings.xml b/app/src/main/res/values-b+zh+Hans/strings.xml
-index b6b26fcf..740d1761 100644
+index b6b26fcf..3e9bbe47 100644
 --- a/app/src/main/res/values-b+zh+Hans/strings.xml
 +++ b/app/src/main/res/values-b+zh+Hans/strings.xml
 @@ -287,6 +287,20 @@
@@ -359,7 +359,7 @@ index b6b26fcf..740d1761 100644
    <string name="chat_edit_character_reply">编辑角色回复</string>
    <string name="chat_previous_candidate">上一条候选回复</string>
    <string name="chat_next_candidate">下一条候选回复</string>
-@@ -1360,4 +1598,12 @@
+@@ -1360,4 +1598,25 @@
    <string name="memory_discard">放弃</string>
    <string name="chat_character_input_hint">对%1$s说点什么…</string>
    <string name="chat_character_typing">%1$s 正在回复…</string>
@@ -371,9 +371,22 @@ index b6b26fcf..740d1761 100644
 +  <string name="speech_loading">正在读取设置</string>
 +  <string name="ui_clear_84fcd7">清空</string>
 +  <string name="ui_determined_by_model_or_provider_06c326">由模型或 Provider 决定</string>
++  <string name="virtual_screen_completion_chip_ok">已完成</string>
++  <string name="virtual_screen_completion_chip_fail">任务失败</string>
++  <string name="drawer_archived_chip">已归档</string>
++  <string name="action_archive_conversation">归档</string>
++  <string name="action_unarchive_conversation">取消归档</string>
++  <string name="manage_group_active">未归档</string>
++  <string name="manage_selected_count">已选 %1$d 项</string>
++  <string name="manage_filter_all">全部</string>
++  <string name="drawer_archived_entry">已归档 · %1$d</string>
++  <string name="drawer_active_entry">未归档 · %1$d</string>
++  <string name="action_select_all">全选</string>
++  <string name="action_clear_selection">取消全选</string>
++  <string name="action_move_short">移动</string>
  </resources>
 diff --git a/app/src/main/res/values-b+zh+Hant/strings.xml b/app/src/main/res/values-b+zh+Hant/strings.xml
-index df6adb38..7ec6ba2f 100644
+index df6adb38..f830528f 100644
 --- a/app/src/main/res/values-b+zh+Hant/strings.xml
 +++ b/app/src/main/res/values-b+zh+Hant/strings.xml
 @@ -275,6 +275,20 @@
@@ -620,7 +633,7 @@ index df6adb38..7ec6ba2f 100644
    <string name="chat_edit_character_reply">編輯角色回覆</string>
    <string name="chat_previous_candidate">上一則候選回覆</string>
    <string name="chat_next_candidate">下一則候選回覆</string>
-@@ -1334,4 +1557,12 @@
+@@ -1334,4 +1557,25 @@
    <string name="memory_discard">放棄</string>
    <string name="chat_character_input_hint">對%1$s說點什麼…</string>
    <string name="chat_character_typing">%1$s 正在回覆…</string>
@@ -632,9 +645,22 @@ index df6adb38..7ec6ba2f 100644
 +  <string name="speech_loading">正在讀取設定</string>
 +  <string name="ui_clear_84fcd7">清空</string>
 +  <string name="ui_determined_by_model_or_provider_06c326">由模型或 Provider 決定</string>
++  <string name="virtual_screen_completion_chip_ok">已完成</string>
++  <string name="virtual_screen_completion_chip_fail">任務失敗</string>
++  <string name="drawer_archived_chip">已歸檔</string>
++  <string name="action_archive_conversation">歸檔</string>
++  <string name="action_unarchive_conversation">取消歸檔</string>
++  <string name="manage_group_active">未歸檔</string>
++  <string name="manage_selected_count">已選 %1$d 項</string>
++  <string name="manage_filter_all">全部</string>
++  <string name="drawer_archived_entry">已歸檔 · %1$d</string>
++  <string name="drawer_active_entry">未歸檔 · %1$d</string>
++  <string name="action_select_all">全選</string>
++  <string name="action_clear_selection">取消全選</string>
++  <string name="action_move_short">移動</string>
  </resources>
 diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
-index c7cc3e42..23ae7a7e 100644
+index c7cc3e42..27b7fa14 100644
 --- a/app/src/main/res/values/strings.xml
 +++ b/app/src/main/res/values/strings.xml
 @@ -240,6 +240,20 @@
@@ -903,7 +929,7 @@ index c7cc3e42..23ae7a7e 100644
    <string name="chat_edit_character_reply">Edit character reply</string>
    <string name="chat_previous_candidate">Previous candidate reply</string>
    <string name="chat_next_candidate">Next candidate reply</string>
-@@ -1382,4 +1620,12 @@
+@@ -1382,4 +1620,25 @@
    <string name="memory_discard">Discard</string>
    <string name="chat_character_input_hint">Say something to %1$s…</string>
    <string name="chat_character_typing">%1$s is replying…</string>
@@ -915,6 +941,19 @@ index c7cc3e42..23ae7a7e 100644
 +  <string name="speech_loading">Loading settings…</string>
 +  <string name="ui_clear_84fcd7">Clear</string>
 +  <string name="ui_determined_by_model_or_provider_06c326">Determined by model or provider</string>
++  <string name="virtual_screen_completion_chip_ok">Finished</string>
++  <string name="virtual_screen_completion_chip_fail">Task failed</string>
++  <string name="drawer_archived_chip">Archived</string>
++  <string name="action_archive_conversation">Archive</string>
++  <string name="action_unarchive_conversation">Unarchive</string>
++  <string name="manage_group_active">Active</string>
++  <string name="manage_selected_count">%1$d selected</string>
++  <string name="manage_filter_all">All</string>
++  <string name="drawer_archived_entry">Archived · %1$d</string>
++  <string name="drawer_active_entry">Active · %1$d</string>
++  <string name="action_select_all">Select all</string>
++  <string name="action_clear_selection">Clear</string>
++  <string name="action_move_short">Move</string>
  </resources>
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/memory/AgentMemoryContextBuilderTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/memory/AgentMemoryContextBuilderTest.kt
 index aedf05ce..b8f0da35 100644
@@ -1420,7 +1459,7 @@ index 1d312627..6a28548d 100644
              Prefs.Keys.LOCAL_AGENT_KEYS,
          )
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt b/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt
-index 07d401f8..b9a5f14e 100644
+index 07d401f8..90220f92 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt
 +++ b/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt
 @@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
@@ -1428,19 +1467,20 @@ index 07d401f8..b9a5f14e 100644
  class EtaDatabaseMigrationTest {
      @Test
 -    fun migration6To22PreservesDataAndMovesCompleteConversationContext() {
-+    fun migration6To23PreservesDataAndMovesCompleteConversationContext() {
++    fun migration6To24PreservesDataAndMovesCompleteConversationContext() {
          val context = RuntimeEnvironment.getApplication() as Context
          val databaseName = "migration-${UUID.randomUUID()}.db"
          createVersion6Database(context, databaseName)
-@@ -55,6 +55,7 @@ class EtaDatabaseMigrationTest {
+@@ -55,6 +55,8 @@ class EtaDatabaseMigrationTest {
                  EtaDatabase.MIGRATION_19_20,
                  EtaDatabase.MIGRATION_20_21,
                  EtaDatabase.MIGRATION_21_22,
 +                EtaDatabase.MIGRATION_22_23,
++                EtaDatabase.MIGRATION_23_24,
              )
              .build()
          try {
-@@ -116,6 +117,9 @@ class EtaDatabaseMigrationTest {
+@@ -116,6 +118,9 @@ class EtaDatabaseMigrationTest {
              assertEquals(emptyList<CharacterEntity>(), runBlocking(Dispatchers.IO) { database.characterDao().characters() })
              assertEquals("off", conversations.first { it.id == "conv-1" }.reasoningEffort)
              assertEquals(null, conversations.first { it.id == "conv-1" }.modelId)
