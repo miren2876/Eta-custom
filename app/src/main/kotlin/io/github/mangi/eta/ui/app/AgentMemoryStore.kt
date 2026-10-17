@@ -10,12 +10,14 @@ import io.github.mangi.eta.agent.memory.AgentMemoryModelTasks
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.repository.AgentMemoryScoring
 import io.github.mangi.eta.data.repository.AgentMemorySection
 import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.model.AgentMemoryEntryUi
 import io.github.mangi.eta.ui.model.AgentMemoryFileUi
 import io.github.mangi.eta.ui.model.AgentMemorySectionUi
+import io.github.mangi.eta.ui.model.AgentMemoryTidyPreview
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -375,6 +377,143 @@ internal class AgentMemoryStore(
                         }
                     },
                 )
+        }
+    }
+
+    /** 整理档案：先让模型算一份更紧凑的正文，结果只作为预览，确认后才覆盖。 */
+    fun tidyFile() {
+        val name = memoryState.expandedFileName ?: return
+        if (memoryState.isTidying) return
+        val content = memoryState.fileDraft
+        if (content.isBlank()) return
+        memoryState = memoryState.copy(isTidying = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryModelTasks().tidyFile(content) }
+                .fold(
+                    onSuccess = { tidy ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isTidying = false,
+                                tidyPreview = AgentMemoryTidyPreview(name = name, before = content, after = tidy),
+                            )
+                        }
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_tidy_failed") {
+                            "Agent memory tidy failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isTidying = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_tidy_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
+    /** 用户确认整理：把预览正文写回档案。 */
+    fun confirmTidy() {
+        val preview = memoryState.tidyPreview ?: return
+        if (memoryState.isSavingFile) return
+        memoryState = memoryState.copy(isSavingFile = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryRepository.writeFile(preview.name, preview.after, append = false) }
+                .fold(
+                    onSuccess = {
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingFile = false,
+                                tidyPreview = null,
+                                fileDraft = preview.after,
+                                fileSaved = preview.after,
+                                expandedFileText = preview.after,
+                                notice = appContext.getString(R.string.state_ui_memory_tidy_done),
+                            )
+                        }
+                        refreshMemory()
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_tidy_save_failed") {
+                            "Agent memory tidy save failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSavingFile = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_tidy_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
+    fun discardTidy() {
+        memoryState = memoryState.copy(tidyPreview = null)
+    }
+
+    /**
+     * 拆分档案：选中的章节各写成一个新档案，原档案删掉这些节。
+     * parts 是「新档案名 to 原始标题行」；先全部校验再写，避免留下半个结果。
+     */
+    fun splitFile(parts: List<Pair<String, String>>) {
+        val name = memoryState.expandedFileName ?: return
+        if (parts.isEmpty() || memoryState.isSavingFile) return
+        memoryState = memoryState.copy(isSavingFile = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val text = AgentMemoryRepository.fileText(name)
+                val lines = if (text.isEmpty()) emptyList() else text.split('\n')
+                val ranges = AgentMemoryScoring.sections(lines)
+                val picked = parts.map { (newName, rawTitle) ->
+                    val range = ranges.firstOrNull { it.title == rawTitle }
+                        ?: throw IllegalStateException("找不到章节：$rawTitle")
+                    val body = lines.subList(range.startIndex + 1, range.endIndex)
+                        .joinToString("\n")
+                        .trim('\n')
+                    if (body.isBlank()) throw IllegalStateException("章节没有正文：$rawTitle")
+                    Triple(newName, body, range)
+                }
+                val drop = picked.flatMap { (_, _, range) -> range.startIndex until range.endIndex }.toSet()
+                val remaining = lines.filterIndexed { index, _ -> index !in drop }
+                    .joinToString("\n")
+                    .trim('\n')
+                if (remaining.isBlank()) throw IllegalStateException("拆分后原档案会变空，已取消")
+                picked.forEach { (newName, body, _) ->
+                    AgentMemoryRepository.writeFile(newName, body, append = false)
+                }
+                AgentMemoryRepository.writeFile(name, remaining, append = false)
+                AgentMemoryRepository.syncWorkingIndex(removed = emptyList(), added = picked.first().first)
+                remaining
+            }.fold(
+                onSuccess = { remaining ->
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            isSavingFile = false,
+                            expandedFileText = remaining,
+                            fileDraft = remaining,
+                            fileSaved = remaining,
+                            notice = appContext.getString(R.string.state_ui_memory_split_done, parts.size),
+                        )
+                    }
+                    refreshMemory()
+                },
+                onFailure = { throwable ->
+                    AndroidAgentLogger.warnThrottled("agent_memory_ui_split_failed") {
+                        "Agent memory split failed: type=${throwable.safeLogType()}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        memoryState = memoryState.copy(
+                            isSavingFile = false,
+                            notice = throwable.message
+                                ?: appContext.getString(R.string.state_ui_memory_split_failed),
+                        )
+                    }
+                },
+            )
         }
     }
 
