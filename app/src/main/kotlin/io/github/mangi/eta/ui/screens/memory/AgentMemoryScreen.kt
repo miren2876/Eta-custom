@@ -89,6 +89,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.RowScope
+import io.github.mangi.eta.ui.components.StatusError
 
 @Composable
 internal fun AgentMemoryScreen(
@@ -279,53 +284,48 @@ internal fun AgentMemoryScreen(
                             }
                             if (selectionScope == MemorySelection.Files) {
                                 EtaPreferenceDivider(hasLeading = false)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    EtaTextButton(
+                                MemorySelectionActionsRow {
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_selection_cancel),
                                         onClick = { exitSelection() },
-                                        modifier = Modifier.weight(1f),
+                                        plain = true,
                                     )
-                                    EtaTextButton(
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_file_tidy),
                                         enabled = fileSelection.size == 1 && !state.isTidying,
+                                        emphasized = true,
                                         onClick = {
                                             fileSelection.firstOrNull()?.let { target ->
                                                 onAction(AgentMemoryAction.TidyFileInPage(target))
                                                 exitSelection()
                                             }
                                         },
-                                        modifier = Modifier.weight(1f),
                                     )
-                                    EtaTextButton(
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_file_split),
                                         enabled = fileSelection.size == 1 && !state.isSplitting,
+                                        emphasized = true,
                                         onClick = {
                                             fileSelection.firstOrNull()?.let { target ->
                                                 onAction(AgentMemoryAction.SplitFileInPage(target))
                                                 exitSelection()
                                             }
                                         },
-                                        modifier = Modifier.weight(1f),
                                     )
-                                    EtaTextButton(
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_archive_selected, fileSelection.size),
                                         enabled = fileSelection.isNotEmpty() && !state.isArchiving,
+                                        danger = true,
                                         onClick = {
                                             pendingArchiveFileNames = fileSelection.toList()
                                             showArchiveFilesDialog = true
                                         },
-                                        modifier = Modifier.weight(1f),
                                     )
-                                    EtaTextButton(
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_merge_selected, fileSelection.size),
                                         enabled = fileSelection.size >= 2 && !state.isMerging,
+                                        emphasized = true,
                                         onClick = { showMergeDialog = true },
-                                        modifier = Modifier.weight(1f),
                                     )
                                 }
                             } else if (state.files.isNotEmpty()) {
@@ -387,31 +387,26 @@ internal fun AgentMemoryScreen(
                                 )
                             }
                             EtaPreferenceDivider(hasLeading = false)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                EtaTextButton(
+                            MemorySelectionActionsRow {
+                                MemoryActionChip(
                                     text = stringResource(R.string.memory_archive_selected, suggestedSelection.size),
                                     enabled = suggestedSelection.isNotEmpty() && !state.isArchiving,
+                                    danger = true,
                                     onClick = {
                                         pendingArchiveFileNames = suggestedSelection.toList()
                                         showArchiveFilesDialog = true
                                     },
-                                    modifier = Modifier.weight(1f),
                                 )
-                                EtaTextButton(
+                                MemoryActionChip(
                                     text = stringResource(R.string.memory_archive_all),
                                     enabled = !state.isArchiving,
+                                    danger = true,
                                     onClick = {
                                         val all = state.coldFiles.map { it.name }
                                         suggestedSelection = all.toSet()
                                         pendingArchiveFileNames = all
                                         showArchiveFilesDialog = true
                                     },
-                                    modifier = Modifier.weight(1f),
                                 )
                             }
                         }
@@ -464,22 +459,17 @@ internal fun AgentMemoryScreen(
                             }
                             if (selectionScope == MemorySelection.Archive) {
                                 EtaPreferenceDivider(hasLeading = false)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    EtaTextButton(
+                                MemorySelectionActionsRow {
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_selection_cancel),
                                         onClick = { exitSelection() },
-                                        modifier = Modifier.weight(1f),
+                                        plain = true,
                                     )
-                                    EtaTextButton(
+                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_unarchive_selected, archiveSelection.size),
                                         enabled = archiveSelection.isNotEmpty() && !state.isArchiving,
+                                        danger = true,
                                         onClick = { showUnarchiveDialog = true },
-                                        modifier = Modifier.weight(1f),
                                     )
                                 }
                             } else if (state.archiveList.isNotEmpty()) {
@@ -1192,4 +1182,65 @@ internal fun MemorySaveBar(
             )
         }
     }
+}
+
+
+/** 批量操作条上的胶囊按钮：按内容自适应宽度，文字永不折行。 */
+@Composable
+internal fun MemoryActionChip(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    emphasized: Boolean = false,
+    danger: Boolean = false,
+    plain: Boolean = false,
+) {
+    val colors = MiuixTheme.colorScheme
+    val contentColor = when {
+        !enabled -> colors.disabledOnSurface
+        danger -> StatusError
+        emphasized -> colors.primary
+        else -> colors.onSurfaceVariantSummary
+    }
+    val shape = Modifier
+        .clip(RoundedCornerShape(18.dp))
+        .background(if (!plain && (emphasized || danger)) colors.surfaceContainerHigh else Color.Transparent)
+        .clickable(
+            enabled = enabled,
+            interactionSource = remember { MutableInteractionSource() },
+            indication = LocalIndication.current,
+            onClick = onClick,
+        )
+    Box(
+        // plain：取消这类次要动作只留文字，不占胶囊尺寸，把宽度让给操作按钮。
+        modifier = if (plain) {
+            shape.padding(horizontal = 4.dp, vertical = 8.dp)
+        } else {
+            shape.padding(horizontal = 14.dp).height(36.dp)
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = contentColor,
+            style = MiuixTheme.textStyles.body2,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 记忆页批量操作条：横向可滚动，按钮按内容宽度排列，窄屏左右滑动看全。 */
+@Composable
+internal fun MemorySelectionActionsRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
 }

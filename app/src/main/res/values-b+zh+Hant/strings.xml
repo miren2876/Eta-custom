@@ -1459,7 +1459,7 @@
   <string name="memory_section_idle_days">%1$d 天未引用</string>
   <string name="memory_archive_suggest_title">建議封存</string>
   <string name="memory_archive_suggest_summary">以下封存檔長期未被引用。封存會把原文完整移入 memory/archive/（一檔一檔案），隨時可在下方整體還原。</string>
-  <string name="memory_archive_selected">封存（%1$d）</string>
+  <string name="memory_archive_selected">封存 %1$d</string>
   <string name="memory_archive_restore">還原封存</string>
   <string name="memory_editor_expand">展開</string>
   <string name="memory_editor_collapse">收合</string>
@@ -1499,14 +1499,14 @@
   <string name="state_ui_memory_core_cleared">核心記憶已清空</string>
   <string name="memory_selection_cancel">取消</string>
   <string name="memory_selection_start">選取</string>
-  <string name="memory_merge_selected">合併（%1$d）</string>
+  <string name="memory_merge_selected">合併 %1$d</string>
   <string name="memory_merge_confirm_title">合併選取的封存檔？</string>
   <string name="memory_merge_confirm_message">%1$d 個封存檔將合併進「%2$s」，其餘檔案刪除，並同步工作記憶。</string>
   <string name="state_ui_memory_merged">已合併 %1$d 個封存檔</string>
   <string name="state_ui_memory_merge_failed">合併失敗，封存檔未變更</string>
   <string name="state_ui_memory_working_compressed">工作記憶已自動壓縮</string>
   <string name="state_ui_memory_working_compress_failed">工作記憶壓縮失敗</string>
-  <string name="memory_unarchive_selected">取消封存（%1$d）</string>
+  <string name="memory_unarchive_selected">取消封存 %1$d</string>
   <string name="memory_unarchive_confirm_title">取消封存選取的封存檔？</string>
   <string name="memory_unarchive_confirm_message">%1$d 個封存檔將還原成獨立檔案。</string>
   <string name="memory_section_select_hint">長按章節可多選，然後批次封存</string>
