@@ -294,30 +294,6 @@ internal fun AgentMemoryScreen(
                                     },
                                 ) {
                                     MemoryActionChip(
-                                        text = stringResource(R.string.memory_file_tidy),
-                                        modifier = Modifier.weight(1f),
-                                        enabled = fileSelection.size == 1 && !state.isTidying,
-                                        emphasized = true,
-                                        onClick = {
-                                            fileSelection.firstOrNull()?.let { target ->
-                                                onAction(AgentMemoryAction.TidyFileInPage(target))
-                                                exitSelection()
-                                            }
-                                        },
-                                    )
-                                    MemoryActionChip(
-                                        text = stringResource(R.string.memory_file_split),
-                                        modifier = Modifier.weight(1f),
-                                        enabled = fileSelection.size == 1 && !state.isSplitting,
-                                        emphasized = true,
-                                        onClick = {
-                                            fileSelection.firstOrNull()?.let { target ->
-                                                onAction(AgentMemoryAction.SplitFileInPage(target))
-                                                exitSelection()
-                                            }
-                                        },
-                                    )
-                                    MemoryActionChip(
                                         text = stringResource(R.string.memory_archive_selected, fileSelection.size),
                                         modifier = Modifier.weight(1f),
                                         enabled = fileSelection.isNotEmpty() && !state.isArchiving,
