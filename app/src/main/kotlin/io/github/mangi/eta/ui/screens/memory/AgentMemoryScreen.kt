@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -90,7 +91,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.RowScope
 import io.github.mangi.eta.ui.components.StatusError
@@ -284,14 +284,18 @@ internal fun AgentMemoryScreen(
                             }
                             if (selectionScope == MemorySelection.Files) {
                                 EtaPreferenceDivider(hasLeading = false)
-                                MemorySelectionActionsRow {
-                                    MemoryActionChip(
-                                        text = stringResource(R.string.memory_selection_cancel),
-                                        onClick = { exitSelection() },
-                                        plain = true,
-                                    )
+                                MemorySelectionActionsRow(
+                                    cancel = {
+                                        MemoryActionChip(
+                                            text = stringResource(R.string.memory_selection_cancel),
+                                            onClick = { exitSelection() },
+                                            plain = true,
+                                        )
+                                    },
+                                ) {
                                     MemoryActionChip(
                                         text = stringResource(R.string.memory_file_tidy),
+                                        modifier = Modifier.weight(1f),
                                         enabled = fileSelection.size == 1 && !state.isTidying,
                                         emphasized = true,
                                         onClick = {
@@ -303,6 +307,7 @@ internal fun AgentMemoryScreen(
                                     )
                                     MemoryActionChip(
                                         text = stringResource(R.string.memory_file_split),
+                                        modifier = Modifier.weight(1f),
                                         enabled = fileSelection.size == 1 && !state.isSplitting,
                                         emphasized = true,
                                         onClick = {
@@ -314,6 +319,7 @@ internal fun AgentMemoryScreen(
                                     )
                                     MemoryActionChip(
                                         text = stringResource(R.string.memory_archive_selected, fileSelection.size),
+                                        modifier = Modifier.weight(1f),
                                         enabled = fileSelection.isNotEmpty() && !state.isArchiving,
                                         danger = true,
                                         onClick = {
@@ -323,6 +329,7 @@ internal fun AgentMemoryScreen(
                                     )
                                     MemoryActionChip(
                                         text = stringResource(R.string.memory_merge_selected, fileSelection.size),
+                                        modifier = Modifier.weight(1f),
                                         enabled = fileSelection.size >= 2 && !state.isMerging,
                                         emphasized = true,
                                         onClick = { showMergeDialog = true },
@@ -390,6 +397,7 @@ internal fun AgentMemoryScreen(
                             MemorySelectionActionsRow {
                                 MemoryActionChip(
                                     text = stringResource(R.string.memory_archive_selected, suggestedSelection.size),
+                                    modifier = Modifier.weight(1f),
                                     enabled = suggestedSelection.isNotEmpty() && !state.isArchiving,
                                     danger = true,
                                     onClick = {
@@ -399,6 +407,7 @@ internal fun AgentMemoryScreen(
                                 )
                                 MemoryActionChip(
                                     text = stringResource(R.string.memory_archive_all),
+                                    modifier = Modifier.weight(1f),
                                     enabled = !state.isArchiving,
                                     danger = true,
                                     onClick = {
@@ -459,14 +468,18 @@ internal fun AgentMemoryScreen(
                             }
                             if (selectionScope == MemorySelection.Archive) {
                                 EtaPreferenceDivider(hasLeading = false)
-                                MemorySelectionActionsRow {
-                                    MemoryActionChip(
-                                        text = stringResource(R.string.memory_selection_cancel),
-                                        onClick = { exitSelection() },
-                                        plain = true,
-                                    )
+                                MemorySelectionActionsRow(
+                                    cancel = {
+                                        MemoryActionChip(
+                                            text = stringResource(R.string.memory_selection_cancel),
+                                            onClick = { exitSelection() },
+                                            plain = true,
+                                        )
+                                    },
+                                ) {
                                     MemoryActionChip(
                                         text = stringResource(R.string.memory_unarchive_selected, archiveSelection.size),
+                                        modifier = Modifier.weight(1f),
                                         enabled = archiveSelection.isNotEmpty() && !state.isArchiving,
                                         danger = true,
                                         onClick = { showUnarchiveDialog = true },
@@ -1190,6 +1203,7 @@ internal fun MemorySaveBar(
 internal fun MemoryActionChip(
     text: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     emphasized: Boolean = false,
     danger: Boolean = false,
@@ -1212,12 +1226,14 @@ internal fun MemoryActionChip(
             onClick = onClick,
         )
     Box(
-        // plain：取消这类次要动作只留文字，不占胶囊尺寸，把宽度让给操作按钮。
-        modifier = if (plain) {
-            shape.padding(horizontal = 4.dp, vertical = 8.dp)
-        } else {
-            shape.padding(horizontal = 14.dp).height(36.dp)
-        },
+        // plain：取消这类次要动作只留文字，不占胶囊尺寸；等分模式下由调用方传 weight。
+        modifier = modifier.then(
+            if (plain) {
+                shape.padding(horizontal = 4.dp).heightIn(min = 40.dp)
+            } else {
+                shape.fillMaxWidth().padding(horizontal = 10.dp).height(36.dp)
+            },
+        ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -1233,14 +1249,21 @@ internal fun MemoryActionChip(
 
 /** 记忆页批量操作条：横向可滚动，按钮按内容宽度排列，窄屏左右滑动看全。 */
 @Composable
-internal fun MemorySelectionActionsRow(content: @Composable RowScope.() -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content,
-    )
+internal fun MemorySelectionActionsRow(
+    cancel: (@Composable () -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit,
+) {
+    // 注意：不能再套 horizontalScroll —— 无界宽度下子项的 weight 不生效，等分会失效。
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        if (cancel != null) {
+            Box(modifier = Modifier.align(Alignment.Start)) { cancel() }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
 }
