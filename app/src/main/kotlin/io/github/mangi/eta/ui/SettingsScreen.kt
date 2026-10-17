@@ -573,6 +573,13 @@ private fun SettingsPageContent(
                         icon = Icons.Rounded.Terminal,
                         iconTint = EtaPreferenceColors.Blue,
                     )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.route_scripts),
+                        startAction = { EtaPreferenceIcon(Icons.Rounded.Code, tint = EtaPreferenceColors.Yellow) },
+                        onClick = { onNavigate(AppRoute.Scripts) },
+                    )
                 }
             }
 

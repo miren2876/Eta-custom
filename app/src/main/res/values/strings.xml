@@ -1762,7 +1762,6 @@
     <string name="memory_pager_next">Next</string>
     <string name="memory_pager_status">Page %1$d of %2$d</string>
   <string name="route_scripts">Scripts</string>
-  <string name="scripts_entry_summary">View running background scripts with CPU and memory usage</string>
   <string name="scripts_new">New script</string>
   <string name="scripts_name_label">Name</string>
   <string name="scripts_command_label">Command</string>

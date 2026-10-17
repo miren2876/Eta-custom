@@ -27,7 +27,6 @@ import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
-import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
@@ -73,12 +72,6 @@ fun AgentToolsScreen(
                     title = stringResource(R.string.capability_enhancements),
                     summary = stringResource(R.string.capability_enhancements_summary),
                     onClick = { onAction(AgentToolsAction.OpenEnhancements) },
-                )
-                EtaPreferenceDivider()
-                EtaArrowPreference(
-                    title = stringResource(R.string.route_scripts),
-                    summary = stringResource(R.string.scripts_entry_summary),
-                    onClick = { onAction(AgentToolsAction.OpenScripts) },
                 )
             }
         }
