@@ -291,6 +291,28 @@ internal fun AgentMemoryScreen(
                                         modifier = Modifier.weight(1f),
                                     )
                                     EtaTextButton(
+                                        text = stringResource(R.string.memory_file_tidy),
+                                        enabled = fileSelection.size == 1 && !state.isTidying,
+                                        onClick = {
+                                            fileSelection.firstOrNull()?.let { target ->
+                                                onAction(AgentMemoryAction.TidyFileInPage(target))
+                                                exitSelection()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_file_split),
+                                        enabled = fileSelection.size == 1 && !state.isSplitting,
+                                        onClick = {
+                                            fileSelection.firstOrNull()?.let { target ->
+                                                onAction(AgentMemoryAction.SplitFileInPage(target))
+                                                exitSelection()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
                                         text = stringResource(R.string.memory_archive_selected, fileSelection.size),
                                         enabled = fileSelection.isNotEmpty() && !state.isArchiving,
                                         onClick = {

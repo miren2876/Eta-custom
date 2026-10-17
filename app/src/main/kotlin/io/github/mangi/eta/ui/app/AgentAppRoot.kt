@@ -763,6 +763,14 @@ fun AgentAppRoot(
                             AgentMemoryAction.SaveWorking -> memory.saveWorking()
                             AgentMemoryAction.ClearProfile -> memory.clearProfile()
                             AgentMemoryAction.ClearWorking -> memory.clearWorking()
+                            is AgentMemoryAction.TidyFileInPage -> {
+                                memory.openFileAction(action.name, tidy = true)
+                                pushRoute(AppRoute.MemoryArchive(action.name))
+                            }
+                            is AgentMemoryAction.SplitFileInPage -> {
+                                memory.openFileAction(action.name, tidy = false)
+                                pushRoute(AppRoute.MemoryArchive(action.name))
+                            }
                             is AgentMemoryAction.ExpandFile -> {
                                 memory.expandFile(action.name)
                                 pushRoute(AppRoute.MemoryArchive(action.name))

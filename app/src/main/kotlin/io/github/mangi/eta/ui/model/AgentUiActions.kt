@@ -128,6 +128,11 @@ sealed interface AgentMemoryAction {
 
     data object SplitDiscarded : AgentMemoryAction
 
+    /** 记忆页多选里直接对某个档案发起整理 / 拆分：加载正文后进档案页并开始。 */
+    data class TidyFileInPage(val name: String) : AgentMemoryAction
+
+    data class SplitFileInPage(val name: String) : AgentMemoryAction
+
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction
 

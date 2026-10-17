@@ -119,7 +119,7 @@ internal fun MemoryArchiveScreen(
 
         item(key = "body-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_body_title)) }
         item(key = "body") {
-            EtaCard(modifier = Modifier.fillMaxWidth()) {
+            EtaPreferenceGroup {
                 Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
                     if (editing) {
                         MemoryEditor(

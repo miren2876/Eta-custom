@@ -1611,4 +1611,6 @@
     <string name="memory_archive_split_delete_original">拆分後刪除原檔案</string>
     <string name="memory_archive_split_pointer">本檔案已拆分，內容見下列檔案。</string>
     <string name="memory_archive_split_section">分檔</string>
+    <string name="memory_file_tidy">整理</string>
+    <string name="memory_file_split">拆分</string>
 </resources>

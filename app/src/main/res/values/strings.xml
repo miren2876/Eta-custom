@@ -1674,4 +1674,6 @@
     <string name="memory_archive_split_delete_original">Delete the original archive after splitting</string>
     <string name="memory_archive_split_pointer">This archive has been split; content lives in the archives below.</string>
     <string name="memory_archive_split_section">Split parts</string>
+    <string name="memory_file_tidy">Tidy</string>
+    <string name="memory_file_split">Split</string>
 </resources>
