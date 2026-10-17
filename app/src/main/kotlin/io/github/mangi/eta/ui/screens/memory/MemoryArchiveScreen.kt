@@ -302,7 +302,7 @@ internal fun MemoryArchiveScreen(
             onDismissRequest = { showSplit = false },
         ) {
             Column {
-                Box(modifier = Modifier.fillMaxWidth().height(320.dp)) {
+                Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         sections.forEach { section ->
                             val picked = section.title in splitSelection
