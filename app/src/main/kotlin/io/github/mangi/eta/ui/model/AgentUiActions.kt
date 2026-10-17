@@ -38,6 +38,7 @@ sealed interface AgentToolsAction {
     data object OpenPermissions : AgentToolsAction
     data object NavigateBack : AgentToolsAction
     data object OpenBrowser : AgentToolsAction
+    data object OpenScripts : AgentToolsAction
 }
 
 sealed interface AgentSkillsAction {
