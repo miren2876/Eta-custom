@@ -787,7 +787,10 @@ fun AgentAppRoot(
                             AgentMemoryAction.SaveWorking -> memory.saveWorking()
                             AgentMemoryAction.ClearProfile -> memory.clearProfile()
                             AgentMemoryAction.ClearWorking -> memory.clearWorking()
-                            is AgentMemoryAction.ExpandFile -> memory.expandFile(action.name)
+                            is AgentMemoryAction.ExpandFile -> {
+                                memory.expandFile(action.name)
+                                pushRoute(AppRoute.MemoryArchive(action.name))
+                            }
                             AgentMemoryAction.CollapseFile -> memory.collapseFile()
                             is AgentMemoryAction.ArchiveFiles -> memory.archiveFiles(action.names)
                             is AgentMemoryAction.FileDraftChanged -> memory.updateFileDraft(action.content)
