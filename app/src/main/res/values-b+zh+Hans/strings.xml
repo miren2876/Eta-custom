@@ -1652,4 +1652,7 @@
     <string name="memory_archive_split_delete_original">拆分后删除原档案</string>
     <string name="memory_archive_split_pointer">本档案已拆分，内容见下列档案。</string>
     <string name="memory_archive_split_section">分档</string>
+    <string name="memory_pager_prev">上一页</string>
+    <string name="memory_pager_next">下一页</string>
+    <string name="memory_pager_status">第 %1$d / %2$d 页</string>
 </resources>
