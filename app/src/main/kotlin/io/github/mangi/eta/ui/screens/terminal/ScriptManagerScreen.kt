@@ -515,6 +515,8 @@ private fun ScriptEditorDialog(
             }
             MiuixDialogActions(
                 confirmText = stringResource(R.string.scripts_save),
+                // 按钮行自带 top padding：输入框以及其上方的错误/重启提示都靠它与按钮拉开距离。
+                modifier = Modifier.padding(top = 16.dp),
                 onCancel = onDismiss,
                 onConfirm = {
                     if (command.isBlank()) commandMissing = true else onSave(name, command, environment, cwd)
