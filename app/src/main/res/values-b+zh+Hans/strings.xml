@@ -1656,7 +1656,6 @@
     <string name="memory_pager_next">下一页</string>
     <string name="memory_pager_status">第 %1$d / %2$d 页</string>
   <string name="route_scripts">管理脚本</string>
-  <string name="scripts_entry_summary">查看运行中的后台脚本、CPU 与内存占用</string>
   <string name="scripts_new">新建脚本</string>
   <string name="scripts_name_label">名称</string>
   <string name="scripts_command_label">命令</string>
