@@ -30,6 +30,8 @@ internal data class AgentMemoryFileHit(
     val lineCount: Int,
     val totalScore: Double,
     val hits: List<AgentMemoryLineHit>,
+    /** 命中来自归档目录（归档档案不出现在档案索引里）。 */
+    val archived: Boolean = false,
 )
 
 /** 一个记忆档案（memory/files/<name>.md）的元信息。 */
@@ -680,9 +682,14 @@ internal class AgentMemoryStore(
         maxLinesPerFile: Int = 6,
     ): List<AgentMemoryFileHit> = synchronized(lock) {
         if (AgentMemoryScoring.tokenize(query).isEmpty()) return@synchronized emptyList()
-        filesDir.listFiles()
-            ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
-            ?.mapNotNull { file ->
+        listOf(filesDir to false, archiveDir to true)
+            .flatMap { (dir, archived) ->
+                dir.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
+                    ?.map { it to archived }
+                    .orEmpty()
+            }
+            .mapNotNull { (file, archived) ->
                 val lines = file.readText().memoryLines()
                 val scored = AgentMemoryScoring.scoreLines(lines, query)
                 if (scored.isEmpty()) return@mapNotNull null
@@ -690,6 +697,7 @@ internal class AgentMemoryStore(
                     name = file.name.removeSuffix(FILE_SUFFIX),
                     lineCount = lines.size,
                     totalScore = scored.sumOf { it.score },
+                    archived = archived,
                     hits = scored.sortedByDescending { it.score }
                         .take(maxLinesPerFile)
                         .sortedBy { it.index }
@@ -702,9 +710,8 @@ internal class AgentMemoryStore(
                         },
                 )
             }
-            ?.sortedByDescending { it.totalScore }
-            ?.take(maxFiles)
-            .orEmpty()
+            .sortedByDescending { it.totalScore }
+            .take(maxFiles)
     }
 
     /** 档案清单（供工具与注入共用的简短索引）。 */
@@ -740,8 +747,10 @@ internal class AgentMemoryStore(
 
     /** 读某个档案的全文。 */
     fun fileText(name: String): String = synchronized(lock) {
-        val file = fileFor(name) ?: return@synchronized ""
-        if (!file.exists()) return@synchronized ""
+        // 归档档案不出现在索引里，但按名字仍然读得到。
+        val file = fileFor(name)?.takeIf { it.exists() }
+            ?: archivedFileFor(name)?.takeIf { it.exists() }
+            ?: return@synchronized ""
         file.readText()
     }
 

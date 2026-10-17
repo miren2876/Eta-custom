@@ -20,7 +20,8 @@ internal object AgentMemoryToolCatalog {
                     description = "Read persistent memory. The user profile (USER.md), the working-memory entries " +
                         "(MEMORY.md, ranked by effective importance) and one line of archive stats are already injected " +
                         "every turn, so call this only to inspect details. " +
-                        "archive=<name>: read one archive file (memory/files/<name>.md). " +
+                        "archive=<name>: read one archive file (memory/files/<name>.md, or memory/archive/ once archived); " +
+                        "add outline=true for just the section headings with line counts, or section=\"<heading>\" for one section. " +
                         "query=<text>: relevance search across ALL archive files and working-memory entries — returns " +
                         "matching archives with their hit lines and matching entries (each hit also bumps its reference count). " +
                         "With neither argument: return the profile, every entry with EI and reference counts, and the archive index.",
@@ -45,6 +46,19 @@ internal object AgentMemoryToolCatalog {
                                             "description",
                                             "Search text; scored per line across all archives, results ranked by relevance.",
                                         ),
+                                )
+                                .put(
+                                    "outline",
+                                    JSONObject()
+                                        .put("type", "boolean")
+                                        .put("description", "With archive=: return only section headings and their line counts."),
+                                )
+                                .put(
+                                    "section",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 120)
+                                        .put("description", "With archive=: return only this section's body (exact heading, else substring match)."),
                                 ),
                         ),
                 ),

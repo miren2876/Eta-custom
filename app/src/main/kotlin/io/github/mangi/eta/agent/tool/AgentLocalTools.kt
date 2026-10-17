@@ -437,22 +437,51 @@ internal class AgentLocalTools(
 
     private fun memoryGet(args: JSONObject): String {
         val archiveName = args.optString("archive").takeIf(String::isNotBlank)
-        return if (archiveName != null) memoryGetArchive(archiveName) else memoryGetContent(args)
+        return if (archiveName != null) memoryGetArchive(archiveName, args) else memoryGetContent(args)
     }
 
-    /** 读取一个独立记忆档案（memory/files/<name>.md）。 */
-    private fun memoryGetArchive(name: String): String = try {
-        val text = AgentMemoryRepository.fileText(name)
+    /** 读取一个独立记忆档案（memory/files/<name>.md；已归档的在 memory/archive/）。 */
+    private fun memoryGetArchive(name: String, args: JSONObject): String = try {
+        val full = AgentMemoryRepository.fileText(name)
         AgentMemoryRepository.recordFileHit(name)
+        val outline = args.optBoolean("outline", false)
+        val section = args.optString("section").takeIf(String::isNotBlank)
+        val text = when {
+            outline -> memoryOutline(full)
+            section != null -> memorySection(full, section)
+            else -> full
+        }
         JSONObject()
             .put("ok", true)
             .put("archive", name)
+            .put("mode", if (outline) "outline" else if (section != null) "section" else "full")
             .put("bytes", text.toByteArray(Charsets.UTF_8).size)
             .put("line_count", if (text.isEmpty()) 0 else text.split('\n').size)
             .put("content", text)
             .toString()
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "档案读取失败")
+    }
+
+    /** 小节目录：标题 + 该节行数，先看目录再决定读哪一节。 */
+    private fun memoryOutline(text: String): String {
+        val lines = text.split('\n')
+        val heads = lines.withIndex().filter { (_, line) -> line.trimStart().startsWith("#") }
+        return heads.mapIndexed { index, (at, title) ->
+            val end = heads.getOrNull(index + 1)?.index ?: lines.size
+            "$title（${end - at} 行）"
+        }.joinToString("\n")
+    }
+
+    /** 取某一节正文：先按标题精确匹配，再退化为包含匹配，都没有就报错。 */
+    private fun memorySection(text: String, section: String): String {
+        val lines = text.split('\n')
+        val heads = lines.withIndex().filter { (_, line) -> line.trimStart().startsWith("#") }
+        val match = heads.firstOrNull { (_, line) -> line.trimStart().trimStart('#').trim() == section.trim() }
+            ?: heads.firstOrNull { (_, line) -> line.contains(section) }
+            ?: throw AgentMemoryException("MEMORY_SECTION_MISSING", "档案里没有这一节：$section")
+        val end = heads.getOrNull(heads.indexOf(match) + 1)?.index ?: lines.size
+        return lines.subList(match.index, end).joinToString("\n").trimEnd()
     }
 
     private fun memoryGetContent(args: JSONObject): String = try {
@@ -529,6 +558,7 @@ internal class AgentLocalTools(
             hitsJson.put(
                 JSONObject()
                     .put("name", hit.name)
+                    .put("archived", hit.archived)
                     .put("lines", hit.lineCount)
                     .put("score", hit.totalScore)
                     .put("hits", lines),

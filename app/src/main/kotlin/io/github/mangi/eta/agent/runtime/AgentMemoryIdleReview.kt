@@ -216,6 +216,7 @@ internal class AgentMemoryIdleReview(
         appendLine("写入规则：")
         appendLine("- 档案是**项目记录的唯一去处**：设计、调查、流程、踩坑与排障、配置与路径、决策理由、交接材料。")
         appendLine("- 一轮只写一层：写档案 或 写条目，二选一，优先档案。")
+        appendLine("- 档案太长就分卷：索引里每行带行数，目标档案已超过 120 行时不要再往里追加长内容，改为新建分档 memory_write archive=\"<主题名>·<段落名>\"（如「外星仔加速器看广告刷时长·10-17 流水」），再用 mode=edit 在主档里更新一行指针（`- <段落> → 《分档名》`）；主档只留当前有效的结论与规则，过程记录进分档。这两步同属档案层，一轮内都允许。")
         appendLine("- 写/追加档案：memory_write archive=<主题名> mode=append content=\"<正文>\"；先 memory_get 看有没有同名档案，别重复已有内容。")
         appendLine("- 修正已有档案里的**一处**内容：memory_write archive=<主题名> mode=edit old_text=\"<要替换的原文片段，必须唯一>\" content=\"<新内容>\"（比追加一条「更正」干净）。")
         appendLine("- 写条目：memory_write target=entry content=\"一句话结论\" importance=2；只收用户明确、持久的新结论，且必须是档案没覆盖的。")
