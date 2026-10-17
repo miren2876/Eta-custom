@@ -385,6 +385,27 @@ internal class AgentMemoryStore(
         }
     }
 
+    /** 记忆页直接对某个档案发起整理 / 拆分：先加载正文，再走同一套流程。 */
+    fun openFileAction(name: String, tidy: Boolean) {
+        if (name.isBlank()) return
+        if (memoryState.expandedFileName == name && memoryState.fileDraft.isNotBlank()) {
+            if (tidy) tidyFile() else splitFile(name)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val text = runCatching { AgentMemoryRepository.fileText(name) }.getOrDefault("")
+            withContext(Dispatchers.Main) {
+                memoryState = memoryState.copy(
+                    expandedFileName = name,
+                    expandedFileText = text,
+                    fileDraft = text,
+                    fileSaved = text,
+                )
+                if (tidy) tidyFile() else splitFile(name)
+            }
+        }
+    }
+
     /** 整理档案：先让模型算一份更紧凑的正文，结果只作为预览，确认后才覆盖。 */
     fun tidyFile() {
         val name = memoryState.expandedFileName ?: return
