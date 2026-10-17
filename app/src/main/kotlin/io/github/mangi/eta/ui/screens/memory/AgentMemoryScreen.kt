@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -131,6 +133,23 @@ internal fun AgentMemoryScreen(
     var workingExpanded by remember { mutableStateOf(false) }
     var filesExpanded by remember { mutableStateOf(false) }
     var entriesExpanded by remember { mutableStateOf(false) }
+    // 三个长列表各自分页，页码互不影响，进出页面保持。
+    var entriesPage by rememberSaveable { mutableIntStateOf(0) }
+    var filesPage by rememberSaveable { mutableIntStateOf(0) }
+    var archivePage by rememberSaveable { mutableIntStateOf(0) }
+    val entriesPageCount = memoryPageCount(state.entries.size)
+    val filesPageCount = memoryPageCount(state.files.size)
+    val archivePageCount = memoryPageCount(state.archiveList.size)
+    // 刷新后页数变少时把页码夹回最后一页，避免停在空白页。
+    LaunchedEffect(entriesPageCount) {
+        if (entriesPage > entriesPageCount - 1) entriesPage = entriesPageCount - 1
+    }
+    LaunchedEffect(filesPageCount) {
+        if (filesPage > filesPageCount - 1) filesPage = filesPageCount - 1
+    }
+    LaunchedEffect(archivePageCount) {
+        if (archivePage > archivePageCount - 1) archivePage = archivePageCount - 1
+    }
     var showClearProfileDialog by remember { mutableStateOf(false) }
     var showClearWorkingDialog by remember { mutableStateOf(false) }
 
@@ -229,10 +248,20 @@ internal fun AgentMemoryScreen(
                             if (state.entries.isEmpty()) {
                                 SectionHint(text = stringResource(R.string.memory_entries_empty))
                             } else {
-                                state.entries.forEachIndexed { index, entry ->
-                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
-                                    EntryRow(entry = entry)
-                                }
+                                val page = entriesPage.coerceIn(0, entriesPageCount - 1)
+                                state.entries.drop(page * MEMORY_PAGE_SIZE).take(MEMORY_PAGE_SIZE)
+                                    .forEachIndexed { index, entry ->
+                                        if (page * MEMORY_PAGE_SIZE + index > 0) {
+                                            EtaPreferenceDivider(hasLeading = true)
+                                        }
+                                        EntryRow(entry = entry)
+                                    }
+                                MemoryPagerBar(
+                                    page = page,
+                                    pageCount = entriesPageCount,
+                                    onPrev = { entriesPage = page - 1 },
+                                    onNext = { entriesPage = page + 1 },
+                                )
                             }
                         }
                     }
@@ -262,8 +291,10 @@ internal fun AgentMemoryScreen(
                             if (state.files.isEmpty()) {
                                 SectionHint(text = stringResource(R.string.memory_files_empty))
                             } else {
-                                state.files.forEachIndexed { index, file ->
-                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                val page = filesPage.coerceIn(0, filesPageCount - 1)
+                                state.files.drop(page * MEMORY_PAGE_SIZE).take(MEMORY_PAGE_SIZE)
+                                    .forEachIndexed { index, file ->
+                                    if (page * MEMORY_PAGE_SIZE + index > 0) EtaPreferenceDivider(hasLeading = true)
                                     val selecting = selectionScope == MemorySelection.Files
                                     FileRow(
                                         file = file,
@@ -281,6 +312,12 @@ internal fun AgentMemoryScreen(
                                         },
                                     )
                                 }
+                                MemoryPagerBar(
+                                    page = page,
+                                    pageCount = filesPageCount,
+                                    onPrev = { filesPage = page - 1 },
+                                    onNext = { filesPage = page + 1 },
+                                )
                             }
                             if (selectionScope == MemorySelection.Files) {
                                 EtaPreferenceDivider(hasLeading = false)
@@ -423,8 +460,10 @@ internal fun AgentMemoryScreen(
                             if (state.archiveList.isEmpty()) {
                                 SectionHint(text = stringResource(R.string.memory_archive_empty))
                             } else {
-                                state.archiveList.forEachIndexed { index, section ->
-                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                val page = archivePage.coerceIn(0, archivePageCount - 1)
+                                state.archiveList.drop(page * MEMORY_PAGE_SIZE).take(MEMORY_PAGE_SIZE)
+                                    .forEachIndexed { index, section ->
+                                    if (page * MEMORY_PAGE_SIZE + index > 0) EtaPreferenceDivider(hasLeading = true)
                                     val selecting = selectionScope == MemorySelection.Archive
                                     SectionRow(
                                         section = section,
@@ -441,6 +480,12 @@ internal fun AgentMemoryScreen(
                                         },
                                     )
                                 }
+                                MemoryPagerBar(
+                                    page = page,
+                                    pageCount = archivePageCount,
+                                    onPrev = { archivePage = page - 1 },
+                                    onNext = { archivePage = page + 1 },
+                                )
                             }
                             if (selectionScope == MemorySelection.Archive) {
                                 EtaPreferenceDivider(hasLeading = false)
@@ -1240,6 +1285,51 @@ internal fun MemorySelectionActionsRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content,
+        )
+    }
+}
+
+
+/** 记忆页长列表每页条数。 */
+private const val MEMORY_PAGE_SIZE = 10
+
+private fun memoryPageCount(size: Int): Int =
+    if (size <= 0) 1 else (size + MEMORY_PAGE_SIZE - 1) / MEMORY_PAGE_SIZE
+
+/** 三个长列表共用的页脚：上一页 / 第 N / M 页 / 下一页，只有一页时不显示。 */
+@Composable
+internal fun MemoryPagerBar(
+    page: Int,
+    pageCount: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+) {
+    if (pageCount <= 1) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MemoryActionChip(
+            text = stringResource(R.string.memory_pager_prev),
+            onClick = onPrev,
+            enabled = page > 0,
+            plain = true,
+        )
+        Text(
+            text = stringResource(R.string.memory_pager_status, page + 1, pageCount),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.footnote1,
+            maxLines = 1,
+            softWrap = false,
+        )
+        MemoryActionChip(
+            text = stringResource(R.string.memory_pager_next),
+            onClick = onNext,
+            enabled = page < pageCount - 1,
+            plain = true,
         )
     }
 }
