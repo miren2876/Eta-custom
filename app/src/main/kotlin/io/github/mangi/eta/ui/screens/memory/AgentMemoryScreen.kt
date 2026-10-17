@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -259,16 +260,12 @@ internal fun AgentMemoryScreen(
                                 state.files.forEachIndexed { index, file ->
                                     if (index > 0) EtaPreferenceDivider(hasLeading = true)
                                     val selecting = selectionScope == MemorySelection.Files
-                                    val expanded = !selecting && state.expandedFileName == file.name
                                     FileRow(
                                         file = file,
                                         selected = if (selecting) file.name in fileSelection else null,
-                                        expanded = if (selecting) null else expanded,
                                         onClick = {
                                             if (selecting) {
                                                 fileSelection = fileSelection.toggle(file.name)
-                                            } else if (expanded) {
-                                                onAction(AgentMemoryAction.CollapseFile)
                                             } else {
                                                 onAction(AgentMemoryAction.ExpandFile(file.name))
                                             }
@@ -278,16 +275,6 @@ internal fun AgentMemoryScreen(
                                             fileSelection = setOf(file.name)
                                         },
                                     )
-                                    if (expanded) {
-                                        FileEditor(
-                                            label = file.name,
-                                            draft = state.fileDraft,
-                                            saved = state.fileSaved,
-                                            saving = state.isSavingFile,
-                                            onDraftChange = { onAction(AgentMemoryAction.FileDraftChanged(it)) },
-                                            onSave = { onAction(AgentMemoryAction.SaveFile) },
-                                        )
-                                    }
                                 }
                             }
                             if (selectionScope == MemorySelection.Files) {
@@ -372,7 +359,6 @@ internal fun AgentMemoryScreen(
                                 FileRow(
                                     file = file,
                                     selected = file.name in suggestedSelection,
-                                    expanded = null,
                                     onClick = {
                                         suggestedSelection = suggestedSelection.toggle(file.name)
                                     },
@@ -732,7 +718,7 @@ private fun SectionBody(text: String) {
     )
 }
 
-private fun formatBytes(bytes: Int): String = when {
+internal fun formatBytes(bytes: Int): String = when {
     bytes < 1_024 -> "$bytes B"
     bytes < 1_024 * 1_024 -> "%.1f KiB".format(bytes / 1_024.0)
     else -> "%.2f MiB".format(bytes / (1_024.0 * 1_024.0))
@@ -956,7 +942,7 @@ private fun CoreEditorCard(
 
 /** 正文区右上角的小动作：回到预览、清空。 */
 @Composable
-private fun MemoryBodyAction(text: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun MemoryBodyAction(text: String, enabled: Boolean, onClick: () -> Unit) {
     Text(
         text = text,
         style = MiuixTheme.textStyles.footnote1,
@@ -974,7 +960,6 @@ private fun MemoryBodyAction(text: String, enabled: Boolean, onClick: () -> Unit
 private fun FileRow(
     file: AgentMemoryFileUi,
     selected: Boolean?,
-    expanded: Boolean?,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -1051,13 +1036,9 @@ private fun FileRow(
                 style = MiuixTheme.textStyles.footnote1,
             )
         }
-        if (expanded != null) {
+        if (selected == null) {
             Icon(
-                imageVector = if (expanded) {
-                    Icons.Rounded.KeyboardArrowUp
-                } else {
-                    Icons.Rounded.KeyboardArrowDown
-                },
+                imageVector = Icons.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -1066,68 +1047,12 @@ private fun FileRow(
     }
 }
 
-/** 展开的档案：可直接编辑并保存。 */
-@Composable
-private fun FileEditor(
-    label: String,
-    draft: String,
-    saved: String,
-    saving: Boolean,
-    onDraftChange: (String) -> Unit,
-    onSave: () -> Unit,
-) {
-    var editing by rememberSaveable(label) { mutableStateOf(false) }
-    val changed = draft != saved
-    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(MemoryDocumentBodyHeight),
-        ) {
-            if (editing) {
-                MemoryEditor(
-                    value = draft,
-                    enabled = !saving,
-                    placeholder = label,
-                    onValueChange = onDraftChange,
-                )
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp),
-                ) {
-                    MemoryBodyAction(
-                        text = stringResource(R.string.memory_mode_preview),
-                        enabled = true,
-                        onClick = { editing = false },
-                    )
-                }
-            } else {
-                MemoryPreview(
-                    content = draft,
-                    placeholder = label,
-                    onStartEditing = { if (!saving) editing = true },
-                )
-            }
-        }
-        MemorySaveBar(
-            visible = changed || saving,
-            overLimit = false,
-            saving = saving,
-            canSave = !saving && changed,
-            onDiscard = { onDraftChange(saved) },
-            onSave = onSave,
-        )
-    }
-}
-
-
 /** 文档正文区在列表里固定高度，预览与编辑都在这块区域内滚动。 */
-private val MemoryDocumentBodyHeight = 260.dp
+internal val MemoryDocumentBodyHeight = 260.dp
 
 /** 预览态：Markdown 渲染，双击切到编辑（单击留给后续可能的展开等操作）。 */
 @Composable
-private fun MemoryPreview(content: String, placeholder: String, onStartEditing: () -> Unit) {
+internal fun MemoryPreview(content: String, placeholder: String, onStartEditing: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1151,7 +1076,7 @@ private fun MemoryPreview(content: String, placeholder: String, onStartEditing: 
 
 /** 编辑态：无边框整页编辑，与卡片同色；点到空白处也能把光标落进正文。 */
 @Composable
-private fun MemoryEditor(
+internal fun MemoryEditor(
     value: String,
     enabled: Boolean,
     placeholder: String,
@@ -1192,7 +1117,7 @@ private fun MemoryTextStyle() = MiuixTheme.textStyles.body2.copy(lineHeight = 22
 
 /** 有未保存修改或超限时才出现：左侧说明状态，右侧放弃与保存。 */
 @Composable
-private fun MemorySaveBar(
+internal fun MemorySaveBar(
     visible: Boolean,
     overLimit: Boolean,
     saving: Boolean,

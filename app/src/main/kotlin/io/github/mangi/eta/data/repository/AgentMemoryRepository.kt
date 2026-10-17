@@ -418,14 +418,26 @@ internal class AgentMemoryStore(
      */
     fun syncWorkingIndex(removed: List<String>, added: String?): AgentMemorySnapshot = synchronized(lock) {
         val keys = removed.map { name -> AgentMemoryScoring.entryKey(name) }.toSet()
-        if (keys.isEmpty()) return@synchronized coreSnapshotLocked()
         val lines = readText(workingFile).memoryLines()
-        val kept = lines.filterNot { line ->
-            val parsed = AgentMemoryScoring.entryLine(line) ?: return@filterNot false
-            AgentMemoryScoring.entryKey(parsed.text) in keys
+        var current = lines
+        if (keys.isNotEmpty()) {
+            current = lines.filterNot { line ->
+                val parsed = AgentMemoryScoring.entryLine(line) ?: return@filterNot false
+                AgentMemoryScoring.entryKey(parsed.text) in keys
+            }
         }
-        if (kept.size != lines.size) {
-            val merged = kept.joinToString("\n").trimEnd('\n')
+        // added：合并 / 拆分后的新档案名补一行索引，已有的不重复加。
+        val addedName = added?.trim().orEmpty()
+        if (addedName.isNotEmpty()) {
+            val addedKey = AgentMemoryScoring.entryKey(addedName)
+            val exists = current.any { line ->
+                val parsed = AgentMemoryScoring.entryLine(line) ?: return@any false
+                AgentMemoryScoring.entryKey(parsed.text).contains(addedKey)
+            }
+            if (!exists) current = current + "- $addedName"
+        }
+        if (current.size != lines.size || current != lines) {
+            val merged = current.joinToString("\n").trimEnd('\n')
             writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
         }
         coreSnapshotLocked()

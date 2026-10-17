@@ -108,6 +108,16 @@ sealed interface AgentMemoryAction {
     /** 把选中的档案合并成一个（用当前模型），并同步工作记忆。 */
     data class MergeFiles(val names: List<String>) : AgentMemoryAction
 
+    /** 整理档案：先调模型算，把预览交给页面确认后才写回。 */
+    data object TidyFile : AgentMemoryAction
+
+    data object TidyConfirmed : AgentMemoryAction
+
+    data object TidyDiscarded : AgentMemoryAction
+
+    /** 拆分档案：parts 是「新档案名 to 原始标题行」，选中的章节各写成一个新档案。 */
+    data class SplitFile(val parts: List<Pair<String, String>>) : AgentMemoryAction
+
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction
 

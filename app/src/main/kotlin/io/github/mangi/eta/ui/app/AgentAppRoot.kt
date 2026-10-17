@@ -743,7 +743,10 @@ fun AgentAppRoot(
                     state = memory.memoryState,
                     onAction = { action ->
                         when (action) {
-                            AgentMemoryAction.NavigateBack -> popRoute()
+                            AgentMemoryAction.NavigateBack -> {
+                                memory.collapseFile()
+                                popRoute()
+                            }
                             is AgentMemoryAction.ToggleEnabled -> memory.setMemoryEnabled(action.enabled)
                             is AgentMemoryAction.DraftChanged -> memory.updateMemoryDraft(action.content)
                             AgentMemoryAction.Save -> memory.saveMemory()
@@ -768,6 +771,39 @@ fun AgentAppRoot(
                             is AgentMemoryAction.MergeFiles -> memory.mergeFiles(action.names)
                             is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
                             AgentMemoryAction.CollapseSection -> memory.collapseSection()
+                            AgentMemoryAction.TidyFile,
+                            AgentMemoryAction.TidyConfirmed,
+                            AgentMemoryAction.TidyDiscarded,
+                            is AgentMemoryAction.SplitFile -> Unit
+                        }
+                    },
+                )
+            }
+            entry<AppRoute.MemoryArchive>(swipeDismiss = swipeDismiss) { route ->
+                LaunchedEffect(route.name) {
+                    if (memory.memoryState.expandedFileName != route.name) memory.expandFile(route.name)
+                }
+                io.github.mangi.eta.ui.screens.memory.MemoryArchiveScreen(
+                    state = memory.memoryState,
+                    onAction = { action ->
+                        when (action) {
+                            AgentMemoryAction.NavigateBack -> popRoute()
+                            AgentMemoryAction.DismissNotice -> memory.dismissMemoryNotice()
+                            AgentMemoryAction.CollapseFile -> {
+                                memory.collapseFile()
+                                popRoute()
+                            }
+                            is AgentMemoryAction.FileDraftChanged -> memory.updateFileDraft(action.content)
+                            AgentMemoryAction.SaveFile -> memory.saveFile()
+                            AgentMemoryAction.TidyFile -> memory.tidyFile()
+                            AgentMemoryAction.TidyConfirmed -> memory.confirmTidy()
+                            AgentMemoryAction.TidyDiscarded -> memory.discardTidy()
+                            is AgentMemoryAction.SplitFile -> memory.splitFile(action.parts)
+                            is AgentMemoryAction.ArchiveFiles -> {
+                                memory.archiveFiles(action.names)
+                                popRoute()
+                            }
+                            else -> Unit
                         }
                     },
                 )

@@ -67,6 +67,9 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object Memory : AppRoute
+
+    @Serializable
+    data class MemoryArchive(val name: String) : AppRoute
     @Serializable
     data object VirtualScreen : AppRoute
 

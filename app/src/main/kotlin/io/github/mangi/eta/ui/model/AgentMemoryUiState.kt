@@ -41,6 +41,19 @@ data class AgentMemoryEntryUi(
     val eiLabel: String,
 )
 
+/** 整理档案的预览：模型返回的正文与前后统计，用户确认后才写回。 */
+@Immutable
+data class AgentMemoryTidyPreview(
+    val name: String,
+    val before: String,
+    val after: String,
+) {
+    val beforeBytes: Int get() = before.toByteArray(Charsets.UTF_8).size
+    val afterBytes: Int get() = after.toByteArray(Charsets.UTF_8).size
+    val beforeLines: Int get() = if (before.isEmpty()) 0 else before.split('\n').size
+    val afterLines: Int get() = if (after.isEmpty()) 0 else after.split('\n').size
+}
+
 @Immutable
 data class AgentMemoryUiState(
     val enabled: Boolean = true,
@@ -65,6 +78,9 @@ data class AgentMemoryUiState(
     val files: List<AgentMemoryFileUi> = emptyList(),
     val expandedFileName: String? = null,
     val expandedFileText: String = "",
+    /** 整理中的档案：算完先给预览，用户确认后才覆盖。 */
+    val isTidying: Boolean = false,
+    val tidyPreview: AgentMemoryTidyPreview? = null,
     val fileDraft: String = "",
     val fileSaved: String = "",
     val isSavingFile: Boolean = false,
