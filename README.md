@@ -15,7 +15,7 @@
 | `01-virtual-screen.patch` | 虚拟屏（`agent/display`、虚拟屏路由策略与工具目录、悬浮小窗）、悬浮胶囊与 overlay、虚拟屏设置页 | 33 |
 | `02-ask-user.patch` | 不确定时向我提问：挂起请求状态机、`ask_user` Schema、提问卡片 | 3 |
 | `03-chat-organization.patch` | 会话组织：文件夹 / 置顶 / 归档的列与迁移、管理聊天页（顶部筛选、左滑操作、长按多选） | 4 |
-| `04-memory-subsystem.patch` | 记忆子系统：画像 / 工作记忆 / 条目池与 EI、检索与归档、空闲整理、记忆页与工具、备份、内置 `memory-keeper` | 19 |
+| `04-memory-subsystem.patch` | 记忆子系统：画像 / 工作记忆 / 条目池与 EI、检索与归档、空闲整理、档案分卷与按节读、记忆页与工具、备份、内置 `memory-keeper` | 19 |
 | `05-agent-runtime.patch` | 运行时：工具体系与能力快照、提示词、模型客户端、中途插话、多会话、Linux 运行通知、Root PTY、`Prefs` | 25 |
 | `06-ui-and-shell.patch` | 界面：聊天气体与输入栏、工作过程节点、侧栏、顶栏标题、设置页、路由 | 27 |
 | `07-build-resources-tests.patch` | 构建与资源：`build.gradle.kts`、`proguard-rules.pro`、Manifest、字符串资源、单元测试 | 25 |
@@ -34,7 +34,7 @@ done
 
 - 补丁以 `git diff --binary 213e8ed6 eta-custom` 生成，按整文件切分，**必须按顺序应用**（后一个补丁假设前一个的内容已在）。
 - `07` 里的 `build.gradle.kts` 改动含“本机无 NDK 时不做 `ndkVersion` 校验”的适配；用官方 NDK 构建时可以只应用其余部分。
-- 验证：应用后 `git write-tree` 应得到 `3a9d2204f414fe9b0cefb75fbc91af8ddbd64ea5`（与 `eta-custom^{tree}` 相同）。
+- 验证：应用后 `git write-tree` 应得到 `9328f38d542fd02877796a85305e94edb344923b`（与 `eta-custom^{tree}` 相同）。
 
 ## 改造内容
 

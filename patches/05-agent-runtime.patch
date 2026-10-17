@@ -3086,7 +3086,7 @@ index 415a51a4..3c45d9c0 100644
  internal const val SHELL_STDIN_FAILED_EXIT_CODE = -4
  
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt
-index 26dac6fa..f028f144 100644
+index 26dac6fa..69f28087 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/agent/tool/AgentLocalTools.kt
 @@ -1,6 +1,13 @@
@@ -3301,7 +3301,7 @@ index 26dac6fa..f028f144 100644
                  "tap" -> afterAction(tap(args))
                  "tap_area" -> afterAction(tapArea(args))
                  "tap_element" -> afterAction(tapElement(args))
-@@ -300,61 +435,257 @@ internal class AgentLocalTools(
+@@ -300,61 +435,287 @@ internal class AgentLocalTools(
          )
      }
  
@@ -3313,13 +3313,20 @@ index 26dac6fa..f028f144 100644
 -        )
 +    private fun memoryGet(args: JSONObject): String {
 +        val archiveName = args.optString("archive").takeIf(String::isNotBlank)
-+        return if (archiveName != null) memoryGetArchive(archiveName) else memoryGetContent(args)
++        return if (archiveName != null) memoryGetArchive(archiveName, args) else memoryGetContent(args)
 +    }
 +
-+    /** 读取一个独立记忆档案（memory/files/<name>.md）。 */
-+    private fun memoryGetArchive(name: String): String = try {
-+        val text = AgentMemoryRepository.fileText(name)
++    /** 读取一个独立记忆档案（memory/files/<name>.md；已归档的在 memory/archive/）。 */
++    private fun memoryGetArchive(name: String, args: JSONObject): String = try {
++        val full = AgentMemoryRepository.fileText(name)
 +        AgentMemoryRepository.recordFileHit(name)
++        val outline = args.optBoolean("outline", false)
++        val section = args.optString("section").takeIf(String::isNotBlank)
++        val text = when {
++            outline -> memoryOutline(full)
++            section != null -> memorySection(full, section)
++            else -> full
++        }
          JSONObject()
              .put("ok", true)
 -            .put("revision", result.snapshot.revision)
@@ -3331,12 +3338,34 @@ index 26dac6fa..f028f144 100644
 -            .put("has_more", result.hasMore)
 -            .put("content", result.content)
 +            .put("archive", name)
++            .put("mode", if (outline) "outline" else if (section != null) "section" else "full")
 +            .put("bytes", text.toByteArray(Charsets.UTF_8).size)
 +            .put("line_count", if (text.isEmpty()) 0 else text.split('\n').size)
 +            .put("content", text)
              .toString()
 +    } catch (failure: AgentMemoryException) {
 +        errorResult(failure.code, failure.message ?: "档案读取失败")
++    }
++
++    /** 小节目录：标题 + 该节行数，先看目录再决定读哪一节。 */
++    private fun memoryOutline(text: String): String {
++        val lines = text.split('\n')
++        val heads = lines.withIndex().filter { (_, line) -> line.trimStart().startsWith("#") }
++        return heads.mapIndexed { index, (at, title) ->
++            val end = heads.getOrNull(index + 1)?.index ?: lines.size
++            "$title（${end - at} 行）"
++        }.joinToString("\n")
++    }
++
++    /** 取某一节正文：先按标题精确匹配，再退化为包含匹配，都没有就报错。 */
++    private fun memorySection(text: String, section: String): String {
++        val lines = text.split('\n')
++        val heads = lines.withIndex().filter { (_, line) -> line.trimStart().startsWith("#") }
++        val match = heads.firstOrNull { (_, line) -> line.trimStart().trimStart('#').trim() == section.trim() }
++            ?: heads.firstOrNull { (_, line) -> line.contains(section) }
++            ?: throw AgentMemoryException("MEMORY_SECTION_MISSING", "档案里没有这一节：$section")
++        val end = heads.getOrNull(heads.indexOf(match) + 1)?.index ?: lines.size
++        return lines.subList(match.index, end).joinToString("\n").trimEnd()
 +    }
 +
 +    private fun memoryGetContent(args: JSONObject): String = try {
@@ -3424,6 +3453,7 @@ index 26dac6fa..f028f144 100644
 +            hitsJson.put(
 +                JSONObject()
 +                    .put("name", hit.name)
++                    .put("archived", hit.archived)
 +                    .put("lines", hit.lineCount)
 +                    .put("score", hit.totalScore)
 +                    .put("hits", lines),
@@ -3599,7 +3629,7 @@ index 26dac6fa..f028f144 100644
      }
  
      private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {
-@@ -717,7 +1048,8 @@ internal class AgentLocalTools(
+@@ -717,7 +1078,8 @@ internal class AgentLocalTools(
          val appName = args.optString("app_name").trim().ifBlank { null }
  
          val app = if (packageName != null) {
@@ -3609,7 +3639,7 @@ index 26dac6fa..f028f144 100644
          } else {
              if (appName == null) {
                  return errorResult("INVALID_ARGUMENT", "package_name 和 app_name 至少提供一个")
-@@ -748,6 +1080,10 @@ internal class AgentLocalTools(
+@@ -748,6 +1110,10 @@ internal class AgentLocalTools(
                  message = "应用不可启动或未安装：${app.packageName}"
              )
          }
@@ -3620,7 +3650,7 @@ index 26dac6fa..f028f144 100644
          launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
          context.startActivity(launchIntent)
          logger.info("Agent local tool action=launch_app outcome=started")
-@@ -771,6 +1107,14 @@ internal class AgentLocalTools(
+@@ -771,6 +1137,14 @@ internal class AgentLocalTools(
          val context = requireContext()
          val intent = Intent(Intent.ACTION_VIEW, uri)
              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -3635,7 +3665,7 @@ index 26dac6fa..f028f144 100644
          if (!HookSupport.resolvesActivity(context, intent)) {
              return errorResult("NO_ACTIVITY", "没有应用可以处理该 URI")
          }
-@@ -804,9 +1148,6 @@ internal class AgentLocalTools(
+@@ -804,9 +1178,6 @@ internal class AgentLocalTools(
              .toString()
      }
  
@@ -3645,7 +3675,7 @@ index 26dac6fa..f028f144 100644
      private fun findAppsByName(query: String, includeSystem: Boolean): List<AppInfo> {
          val normalizedQuery = query.normalized()
          return installedLauncherApps()
-@@ -919,6 +1260,25 @@ internal class AgentLocalTools(
+@@ -919,6 +1290,25 @@ internal class AgentLocalTools(
          }
      }
  
@@ -3671,7 +3701,7 @@ index 26dac6fa..f028f144 100644
      // ==================== Skills tools ====================
  
      private fun skillsList(args: JSONObject): String {
-@@ -1412,6 +1772,7 @@ internal class AgentLocalTools(
+@@ -1412,6 +1802,7 @@ internal class AgentLocalTools(
  
      private companion object {
          val DEVICE_DIRECT_TOOL_NAMES = io.github.mangi.eta.agent.model.AgentPhoneToolCatalog.direct + setOf(

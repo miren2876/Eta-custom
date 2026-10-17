@@ -504,10 +504,10 @@ index fb956957..0b829fe2 100644
          return context
      }
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/model/AgentMemoryToolCatalog.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/model/AgentMemoryToolCatalog.kt
-index bb698891..8f7cd8f7 100644
+index bb698891..10c98550 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/agent/model/AgentMemoryToolCatalog.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/agent/model/AgentMemoryToolCatalog.kt
-@@ -4,40 +4,47 @@ import io.github.mangi.eta.data.repository.AgentMemoryStore
+@@ -4,40 +4,61 @@ import io.github.mangi.eta.data.repository.AgentMemoryStore
  import org.json.JSONArray
  import org.json.JSONObject
  
@@ -529,7 +529,8 @@ index bb698891..8f7cd8f7 100644
 +                    description = "Read persistent memory. The user profile (USER.md), the working-memory entries " +
 +                        "(MEMORY.md, ranked by effective importance) and one line of archive stats are already injected " +
 +                        "every turn, so call this only to inspect details. " +
-+                        "archive=<name>: read one archive file (memory/files/<name>.md). " +
++                        "archive=<name>: read one archive file (memory/files/<name>.md, or memory/archive/ once archived); " +
++                        "add outline=true for just the section headings with line counts, or section=\"<heading>\" for one section. " +
 +                        "query=<text>: relevance search across ALL archive files and working-memory entries — returns " +
 +                        "matching archives with their hit lines and matching entries (each hit also bumps its reference count). " +
 +                        "With neither argument: return the profile, every entry with EI and reference counts, and the archive index.",
@@ -538,41 +539,49 @@ index bb698891..8f7cd8f7 100644
                          .put(
                              "properties",
                              JSONObject()
-                                 .put(
--                                    "query",
++                                .put(
 +                                    "archive",
++                                    JSONObject()
++                                        .put("type", "string")
++                                        .put("maxLength", 120)
++                                        .put("description", "Name of one archive file to read (see the archive index)."),
++                                )
+                                 .put(
+                                     "query",
                                      JSONObject()
                                          .put("type", "string")
--                                        .put("maxLength", 500)
+                                         .put("maxLength", 500)
 -                                        .put("description", "Optional case-insensitive text to search for in the full memory file."),
--                                )
--                                .put(
++                                        .put(
++                                            "description",
++                                            "Search text; scored per line across all archives, results ranked by relevance.",
++                                        ),
+                                 )
+                                 .put(
 -                                    "start_line",
--                                    JSONObject()
++                                    "outline",
+                                     JSONObject()
 -                                        .put("type", "integer")
 -                                        .put("minimum", 1)
 -                                        .put("description", "1-based first line for paged reading when query is omitted; default 1."),
-+                                        .put("maxLength", 120)
-+                                        .put("description", "Name of one archive file to read (see the archive index)."),
++                                        .put("type", "boolean")
++                                        .put("description", "With archive=: return only section headings and their line counts."),
                                  )
                                  .put(
 -                                    "max_chars",
-+                                    "query",
++                                    "section",
                                      JSONObject()
 -                                        .put("type", "integer")
 -                                        .put("minimum", AgentMemoryStore.MIN_READ_CHARS)
 -                                        .put("maximum", AgentMemoryStore.MAX_READ_CHARS)
 -                                        .put("description", "Maximum returned characters; default 12000, maximum 32000."),
 +                                        .put("type", "string")
-+                                        .put("maxLength", 500)
-+                                        .put(
-+                                            "description",
-+                                            "Search text; scored per line across all archives, results ranked by relevance.",
-+                                        ),
++                                        .put("maxLength", 120)
++                                        .put("description", "With archive=: return only this section's body (exact heading, else substring match)."),
                                  ),
                          ),
                  ),
-@@ -47,56 +54,96 @@ internal object AgentMemoryToolCatalog {
+@@ -47,56 +68,96 @@ internal object AgentMemoryToolCatalog {
              .put(
                  AgentToolSchema.function(
                      name = "memory_write",
@@ -846,10 +855,10 @@ index 083dc89b..6cd7719d 100644
  }
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentMemoryIdleReview.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentMemoryIdleReview.kt
 new file mode 100644
-index 00000000..38ba97fd
+index 00000000..f8d9ff7e
 --- /dev/null
 +++ b/app/src/main/kotlin/io/github/mangi/eta/agent/runtime/AgentMemoryIdleReview.kt
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,321 @@
 +package io.github.mangi.eta.agent.runtime
 +
 +import io.github.mangi.eta.agent.model.AgentModelClient
@@ -1068,6 +1077,7 @@ index 00000000..38ba97fd
 +        appendLine("写入规则：")
 +        appendLine("- 档案是**项目记录的唯一去处**：设计、调查、流程、踩坑与排障、配置与路径、决策理由、交接材料。")
 +        appendLine("- 一轮只写一层：写档案 或 写条目，二选一，优先档案。")
++        appendLine("- 档案太长就分卷：索引里每行带行数，目标档案已超过 120 行时不要再往里追加长内容，改为新建分档 memory_write archive=\"<主题名>·<段落名>\"（如「外星仔加速器看广告刷时长·10-17 流水」），再用 mode=edit 在主档里更新一行指针（`- <段落> → 《分档名》`）；主档只留当前有效的结论与规则，过程记录进分档。这两步同属档案层，一轮内都允许。")
 +        appendLine("- 写/追加档案：memory_write archive=<主题名> mode=append content=\"<正文>\"；先 memory_get 看有没有同名档案，别重复已有内容。")
 +        appendLine("- 修正已有档案里的**一处**内容：memory_write archive=<主题名> mode=edit old_text=\"<要替换的原文片段，必须唯一>\" content=\"<新内容>\"（比追加一条「更正」干净）。")
 +        appendLine("- 写条目：memory_write target=entry content=\"一句话结论\" importance=2；只收用户明确、持久的新结论，且必须是档案没覆盖的。")
@@ -1330,7 +1340,7 @@ index 1632b1b0..540bae0a 100644
 +    fun jpegQuality(value: Int): Int = if (normalize(value) >= 75) 60 else 72
 +}
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/data/repository/AgentMemoryRepository.kt b/app/src/main/kotlin/io/github/mangi/eta/data/repository/AgentMemoryRepository.kt
-index 6cb3f4fe..00f37346 100644
+index 6cb3f4fe..bbd11c1c 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/data/repository/AgentMemoryRepository.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/data/repository/AgentMemoryRepository.kt
 @@ -2,11 +2,13 @@ package io.github.mangi.eta.data.repository
@@ -1347,7 +1357,7 @@ index 6cb3f4fe..00f37346 100644
  
  internal data class AgentMemorySnapshot(
      val content: String,
-@@ -15,6 +17,50 @@ internal data class AgentMemorySnapshot(
+@@ -15,6 +17,52 @@ internal data class AgentMemorySnapshot(
      val lineCount: Int,
  )
  
@@ -1364,6 +1374,8 @@ index 6cb3f4fe..00f37346 100644
 +    val lineCount: Int,
 +    val totalScore: Double,
 +    val hits: List<AgentMemoryLineHit>,
++    /** 命中来自归档目录（归档档案不出现在档案索引里）。 */
++    val archived: Boolean = false,
 +)
 +
 +/** 一个记忆档案（memory/files/<name>.md）的元信息。 */
@@ -1398,7 +1410,7 @@ index 6cb3f4fe..00f37346 100644
  internal data class AgentMemoryReadResult(
      val snapshot: AgentMemorySnapshot,
      val content: String,
-@@ -22,8 +68,71 @@ internal data class AgentMemoryReadResult(
+@@ -22,8 +70,71 @@ internal data class AgentMemoryReadResult(
      val endLine: Int?,
      val hasMore: Boolean,
      val matchedLines: Int,
@@ -1470,7 +1482,7 @@ index 6cb3f4fe..00f37346 100644
  internal sealed interface AgentMemoryMutation {
      val revision: String
  
-@@ -45,22 +154,51 @@ internal sealed interface AgentMemoryMutation {
+@@ -45,22 +156,51 @@ internal sealed interface AgentMemoryMutation {
  }
  
  internal sealed interface AgentMemoryWriteResult {
@@ -1524,7 +1536,7 @@ index 6cb3f4fe..00f37346 100644
      private val lock = Any()
  
      fun snapshot(): AgentMemorySnapshot = synchronized(lock) {
-@@ -71,14 +209,955 @@ internal class AgentMemoryStore(
+@@ -71,14 +211,962 @@ internal class AgentMemoryStore(
          query: String? = null,
          startLine: Int = DEFAULT_START_LINE,
          maxChars: Int = DEFAULT_READ_CHARS,
@@ -2001,9 +2013,14 @@ index 6cb3f4fe..00f37346 100644
 +        maxLinesPerFile: Int = 6,
 +    ): List<AgentMemoryFileHit> = synchronized(lock) {
 +        if (AgentMemoryScoring.tokenize(query).isEmpty()) return@synchronized emptyList()
-+        filesDir.listFiles()
-+            ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
-+            ?.mapNotNull { file ->
++        listOf(filesDir to false, archiveDir to true)
++            .flatMap { (dir, archived) ->
++                dir.listFiles()
++                    ?.filter { it.isFile && it.name.endsWith(FILE_SUFFIX) }
++                    ?.map { it to archived }
++                    .orEmpty()
++            }
++            .mapNotNull { (file, archived) ->
 +                val lines = file.readText().memoryLines()
 +                val scored = AgentMemoryScoring.scoreLines(lines, query)
 +                if (scored.isEmpty()) return@mapNotNull null
@@ -2011,6 +2028,7 @@ index 6cb3f4fe..00f37346 100644
 +                    name = file.name.removeSuffix(FILE_SUFFIX),
 +                    lineCount = lines.size,
 +                    totalScore = scored.sumOf { it.score },
++                    archived = archived,
 +                    hits = scored.sortedByDescending { it.score }
 +                        .take(maxLinesPerFile)
 +                        .sortedBy { it.index }
@@ -2023,9 +2041,8 @@ index 6cb3f4fe..00f37346 100644
 +                        },
 +                )
 +            }
-+            ?.sortedByDescending { it.totalScore }
-+            ?.take(maxFiles)
-+            .orEmpty()
++            .sortedByDescending { it.totalScore }
++            .take(maxFiles)
 +    }
 +
 +    /** 档案清单（供工具与注入共用的简短索引）。 */
@@ -2061,8 +2078,10 @@ index 6cb3f4fe..00f37346 100644
 +
 +    /** 读某个档案的全文。 */
 +    fun fileText(name: String): String = synchronized(lock) {
-+        val file = fileFor(name) ?: return@synchronized ""
-+        if (!file.exists()) return@synchronized ""
++        // 归档档案不出现在索引里，但按名字仍然读得到。
++        val file = fileFor(name)?.takeIf { it.exists() }
++            ?: archivedFileFor(name)?.takeIf { it.exists() }
++            ?: return@synchronized ""
 +        file.readText()
 +    }
 +
@@ -2433,7 +2452,7 @@ index 6cb3f4fe..00f37346 100644
 +    fun unarchive(titles: List<String>): Int = synchronized(lock) {
 +        if (titles.isEmpty()) {
 +            throw AgentMemoryException("MEMORY_ARCHIVE_EMPTY", "没有选中要取消归档的档案")
-         }
++        }
 +        val names = titles.map { title ->
 +            AgentMemoryScoring.stripArchiveStamp(title).trimStart('#').trim()
 +        }.filter { it.isNotBlank() }
@@ -2478,12 +2497,12 @@ index 6cb3f4fe..00f37346 100644
 +        splitArchiveSections(content).forEach { entry ->
 +            val target = archivedFileFor(entry.name) ?: return@forEach
 +            writeArchived(target, entry.body, entry.archivedAtMillis.takeIf { it > 0L } ?: now)
-+        }
+         }
 +        archiveSnapshotLocked()
      }
  
      fun mutate(mutation: AgentMemoryMutation): AgentMemoryWriteResult = synchronized(lock) {
-@@ -86,25 +1165,51 @@ internal class AgentMemoryStore(
+@@ -86,25 +1174,51 @@ internal class AgentMemoryStore(
          if (mutation.revision != current.revision) {
              return@synchronized AgentMemoryWriteResult.Conflict(current)
          }
@@ -2538,7 +2557,7 @@ index 6cb3f4fe..00f37346 100644
      }
  
      private fun snapshotLocked(): AgentMemorySnapshot {
-@@ -143,8 +1248,15 @@ internal class AgentMemoryStore(
+@@ -143,8 +1257,15 @@ internal class AgentMemoryStore(
                  message = "无法创建记忆目录",
              )
          }
@@ -2555,7 +2574,7 @@ index 6cb3f4fe..00f37346 100644
          } catch (throwable: IOException) {
              throw AgentMemoryException(
                  code = "MEMORY_WRITE_FAILED",
-@@ -153,10 +1265,10 @@ internal class AgentMemoryStore(
+@@ -153,10 +1274,10 @@ internal class AgentMemoryStore(
              )
          }
          try {
@@ -2569,7 +2588,7 @@ index 6cb3f4fe..00f37346 100644
              throw AgentMemoryException(
                  code = "MEMORY_WRITE_FAILED",
                  message = "无法保存记忆文件",
-@@ -165,6 +1277,20 @@ internal class AgentMemoryStore(
+@@ -165,6 +1286,20 @@ internal class AgentMemoryStore(
          }
      }
  
@@ -2590,7 +2609,7 @@ index 6cb3f4fe..00f37346 100644
      private fun replaceRange(
          snapshot: AgentMemorySnapshot,
          mutation: AgentMemoryMutation.ReplaceRange,
-@@ -228,47 +1354,312 @@ internal class AgentMemoryStore(
+@@ -228,47 +1363,312 @@ internal class AgentMemoryStore(
          )
      }
  
@@ -2647,16 +2666,16 @@ index 6cb3f4fe..00f37346 100644
 +            val block = fresh.joinToString("\n") { index ->
 +                val marker = if (index in matchedIndices) "*" else " "
 +                "${index + 1}$marker: ${lines[index]}"
++            }
++            val gap = if (output.isEmpty()) "" else "\n…\n"
++            if (output.length + gap.length + block.length > maxChars) {
++                if (output.isEmpty()) output.append(block.take(maxChars))
++                return@forEach
              }
 -            if (output.isNotEmpty() && output.length + gap.length + rendered.length > maxChars) break
 -            output.append(gap).append(rendered.take(maxChars - output.length - gap.length))
 -            lastIncluded = index
 -            renderedCount++
-+            val gap = if (output.isEmpty()) "" else "\n…\n"
-+            if (output.length + gap.length + block.length > maxChars) {
-+                if (output.isEmpty()) output.append(block.take(maxChars))
-+                return@forEach
-+            }
 +            output.append(gap).append(block)
 +            emitted += fresh
 +            rendered += fresh.size
@@ -2927,7 +2946,7 @@ index 6cb3f4fe..00f37346 100644
      private fun snapshotOf(
          content: String,
          bytes: ByteArray = content.toByteArray(Charsets.UTF_8),
-@@ -289,16 +1680,65 @@ internal class AgentMemoryStore(
+@@ -289,16 +1689,65 @@ internal class AgentMemoryStore(
                  (byte.toInt() and 0xff).toString(16).padStart(2, '0')
              }
  
@@ -2994,7 +3013,7 @@ index 6cb3f4fe..00f37346 100644
      }
  }
  
-@@ -309,6 +1749,17 @@ internal object AgentMemoryRepository {
+@@ -309,6 +1758,17 @@ internal object AgentMemoryRepository {
      fun init(context: Context) {
          if (!::store.isInitialized) {
              store = AgentMemoryStore(context.applicationContext.filesDir)
@@ -3012,7 +3031,7 @@ index 6cb3f4fe..00f37346 100644
          }
      }
  
-@@ -321,9 +1772,195 @@ internal object AgentMemoryRepository {
+@@ -321,9 +1781,195 @@ internal object AgentMemoryRepository {
          query: String? = null,
          startLine: Int = 1,
          maxChars: Int = AgentMemoryStore.DEFAULT_READ_CHARS,
