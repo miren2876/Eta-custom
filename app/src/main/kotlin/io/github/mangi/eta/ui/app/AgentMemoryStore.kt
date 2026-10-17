@@ -462,11 +462,12 @@ internal class AgentMemoryStore(
     fun splitFile(parts: List<Pair<String, String>>) {
         val name = memoryState.expandedFileName ?: return
         if (parts.isEmpty() || memoryState.isSavingFile) return
+        // 章节列表是按当前草稿算的，这里也用草稿，避免未保存时找不到章节。
+        val source = memoryState.fileDraft
         memoryState = memoryState.copy(isSavingFile = true, notice = null)
         scope.launch(Dispatchers.IO) {
             runCatching {
-                val text = AgentMemoryRepository.fileText(name)
-                val lines = if (text.isEmpty()) emptyList() else text.split('\n')
+                val lines = if (source.isEmpty()) emptyList() else source.split('\n')
                 val ranges = AgentMemoryScoring.sections(lines)
                 val picked = parts.map { (newName, rawTitle) ->
                     val range = ranges.firstOrNull { it.title == rawTitle }
