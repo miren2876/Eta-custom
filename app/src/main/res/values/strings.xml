@@ -1753,4 +1753,9 @@
     <string name="state_ui_memory_tidy_done">Archive tidied</string>
     <string name="state_ui_memory_split_done">Split %1$d archives</string>
     <string name="state_ui_memory_split_failed">Split failed, archive unchanged</string>
+    <string name="memory_archive_split_running">Splitting…</string>
+    <string name="memory_archive_split_plan">Selected %1$d of %2$d parts</string>
+    <string name="memory_archive_split_delete_original">Delete the original archive after splitting</string>
+    <string name="memory_archive_split_pointer">This archive has been split; content lives in the archives below.</string>
+    <string name="memory_archive_split_section">Split parts</string>
 </resources>

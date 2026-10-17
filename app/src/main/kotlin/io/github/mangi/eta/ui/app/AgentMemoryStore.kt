@@ -17,6 +17,7 @@ import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.model.AgentMemoryEntryUi
 import io.github.mangi.eta.ui.model.AgentMemoryFileUi
 import io.github.mangi.eta.ui.model.AgentMemorySectionUi
+import io.github.mangi.eta.ui.model.AgentMemorySplitPartUi
 import io.github.mangi.eta.ui.model.AgentMemoryTidyPreview
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import kotlinx.coroutines.CoroutineScope
@@ -459,49 +460,122 @@ internal class AgentMemoryStore(
         memoryState = memoryState.copy(tidyPreview = null)
     }
 
-    /**
-     * 拆分档案：选中的章节各写成一个新档案，原档案删掉这些节。
-     * parts 是「新档案名 to 原始标题行」；先全部校验再写，避免留下半个结果。
-     */
-    fun splitFile(parts: List<Pair<String, String>>) {
-        val name = memoryState.expandedFileName ?: return
-        if (parts.isEmpty() || memoryState.isSavingFile) return
-        // 章节列表是按当前草稿算的，这里也用草稿，避免未保存时找不到章节。
+    /** 拆分档案：先让模型出方案，结果只作为预览，确认后才写盘。 */
+    fun splitFile(name: String) {
+        if (name.isBlank() || memoryState.isSplitting) return
         val source = memoryState.fileDraft
+        if (source.isBlank()) return
+        memoryState = memoryState.copy(isSplitting = true, notice = null)
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentMemoryModelTasks().splitFile(name, source) }
+                .fold(
+                    onSuccess = { parts ->
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSplitting = false,
+                                splitPreview = parts.map { part ->
+                                    AgentMemorySplitPartUi(name = part.name, body = part.body)
+                                },
+                                splitDeleteOriginal = false,
+                            )
+                        }
+                    },
+                    onFailure = { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_memory_ui_split_plan_failed") {
+                            "Agent memory split plan failed: type=${throwable.safeLogType()}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            memoryState = memoryState.copy(
+                                isSplitting = false,
+                                notice = throwable.message
+                                    ?: appContext.getString(R.string.state_ui_memory_split_failed),
+                            )
+                        }
+                    },
+                )
+        }
+    }
+
+    fun renameSplitPart(index: Int, name: String) {
+        val preview = memoryState.splitPreview ?: return
+        if (index !in preview.indices) return
+        memoryState = memoryState.copy(
+            splitPreview = preview.toMutableList().also { list ->
+                list[index] = list[index].copy(name = name)
+            },
+        )
+    }
+
+    fun toggleSplitPart(index: Int) {
+        val preview = memoryState.splitPreview ?: return
+        if (index !in preview.indices) return
+        memoryState = memoryState.copy(
+            splitPreview = preview.toMutableList().also { list ->
+                list[index] = list[index].copy(enabled = !list[index].enabled)
+            },
+        )
+    }
+
+    fun setSplitDeleteOriginal(enabled: Boolean) {
+        if (memoryState.splitPreview == null) return
+        memoryState = memoryState.copy(splitDeleteOriginal = enabled)
+    }
+
+    fun discardSplit() {
+        memoryState = memoryState.copy(splitPreview = null, splitDeleteOriginal = false)
+    }
+
+    /** 用户确认拆分：勾选的方案写成新档案，原档案变指针或删除。 */
+    fun confirmSplit() {
+        val name = memoryState.expandedFileName ?: return
+        val preview = memoryState.splitPreview ?: return
+        if (memoryState.isSavingFile) return
+        val chosen = preview.filter { it.enabled }
+        if (chosen.isEmpty()) return
+        val deleteOriginal = memoryState.splitDeleteOriginal
+        val kept = preview.filterNot { it.enabled }
         memoryState = memoryState.copy(isSavingFile = true, notice = null)
         scope.launch(Dispatchers.IO) {
             runCatching {
-                val lines = if (source.isEmpty()) emptyList() else source.split('\n')
-                val ranges = AgentMemoryScoring.sections(lines)
-                val picked = parts.map { (newName, rawTitle) ->
-                    val range = ranges.firstOrNull { it.title == rawTitle }
-                        ?: throw IllegalStateException("找不到章节：$rawTitle")
-                    val body = lines.subList(range.startIndex + 1, range.endIndex)
-                        .joinToString("\n")
-                        .trim('\n')
-                    if (body.isBlank()) throw IllegalStateException("章节没有正文：$rawTitle")
-                    Triple(newName, body, range)
+                val taken = AgentMemoryRepository.files().map { it.name }.toMutableSet()
+                val written = chosen.map { part ->
+                    val finalName = uniqueArchiveName(part.name, taken)
+                    taken += finalName
+                    AgentMemoryRepository.writeFile(finalName, part.body, append = false)
+                    finalName
                 }
-                val drop = picked.flatMap { (_, _, range) -> range.startIndex until range.endIndex }.toSet()
-                val remaining = lines.filterIndexed { index, _ -> index !in drop }
-                    .joinToString("\n")
-                    .trim('\n')
-                if (remaining.isBlank()) throw IllegalStateException("拆分后原档案会变空，已取消")
-                picked.forEach { (newName, body, _) ->
-                    AgentMemoryRepository.writeFile(newName, body, append = false)
+                val pointer = buildString {
+                    append(appContext.getString(R.string.memory_archive_split_pointer))
+                    append("\n\n## ")
+                    append(appContext.getString(R.string.memory_archive_split_section))
+                    append('\n')
+                    written.forEach { append("- ").append(it).append('\n') }
+                }.trimEnd('\n')
+                if (deleteOriginal) {
+                    AgentMemoryRepository.deleteFile(name)
+                } else {
+                    val remaining = kept.joinToString("\n\n") { it.body.trim() }
+                    val updated = if (remaining.isBlank()) pointer else "$remaining\n\n$pointer"
+                    AgentMemoryRepository.writeFile(name, updated, append = false)
                 }
-                AgentMemoryRepository.writeFile(name, remaining, append = false)
-                AgentMemoryRepository.syncWorkingIndex(removed = emptyList(), added = picked.first().first)
-                remaining
+                AgentMemoryRepository.syncWorkingIndex(removed = emptyList(), added = written.first())
+                written
             }.fold(
-                onSuccess = { remaining ->
+                onSuccess = { written ->
+                    val remainingText = if (deleteOriginal) {
+                        null
+                    } else {
+                        runCatching { AgentMemoryRepository.fileText(name) }.getOrNull()
+                    }
                     withContext(Dispatchers.Main) {
                         memoryState = memoryState.copy(
                             isSavingFile = false,
-                            expandedFileText = remaining,
-                            fileDraft = remaining,
-                            fileSaved = remaining,
-                            notice = appContext.getString(R.string.state_ui_memory_split_done, parts.size),
+                            splitPreview = null,
+                            splitDeleteOriginal = false,
+                            expandedFileText = remainingText.orEmpty(),
+                            fileDraft = remainingText.orEmpty(),
+                            fileSaved = remainingText.orEmpty(),
+                            notice = appContext.getString(R.string.state_ui_memory_split_done, written.size),
                         )
                     }
                     refreshMemory()
@@ -520,6 +594,15 @@ internal class AgentMemoryStore(
                 },
             )
         }
+    }
+
+    /** 新档案名：走仓库的 sanitizeName 规则，重名自动加后缀。 */
+    private fun uniqueArchiveName(raw: String, taken: MutableSet<String>): String {
+        val base = AgentMemoryRepository.safeFileName(raw) ?: raw.trim()
+        if (base !in taken) return base
+        var index = 2
+        while ("$base ($index)" in taken) index++
+        return "$base ($index)"
     }
 
     fun setMemoryEnabled(enabled: Boolean) {

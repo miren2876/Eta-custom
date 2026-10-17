@@ -822,6 +822,9 @@ internal class AgentMemoryStore(
     }
 
     /** 档案名 → 文件名（目录分隔符与 `..` 替换掉，避免越出档案目录）。 */
+    /** 档案名校验：与内部写出同一套规则，非法返回 null。 */
+    fun safeFileName(name: String): String? = synchronized(lock) { sanitizeName(name) }
+
     private fun sanitizeName(name: String): String? {
         val safe = name.trim()
             .replace('/', '_')
@@ -1838,6 +1841,12 @@ internal object AgentMemoryRepository {
     fun archiveFiles(names: List<String>): Int {
         ensureInitialized()
         return store.archiveFiles(names)
+    }
+
+    /** 档案名校验：与内部写出同一套规则，非法返回 null。 */
+    fun safeFileName(name: String): String? {
+        ensureInitialized()
+        return store.safeFileName(name)
     }
 
     fun files(): List<AgentMemoryFileInfo> {

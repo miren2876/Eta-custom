@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.screens.memory
 
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,7 @@ import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.model.AgentMemoryAction
+import io.github.mangi.eta.ui.model.AgentMemorySplitPartUi
 import io.github.mangi.eta.ui.model.AgentMemoryTidyPreview
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import top.yukonga.miuix.kmp.basic.Icon
@@ -59,7 +61,6 @@ internal fun MemoryArchiveScreen(
     var editing by rememberSaveable(name) { mutableStateOf(false) }
     var showArchiveConfirm by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
-    var showSplit by remember { mutableStateOf(false) }
     var showMerge by remember { mutableStateOf(false) }
     var mergeTarget by remember { mutableStateOf<String?>(null) }
     var splitSelection by remember(name) { mutableStateOf(emptySet<String>()) }
@@ -171,9 +172,13 @@ internal fun MemoryArchiveScreen(
                 EtaPreferenceDivider(hasLeading = true)
                 ArchiveActionRow(
                     title = stringResource(R.string.memory_archive_action_split),
-                    summary = stringResource(R.string.memory_archive_action_split_summary),
-                    enabled = state.fileDraft.isNotBlank(),
-                    onClick = { showSplit = true },
+                    summary = if (state.isSplitting) {
+                        stringResource(R.string.memory_archive_split_running)
+                    } else {
+                        stringResource(R.string.memory_archive_action_split_summary)
+                    },
+                    enabled = !state.isSplitting && state.fileDraft.isNotBlank(),
+                    onClick = { onAction(AgentMemoryAction.SplitFile(name)) },
                 )
                 EtaPreferenceDivider(hasLeading = true)
                 ArchiveActionRow(
@@ -290,81 +295,17 @@ internal fun MemoryArchiveScreen(
         }
     }
 
-    if (showSplit) {
-        val sections = remember(state.fileDraft, name) {
-            val lines = if (state.fileDraft.isEmpty()) emptyList() else state.fileDraft.split('\n')
-            AgentMemoryScoring.sections(lines).filter { it.title.isNotBlank() }
-        }
-        EtaWindowDialog(
-            show = true,
-            title = stringResource(R.string.memory_archive_split_title),
-            summary = stringResource(R.string.memory_archive_split_summary),
-            onDismissRequest = { showSplit = false },
-        ) {
-            Column {
-                Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                        sections.forEach { section ->
-                            val picked = section.title in splitSelection
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            splitSelection = if (picked) splitSelection - section.title
-                                            else splitSelection + section.title
-                                            if (!picked) {
-                                                splitNames = splitNames + (
-                                                    section.title to defaultSplitName(name, section.displayTitle)
-                                                    )
-                                            } else {
-                                                splitNames = splitNames - section.title
-                                            }
-                                        }
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = section.displayTitle,
-                                        modifier = Modifier.weight(1f),
-                                        color = if (picked) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
-                                        style = MiuixTheme.textStyles.body2,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.memory_file_lines, section.lineCount),
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        style = MiuixTheme.textStyles.footnote1,
-                                    )
-                                }
-                                if (picked) {
-                                    SplitNameField(
-                                        value = splitNames[section.title].orEmpty(),
-                                        onValueChange = { splitNames = splitNames + (section.title to it) },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                val parts = splitSelection.mapNotNull { title ->
-                    val newName = splitNames[title]?.trim().orEmpty()
-                    if (newName.isEmpty()) null else newName to title
-                }
-                MiuixDialogActions(
-                    confirmText = stringResource(R.string.memory_archive_split_confirm),
-                    confirmEnabled = parts.isNotEmpty() && parts.size == splitSelection.size &&
-                        splitSelection.size < sections.size && !state.isSavingFile,
-                    onCancel = { showSplit = false },
-                    onConfirm = {
-                        showSplit = false
-                        onAction(AgentMemoryAction.SplitFile(parts))
-                    },
-                )
-            }
-        }
+    state.splitPreview?.let { parts ->
+        SplitReviewDialog(
+            parts = parts,
+            deleteOriginal = state.splitDeleteOriginal,
+            saving = state.isSavingFile,
+            onRename = { index, value -> onAction(AgentMemoryAction.SplitRename(index, value)) },
+            onToggle = { index -> onAction(AgentMemoryAction.SplitToggle(index)) },
+            onDeleteOriginalChange = { onAction(AgentMemoryAction.SplitDeleteOriginal(it)) },
+            onCancel = { onAction(AgentMemoryAction.SplitDiscarded) },
+            onConfirm = { onAction(AgentMemoryAction.SplitConfirmed) },
+        )
     }
 
     state.notice?.let { notice ->
@@ -527,5 +468,98 @@ private fun SplitNameField(value: String, onValueChange: (String) -> Unit) {
     }
 }
 
-private fun defaultSplitName(archive: String, section: String): String =
-    if (section.isBlank()) archive else "$archive · $section"
+
+
+/** 拆分方案确认：逐份可改名、可取消勾选；确认后才写盘。 */
+@Composable
+private fun SplitReviewDialog(
+    parts: List<AgentMemorySplitPartUi>,
+    deleteOriginal: Boolean,
+    saving: Boolean,
+    onRename: (Int, String) -> Unit,
+    onToggle: (Int) -> Unit,
+    onDeleteOriginalChange: (Boolean) -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val enabledCount = parts.count { it.enabled }
+    EtaWindowDialog(
+        show = true,
+        title = stringResource(R.string.memory_archive_split_title),
+        summary = stringResource(R.string.memory_archive_split_plan, enabledCount, parts.size),
+        onDismissRequest = onCancel,
+    ) {
+        Column {
+            Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    parts.forEachIndexed { index, part ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggle(index) }
+                                .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (part.enabled) {
+                                    MiuixTheme.colorScheme.primary
+                                } else {
+                                    MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)
+                                },
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = stringResource(R.string.memory_file_lines, part.lineCount) +
+                                    " · " + part.summary.take(40),
+                                modifier = Modifier.weight(1f),
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                style = MiuixTheme.textStyles.footnote1,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        SplitNameField(
+                            value = part.name,
+                            onValueChange = { onRename(index, it) },
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onDeleteOriginalChange(!deleteOriginal) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (deleteOriginal) {
+                        MiuixTheme.colorScheme.error
+                    } else {
+                        MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)
+                    },
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.memory_archive_split_delete_original),
+                    color = MiuixTheme.colorScheme.onSurface,
+                    style = MiuixTheme.textStyles.footnote1,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            MiuixDialogActions(
+                confirmText = stringResource(if (saving) R.string.memory_saving else R.string.memory_archive_split_confirm),
+                confirmEnabled = enabledCount > 0 && !saving,
+                onCancel = onCancel,
+                onConfirm = onConfirm,
+            )
+        }
+    }
+}
