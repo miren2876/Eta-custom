@@ -209,6 +209,10 @@ internal class AgentMemoryStore(
     /** 展开档案时按需读取内容。 */
     fun expandFile(name: String) {
         if (name.isBlank()) return
+        // 先落文件名，档案页立刻有标题；正文随后异步补上。
+        if (memoryState.expandedFileName != name) {
+            memoryState = memoryState.copy(expandedFileName = name)
+        }
         scope.launch(Dispatchers.IO) {
             val text = runCatching { AgentMemoryRepository.fileText(name) }.getOrDefault("")
             withContext(Dispatchers.Main) {
