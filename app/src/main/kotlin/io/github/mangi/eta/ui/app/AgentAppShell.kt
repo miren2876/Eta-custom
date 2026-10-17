@@ -103,6 +103,7 @@ internal fun AgentAppShell(
     onSearchConversations: (String) -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
+    onOpenScripts: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
     kimiWebLabel: String,
     canStopKimiWeb: Boolean,
@@ -155,6 +156,7 @@ internal fun AgentAppShell(
                             onOpenConversationPane = onOpenConversationPane,
                             onNewConversation = onNewConversation,
                             onOpenTerminal = onOpenTerminal,
+                            onOpenScripts = onOpenScripts,
                             onLaunchKimiWeb = onLaunchKimiWeb,
                             kimiWebLabel = kimiWebLabel,
                             canStopKimiWeb = canStopKimiWeb,
@@ -228,6 +230,7 @@ private fun AgentTopBar(
     onOpenConversationPane: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
+    onOpenScripts: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
     kimiWebLabel: String,
     canStopKimiWeb: Boolean,
@@ -264,6 +267,7 @@ private fun AgentTopBar(
             TopBarOverflowMenu(
                 onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
+                onOpenScripts = onOpenScripts,
                 onLaunchKimiWeb = onLaunchKimiWeb,
                 kimiWebLabel = kimiWebLabel,
                 canStopKimiWeb = canStopKimiWeb,
@@ -338,6 +342,7 @@ private val TopBarTitleHeight = 50.dp
 private fun TopBarOverflowMenu(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
+    onOpenScripts: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
     kimiWebLabel: String,
     canStopKimiWeb: Boolean,
@@ -366,6 +371,7 @@ private fun TopBarOverflowMenu(
         ) {
             val newConversationText = stringResource(R.string.action_new_conversation)
             val openTerminalText = stringResource(R.string.action_open_terminal)
+            val openScriptsText = stringResource(R.string.route_scripts)
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
@@ -376,6 +382,7 @@ private fun TopBarOverflowMenu(
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
+                openScriptsText,
                 launchKimiWebText,
                 openBrowserText,
                 stopKimiWebText,
@@ -398,6 +405,16 @@ private fun TopBarOverflowMenu(
                     ),
                     DropdownItem(
                         text = openTerminalText,
+                        icon = { modifier ->
+                            Icon(
+                                imageVector = Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                modifier = modifier.size(TopBarMenuIconSize),
+                            )
+                        },
+                    ),
+                    DropdownItem(
+                        text = openScriptsText,
                         icon = { modifier ->
                             Icon(
                                 imageVector = Icons.Rounded.Terminal,
@@ -456,6 +473,39 @@ private fun TopBarOverflowMenu(
                         ),
                     )
                 } else emptyList()
+                ) + (if (onOpenVirtualScreen != null) listOf(
+                    DropdownItem(
+                        text = openVirtualScreenText,
+                        icon = { modifier ->
+                            Icon(
+                                imageVector = Icons.Rounded.Smartphone,
+                                contentDescription = null,
+                                modifier = modifier.size(TopBarMenuIconSize),
+                            )
+                        },
+                    ),
+                ) else emptyList()) + (if (canStopKimiWeb) listOf(
+                    DropdownItem(
+                        text = stopKimiWebText,
+                        icon = { modifier ->
+                            Icon(
+                                imageVector = Icons.Rounded.Stop,
+                                contentDescription = null,
+                                modifier = modifier.size(TopBarMenuIconSize),
+                            )
+                        },
+                    ),
+                ) else emptyList())
+            }
+            // 菜单项与动作一一对应：加了「打开虚拟屏」后索引不再固定，改为按列表分派。
+            val menuActions: List<() -> Unit> = buildList {
+                add(onNewConversation)
+                add(onOpenTerminal)
+                add(onOpenScripts)
+                add(onLaunchKimiWeb)
+                add(onOpenBrowser)
+                if (onOpenVirtualScreen != null) add(onOpenVirtualScreen)
+                if (canStopKimiWeb) add(onStopKimiWeb)
             }
             ListPopupColumn {
                 menuItems.forEachIndexed { index, item ->
@@ -496,6 +546,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)
     is AppRoute.WebToolsSettings -> stringResource(R.string.web_tools_settings_title)
+    is AppRoute.Scripts -> stringResource(R.string.route_scripts)
     is AppRoute.Skills -> stringResource(R.string.route_skills)
     is AppRoute.Characters -> "角色"
     is AppRoute.CharacterDetail -> "角色详情"
