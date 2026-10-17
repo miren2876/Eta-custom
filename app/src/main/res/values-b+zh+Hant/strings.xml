@@ -1606,4 +1606,9 @@
     <string name="state_ui_memory_tidy_done">檔案已整理</string>
     <string name="state_ui_memory_split_done">已拆出 %1$d 個檔案</string>
     <string name="state_ui_memory_split_failed">拆分失敗，檔案保持原樣</string>
+    <string name="memory_archive_split_running">正在拆分…</string>
+    <string name="memory_archive_split_plan">已選 %1$d / %2$d 份</string>
+    <string name="memory_archive_split_delete_original">拆分後刪除原檔案</string>
+    <string name="memory_archive_split_pointer">本檔案已拆分，內容見下列檔案。</string>
+    <string name="memory_archive_split_section">分檔</string>
 </resources>

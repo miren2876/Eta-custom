@@ -115,8 +115,18 @@ sealed interface AgentMemoryAction {
 
     data object TidyDiscarded : AgentMemoryAction
 
-    /** 拆分档案：parts 是「新档案名 to 原始标题行」，选中的章节各写成一个新档案。 */
-    data class SplitFile(val parts: List<Pair<String, String>>) : AgentMemoryAction
+    /** 拆分档案：先让模型出方案，确认后写盘。 */
+    data class SplitFile(val name: String) : AgentMemoryAction
+
+    data class SplitRename(val index: Int, val name: String) : AgentMemoryAction
+
+    data class SplitToggle(val index: Int) : AgentMemoryAction
+
+    data class SplitDeleteOriginal(val enabled: Boolean) : AgentMemoryAction
+
+    data object SplitConfirmed : AgentMemoryAction
+
+    data object SplitDiscarded : AgentMemoryAction
 
     /** 展开某一节的正文（点击章节行）。 */
     data class ExpandSection(val title: String) : AgentMemoryAction

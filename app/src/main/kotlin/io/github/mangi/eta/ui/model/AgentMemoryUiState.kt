@@ -54,6 +54,17 @@ data class AgentMemoryTidyPreview(
     val afterLines: Int get() = if (after.isEmpty()) 0 else after.split('\n').size
 }
 
+/** 拆分方案的一份：确认视图里可改名、可取消勾选。 */
+@Immutable
+data class AgentMemorySplitPartUi(
+    val name: String,
+    val body: String,
+    val enabled: Boolean = true,
+) {
+    val lineCount: Int get() = if (body.isEmpty()) 0 else body.split('\n').size
+    val summary: String get() = body.split('\n').firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+}
+
 @Immutable
 data class AgentMemoryUiState(
     val enabled: Boolean = true,
@@ -79,8 +90,13 @@ data class AgentMemoryUiState(
     val expandedFileName: String? = null,
     val expandedFileText: String = "",
     /** 整理中的档案：算完先给预览，用户确认后才覆盖。 */
+    /** 整理中的档案：算完先给预览，用户确认后才覆盖。 */
     val isTidying: Boolean = false,
     val tidyPreview: AgentMemoryTidyPreview? = null,
+    /** 拆分中的档案：方案回来后进确认视图，确认前不写盘。 */
+    val isSplitting: Boolean = false,
+    val splitPreview: List<AgentMemorySplitPartUi>? = null,
+    val splitDeleteOriginal: Boolean = false,
     val fileDraft: String = "",
     val fileSaved: String = "",
     val isSavingFile: Boolean = false,

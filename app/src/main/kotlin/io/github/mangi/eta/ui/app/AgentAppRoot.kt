@@ -774,10 +774,7 @@ fun AgentAppRoot(
                             is AgentMemoryAction.MergeFiles -> memory.mergeFiles(action.names)
                             is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
                             AgentMemoryAction.CollapseSection -> memory.collapseSection()
-                            AgentMemoryAction.TidyFile,
-                            AgentMemoryAction.TidyConfirmed,
-                            AgentMemoryAction.TidyDiscarded,
-                            is AgentMemoryAction.SplitFile -> Unit
+                            else -> Unit
                         }
                     },
                 )
@@ -801,7 +798,12 @@ fun AgentAppRoot(
                             AgentMemoryAction.TidyFile -> memory.tidyFile()
                             AgentMemoryAction.TidyConfirmed -> memory.confirmTidy()
                             AgentMemoryAction.TidyDiscarded -> memory.discardTidy()
-                            is AgentMemoryAction.SplitFile -> memory.splitFile(action.parts)
+                            is AgentMemoryAction.SplitFile -> memory.splitFile(action.name)
+                            is AgentMemoryAction.SplitRename -> memory.renameSplitPart(action.index, action.name)
+                            is AgentMemoryAction.SplitToggle -> memory.toggleSplitPart(action.index)
+                            is AgentMemoryAction.SplitDeleteOriginal -> memory.setSplitDeleteOriginal(action.enabled)
+                            AgentMemoryAction.SplitConfirmed -> memory.confirmSplit()
+                            AgentMemoryAction.SplitDiscarded -> memory.discardSplit()
                             is AgentMemoryAction.ArchiveFiles -> {
                                 memory.archiveFiles(action.names)
                                 popRoute()
