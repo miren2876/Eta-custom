@@ -75,16 +75,12 @@ internal fun MemoryArchiveScreen(
         item(key = "info-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_info_title)) }
         item(key = "info") {
             EtaPreferenceGroup {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text(
-                        text = name,
-                        color = MiuixTheme.colorScheme.onSurface,
-                        style = MiuixTheme.textStyles.body1,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = buildString {
                             append(stringResource(R.string.memory_file_lines, file?.lineCount ?: 0))
@@ -105,17 +101,26 @@ internal fun MemoryArchiveScreen(
                                 append(" · ").append(stringResource(R.string.memory_archive_info_cold))
                             }
                         },
+                        modifier = Modifier.weight(1f),
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         style = MiuixTheme.textStyles.footnote1,
                     )
+                    if (file?.cold == true) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.memory_archive_info_cold),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            style = MiuixTheme.textStyles.footnote1,
+                        )
+                    }
                 }
             }
         }
 
         item(key = "body-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_body_title)) }
         item(key = "body") {
-            EtaCard(modifier = Modifier.fillParentMaxHeight(0.55f)) {
-                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            EtaCard(modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
                     if (editing) {
                         MemoryEditor(
                             value = state.fileDraft,
@@ -147,12 +152,14 @@ internal fun MemoryArchiveScreen(
                     onSave = { onAction(AgentMemoryAction.SaveFile) },
                 )
                 if (state.fileDraft.isNotBlank()) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
                         EtaTextButton(
                             text = stringResource(R.string.memory_clear),
                             enabled = !state.isSavingFile,
                             onClick = { showClearConfirm = true },
-                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
