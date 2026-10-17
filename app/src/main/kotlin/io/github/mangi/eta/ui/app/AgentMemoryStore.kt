@@ -120,6 +120,13 @@ internal class AgentMemoryStore(
                             archiveList = bundle.archivedSections.map { it.toUi(now, coldTitles) },
                             // 刷新时保留「撤销归档」入口，只有离开记忆页才清掉。
                             lastArchivedTitles = memoryState.lastArchivedTitles,
+                            // 档案页的编辑态也要保留：否则保存 / 整理后一刷新，档案页就空了。
+                            expandedFileName = memoryState.expandedFileName,
+                            expandedFileText = memoryState.fileDraft,
+                            fileDraft = memoryState.fileDraft,
+                            fileSaved = memoryState.fileSaved,
+                            isTidying = memoryState.isTidying,
+                            isSplitting = memoryState.isSplitting,
                         )
                     }
                 },
@@ -382,27 +389,6 @@ internal class AgentMemoryStore(
                         }
                     },
                 )
-        }
-    }
-
-    /** 记忆页直接对某个档案发起整理 / 拆分：先加载正文，再走同一套流程。 */
-    fun openFileAction(name: String, tidy: Boolean) {
-        if (name.isBlank()) return
-        if (memoryState.expandedFileName == name && memoryState.fileDraft.isNotBlank()) {
-            if (tidy) tidyFile() else splitFile(name)
-            return
-        }
-        scope.launch(Dispatchers.IO) {
-            val text = runCatching { AgentMemoryRepository.fileText(name) }.getOrDefault("")
-            withContext(Dispatchers.Main) {
-                memoryState = memoryState.copy(
-                    expandedFileName = name,
-                    expandedFileText = text,
-                    fileDraft = text,
-                    fileSaved = text,
-                )
-                if (tidy) tidyFile() else splitFile(name)
-            }
         }
     }
 
