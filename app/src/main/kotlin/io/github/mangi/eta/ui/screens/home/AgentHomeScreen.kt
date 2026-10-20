@@ -31,6 +31,7 @@ internal fun AgentHomeScreen(
     historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
     isDrawerOpen: Boolean = false,
     scrollToTopRequest: Int = 0,
+    workProcessRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     // key 内保持完整分支，避免提前返回遗留无法转换为 DEX 的编译器标记。
@@ -92,6 +93,47 @@ internal fun AgentHomeScreen(
                     modifier = modifier,
                 )
             }
+        CompositionLocalProvider(LocalRoleplayChat provides state.roleplayChatUi()) {
+        AgentChatBody(
+            messages = state.messages,
+            modelPickerState = modelPickerState,
+            isCompacting = state.isCompacting,
+            input = state.input,
+            isStreaming = state.isStreaming,
+            reasoningEffort = state.reasoningEffort,
+            availableReasoningEfforts = state.availableReasoningEfforts,
+            pendingImages = state.pendingImages,
+            pendingFileReferences = state.pendingFileReferences,
+            messageEdit = state.messageEdit,
+            characterName = state.roleplay?.characterName,
+            conversationId = conversationKey,
+            scrollToTopRequest = scrollToTopRequest,
+            workProcessRequest = workProcessRequest,
+            onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
+            onCompactContext = { onAction(AgentHomeAction.CompactContext) },
+            canCompactContext = state.canCompactContext,
+            onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
+            onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },
+            onStop = { onAction(AgentHomeAction.StopRun) },
+            onAttachImage = { uri -> onAction(AgentHomeAction.ImageAttached(uri)) },
+            onRemoveImage = { id -> onAction(AgentHomeAction.RemoveImage(id)) },
+            onAttachFiles = { uris -> onAction(AgentHomeAction.FilesAttached(uris)) },
+            onAttachFolder = { uri -> onAction(AgentHomeAction.FolderAttached(uri)) },
+            onAttachFilePath = { path -> onAction(AgentHomeAction.FilePathAttached(path)) },
+            onRemoveFileReference = { id -> onAction(AgentHomeAction.RemoveFileReference(id)) },
+            onEditMessage = { id -> onAction(AgentHomeAction.EditMessage(id)) },
+            onCancelMessageEdit = { onAction(AgentHomeAction.CancelMessageEdit) },
+            onDeleteMessage = { id -> onAction(AgentHomeAction.DeleteMessage(id)) },
+            onRegenerateMessage = { id -> onAction(AgentHomeAction.RegenerateMessage(id)) },
+            onSelectReplyCandidate = { id, index -> onAction(AgentHomeAction.SelectReplyCandidate(id, index)) },
+            onSuggestionClick = { prompt ->
+                onAction(AgentHomeAction.SubmitMessage(prompt))
+            },
+            onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
+            onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
+            isDrawerOpen = isDrawerOpen,
+            modifier = modifier,
+        )
         }
     }
 }

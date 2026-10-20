@@ -97,6 +97,7 @@ import io.github.mangi.eta.ui.model.PendingImageUi
 import io.github.mangi.eta.ui.model.QueuedMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
+import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.latestContextUsage
@@ -106,6 +107,7 @@ import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -181,6 +183,7 @@ internal fun AgentChatBody(
     onHistoryViewportChanged: (Boolean) -> Unit = {},
     isDrawerOpen: Boolean = false,
     scrollToTopRequest: Int = 0,
+    workProcessRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState(initialFirstVisibleItemIndex = messages.size + if (hasEarlierMessages) 1 else 0)
@@ -240,7 +243,13 @@ internal fun AgentChatBody(
         SpeechAutoReadAloud(messages = messages, isStreaming = isStreaming)
         AgentChatScaffold(
             visibleMessages = visibleMessages,
+<<<<<<< HEAD
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
+=======
+            hasMessages = visibleMessages.isNotEmpty(),
+            scrollToTopRequest = scrollToTopRequest,
+            workProcessRequest = workProcessRequest,
+>>>>>>> d1883070 (feat(chat): 首页顶栏改两行左对齐标题，副标题点击定位本轮工作过程)
             scrollState = scrollState,
             scrollToTopRequest = scrollToTopRequest,
             conversationId = conversationId,
@@ -313,6 +322,7 @@ private fun AgentChatScaffold(
     visibleMessages: List<AgentChatMessageUi>,
     hasMessages: Boolean,
     scrollToTopRequest: Int,
+    workProcessRequest: Int,
     scrollState: LazyListState,
     conversationId: String?,
     input: String,
@@ -430,6 +440,7 @@ private fun AgentChatScaffold(
                 visibleMessages = visibleMessages,
                 scrollState = scrollState,
                 scrollToTopRequest = scrollToTopRequest,
+                workProcessRequest = workProcessRequest,
                 isStreaming = isStreaming,
                 bottomInset = bottomPadding,
                 keepBottomAnchored = keepBottomAnchored,
@@ -463,6 +474,7 @@ internal fun AgentConversationMessages(
     visibleMessages: List<AgentChatMessageUi>,
     scrollState: LazyListState,
     scrollToTopRequest: Int = 0,
+    workProcessRequest: Int = 0,
     isStreaming: Boolean,
     bottomInset: Dp,
     keepBottomAnchored: Boolean,
@@ -496,6 +508,7 @@ internal fun AgentConversationMessages(
     } else {
         null
     }
+    val lastWorkProcessKey = timelineEntries.lastOrNull { it is AgentTimelineEntry.WorkProcess }?.key
     // 复制按钮只出现在每轮对话的最终结果上，中间步骤的过渡文本不提供复制入口。
     // 流式进行中当前这一轮尚未收尾，此时的“最后一条正文”只是中间步骤，不标记。
     val finalResultMessageIds = remember(visibleMessages, isStreaming) {
@@ -547,6 +560,37 @@ internal fun AgentConversationMessages(
         onBottomAnchorChanged(false)
         try {
             scrollState.animateScrollToItem(0)
+        } finally {
+            suppressBottomAnchor = false
+        }
+    }
+
+    // 顶栏副标题点击：定位到最近一轮工作过程并展开；本轮正在运行时定位到正在运行的节点。
+    var handledWorkProcessRequest by remember { mutableIntStateOf(workProcessRequest) }
+    var workProcessRevealRequest by remember { mutableIntStateOf(0) }
+    LaunchedEffect(workProcessRequest) {
+        if (workProcessRequest == handledWorkProcessRequest) return@LaunchedEffect
+        handledWorkProcessRequest = workProcessRequest
+        val index = timelineEntries.indexOfLast { it is AgentTimelineEntry.WorkProcess }
+        if (index < 0) return@LaunchedEffect
+        val running = (timelineEntries[index] as AgentTimelineEntry.WorkProcess)
+            .messages
+            .any { message -> message.isRunningWorkNode() }
+        AndroidAgentLogger.info("Chat reveal work process (index=$index running=$running)")
+        suppressBottomAnchor = true
+        // 与双击回顶一致：主动去看历史内容后不再把用户拉回尾部。
+        onBottomAnchorChanged(false)
+        try {
+            if (running) {
+                // 卡片可能还没进入组合：先落到它的位置，再让卡片把运行中的节点带进视野。
+                scrollState.scrollToItem(index)
+                withFrameNanos { }
+            } else {
+                scrollState.animateScrollToItem(index)
+            }
+            workProcessRevealRequest += 1
+            // 等展开动画把列表撑开后再放开跟底抑制。
+            delay(WorkProcessRevealSettleMillis)
         } finally {
             suppressBottomAnchor = false
         }
@@ -822,6 +866,7 @@ internal fun AgentConversationMessages(
                         AgentWorkProcess(
                             id = entry.key,
                             active = entry.key == activeWorkProcessKey,
+                            revealRequest = if (entry.key == lastWorkProcessKey) workProcessRevealRequest else 0,
                             messages = entry.messages,
                             assistantOverlay = assistantOverlay,
                             onOpenBrowser = onOpenBrowser,
@@ -984,6 +1029,13 @@ internal fun List<AgentChatMessageUi>.toTimelineEntries(
 private fun AgentTimelineEntry.contentType(): Any = when (this) {
     is AgentTimelineEntry.WorkProcess -> AgentTimelineEntry.WorkProcess::class
     is AgentTimelineEntry.Message -> message::class
+}
+
+/** 工作过程里正在进行的节点：流式思考，或正在跑的工具调用。 */
+private fun AgentChatMessageUi.isRunningWorkNode(): Boolean = when (this) {
+    is ThinkingMessageUi -> isStreaming
+    is ToolActivityMessageUi -> status == ToolActivityStatusUi.Running
+    else -> false
 }
 
 private fun AgentChatMessageUi.isWorkProcessMessage(): Boolean =
@@ -1156,6 +1208,13 @@ private fun AgentChatBottomBar(
 
 private val ChatBottomFrostHeight = 24.dp
 
+<<<<<<< HEAD
+=======
+/** 副标题定位后，等展开动画把列表撑开再放开跟底抑制。 */
+private const val WorkProcessRevealSettleMillis = 400L
+
+private const val ChatBottomSentinelKey = "agent-chat-bottom-sentinel"
+>>>>>>> d1883070 (feat(chat): 首页顶栏改两行左对齐标题，副标题点击定位本轮工作过程)
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f

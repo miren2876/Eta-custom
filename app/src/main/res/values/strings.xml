@@ -1792,4 +1792,8 @@
   <string name="scripts_stop_message">Stop “%1$s”? CPU and memory usage will be cleared</string>
   <string name="scripts_restart_hint">Restart the script for the change to take effect</string>
   <string name="scripts_command_required">Command cannot be empty</string>
+  <string name="top_bar_status_running_tool">Running · %1$s</string>
+  <string name="top_bar_status_thinking">Thinking</string>
+  <string name="top_bar_status_running">Running</string>
+  <string name="top_bar_status_idle">%1$d messages · %2$s</string>
 </resources>

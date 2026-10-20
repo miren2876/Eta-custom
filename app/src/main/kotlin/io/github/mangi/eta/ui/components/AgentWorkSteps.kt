@@ -36,6 +36,18 @@ internal sealed interface AgentWorkStep {
     }
 }
 
+/** 这条节点是不是正在进行的步骤：流式思考，或正在跑的工具调用。 */
+internal val AgentWorkStep.running: Boolean
+    get() = when (this) {
+        is AgentWorkStep.Single -> when (val message = message) {
+            is ThinkingMessageUi -> message.isStreaming
+            is ToolActivityMessageUi -> message.status == ToolActivityStatusUi.Running
+            else -> false
+        }
+        is AgentWorkStep.ToolGroup -> running
+        is AgentWorkStep.Skill -> running
+    }
+
 internal fun ToolActivityMessageUi.isSkillRead(): Boolean = toolName in SKILL_READ_TOOLS
 
 /** 技能读取的标题：formatter 写成「技能 · <id>」；摘要为空时由节点侧退回工具名。 */
