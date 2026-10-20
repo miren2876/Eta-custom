@@ -358,14 +358,16 @@ private fun HomeTopAppBar(
             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
             .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
-            // 大字号下两行放不下时让顶栏长高，而不是把副标题裁掉。
-            .heightIn(min = TopAppBarDefaults.CollapsedHeight)
             .clipToBounds(),
     ) {
         // 先算好宽度上限：进入 RowScope 之后就地取 BoxWithConstraints 的 maxWidth 会被作用域挡住。
         val titleWidthCap = maxWidth * TopBarTitleMaxWidthFraction
+        // 只能填满宽度：topBar 槽位给出的最大高度是整屏，fillMaxSize 会把顶栏撑满，聊天区被挤成 0 高。
+        // 高度由内容决定，最小 52dp；大字号下两行放不下时顶栏长高，而不是把副标题裁掉。
         Row(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = TopAppBarDefaults.CollapsedHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             navigationIcon()
