@@ -372,23 +372,25 @@ private fun HomeTopAppBar(
         ) {
             navigationIcon()
             Column(
+                // weight 必须填满剩余宽度：否则右侧按钮会贴着标题，而不是贴屏幕右边。
                 modifier = Modifier
-                    .weight(1f, fill = false)
-                    .widthIn(max = titleWidthCap)
+                    .weight(1f)
                     .padding(start = 4.dp),
                 horizontalAlignment = Alignment.Start,
             ) {
                 if (title.isNotBlank()) {
                     Text(
                         text = title,
-                        style = MiuixTheme.textStyles.title3,
+                        style = MiuixTheme.textStyles.body1,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.pointerInput(title) {
-                            detectTapGestures(onDoubleTap = { onTitleDoubleTap() })
-                        },
+                        modifier = Modifier
+                            .widthIn(max = titleWidthCap)
+                            .pointerInput(title) {
+                                detectTapGestures(onDoubleTap = { onTitleDoubleTap() })
+                            },
                     )
                 }
                 if (subtitle.isNotBlank()) {
@@ -398,7 +400,9 @@ private fun HomeTopAppBar(
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(onClick = onSubtitleClick),
+                        modifier = Modifier
+                            .widthIn(max = titleWidthCap)
+                            .clickable(onClick = onSubtitleClick),
                     )
                 }
             }
