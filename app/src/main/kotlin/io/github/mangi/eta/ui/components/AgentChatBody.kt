@@ -555,28 +555,6 @@ internal fun AgentConversationMessages(
         }
     }
 
-    // 临时诊断：把滚动位置、跟底状态与拖动状态打到日志里，用于定位"只能单向滚动"。
-    LaunchedEffect(scrollState) {
-        snapshotFlow {
-            val info = scrollState.layoutInfo
-            listOf(
-                info.visibleItemsInfo.firstOrNull()?.index ?: -1,
-                info.visibleItemsInfo.lastOrNull()?.index ?: -1,
-                scrollState.canScrollBackward,
-                scrollState.canScrollForward,
-                keepBottomAnchored,
-                isUserDragging,
-                isBottomSettling,
-                info.totalItemsCount,
-            )
-        }.distinctUntilChanged().collect { state ->
-            AndroidAgentLogger.info(
-                "ChatScroll first=${state[0]} last=${state[1]} back=${state[2]} fwd=${state[3]} " +
-                    "anchor=${state[4]} drag=${state[5]} settle=${state[6]} total=${state[7]}",
-            )
-        }
-    }
-
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
             isStreaming = isStreaming,

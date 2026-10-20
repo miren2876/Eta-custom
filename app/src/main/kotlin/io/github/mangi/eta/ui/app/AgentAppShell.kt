@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -299,6 +300,7 @@ private fun AgentTopBar(
             title = homeConversationTitle,
             subtitle = homeConversationSubtitle,
             color = color,
+            scrollBehavior = scrollBehavior,
             navigationIcon = navigationIcon,
             actions = actions,
             onTitleDoubleTap = { currentOnTitleDoubleTap() },
@@ -341,11 +343,22 @@ private fun HomeTopAppBar(
     title: String,
     subtitle: String,
     color: Color,
+    scrollBehavior: ScrollBehavior?,
     navigationIcon: @Composable () -> Unit,
     actions: @Composable RowScope.() -> Unit,
     onTitleDoubleTap: () -> Unit,
     onSubtitleClick: () -> Unit,
 ) {
+    // 与 Miuix SmallTopAppBar 同一契约：固定高度顶栏必须把共享的 ScrollBehavior 钉住
+    // （limit/offset 归零），否则内容区手指上滑的位移会被"折叠顶栏"的 nested scroll 连接吃掉，
+    // 表现为列表只能朝一个方向滚。
+    SideEffect {
+        scrollBehavior?.state?.let { state ->
+            // pinnedBySmallTopAppBar 是 Miuix 内部字段，这里只做对外可见的归零。
+            if (state.heightOffsetLimit != 0f) state.heightOffsetLimit = 0f
+            if (state.heightOffset != 0f) state.heightOffset = 0f
+        }
+    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
