@@ -1686,4 +1686,8 @@
   <string name="scripts_stop_message">确认停止「%1$s」？停止后占用清零</string>
   <string name="scripts_restart_hint">保存后需重新启动才生效</string>
   <string name="scripts_command_required">命令不能为空</string>
+  <string name="top_bar_status_running_tool">正在执行 · %1$s</string>
+  <string name="top_bar_status_thinking">思考中</string>
+  <string name="top_bar_status_running">正在执行</string>
+  <string name="top_bar_status_idle">%1$d 条消息 · %2$s</string>
 </resources>
