@@ -643,6 +643,7 @@ internal fun AgentConversationMessages(
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     val historyPaging = rememberChatHistoryPaging(
         scrollState = scrollState,
         entries = timelineEntries,
@@ -681,6 +682,8 @@ internal fun AgentConversationMessages(
     }
 >>>>>>> 78b5aaf2 (chore(chat): 加临时诊断日志，定位只能单向滚动的问题)
 
+=======
+>>>>>>> 956076bd (fix(chat): 修首页列表只能单向滚动，撤掉临时诊断日志)
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
             isStreaming = isStreaming,
