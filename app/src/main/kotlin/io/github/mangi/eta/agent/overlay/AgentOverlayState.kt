@@ -4,12 +4,20 @@ import androidx.compose.runtime.Immutable
 import io.github.mangi.eta.agent.runtime.AgentEvent
 
 /** Agent 浮窗所处的阶段。 */
-internal enum class AgentOverlayPhase { RUNNING, PAUSED, FINISHED, FAILED }
+internal enum class AgentOverlayPhase { RUNNING, PAUSED, FINISHED, FAILED, IDLE }
 
 /**
  * Agent 浮窗的渲染状态。由 [AgentEvent] 流累积而来，[AgentOverlayBubble] 直接消费。
  */
 @Immutable
+/** 悬浮胶囊展开后用于跳转的一条会话：running 表示还在跑，false 表示已完成但仍可点回。 */
+internal data class AgentOverlayRunningSession(
+    val runId: String,
+    val conversationId: String,
+    val title: String,
+    val running: Boolean = true,
+)
+
 internal data class AgentOverlayState(
     val phase: AgentOverlayPhase = AgentOverlayPhase.RUNNING,
     val round: Int = 0,
@@ -20,6 +28,10 @@ internal data class AgentOverlayState(
      * 只保留尾部一小段，供用户扫一眼知道 Agent 在想什么；完整推理仍在会话里。
      */
     val thought: String = "",
+    /** 胶囊展开后的会话列表：运行中的在前，其后是最近完成的（最多 3 条）。 */
+    val runningSessions: List<AgentOverlayRunningSession> = emptyList(),
+    /** 完成后还没看过的条数：收起态小球右上角显示（上限 9）。 */
+    val finishedBadge: Int = 0,
 ) {
     companion object {
         val Initial = AgentOverlayState(status = AgentOverlayStatus.Reasoning)
