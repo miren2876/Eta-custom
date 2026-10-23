@@ -12,6 +12,7 @@ import androidx.room.migration.Migration
         AgentTextChunkEntity::class,
         ConversationEntity::class,
         ConversationContextCheckpointEntity::class,
+        ConversationFolderEntity::class,
         ConversationMessageEntity::class,
         ConversationStateEntity::class,
         ProviderEntity::class,
@@ -26,7 +27,7 @@ import androidx.room.migration.Migration
         CharacterEntity::class,
         UserPersonaEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -66,6 +67,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_20_21,
                         MIGRATION_21_22,
                         MIGRATION_22_23,
+                        MIGRATION_23_24,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -116,6 +118,19 @@ internal abstract class EtaDatabase : RoomDatabase() {
 
         internal val MIGRATION_22_23 = Migration(22, 23) { database ->
             database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
+        }
+
+        /** 会话组织：文件夹 / 置顶 / 归档。上游 3.3.3 已占用 22→23，这些列并到 23→24。 */
+        internal val MIGRATION_23_24 = Migration(23, 24) { database ->
+            database.execSQL("ALTER TABLE conversations ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
+            database.execSQL("ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE conversations ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS conversation_folders (" +
+                    "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, " +
+                    "sort_index INTEGER NOT NULL, created_at INTEGER NOT NULL)"
+            )
+        }
         }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
