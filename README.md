@@ -28,11 +28,11 @@
 | --- | --- | --- |
 | `01-virtual-screen.patch` | 虚拟屏（`agent/display`、虚拟屏路由策略与工具目录、悬浮小窗）、悬浮胶囊与 overlay、虚拟屏设置页 | 33 |
 | `02-ask-user.patch` | 不确定时向我提问：挂起请求状态机、`ask_user` Schema、提问卡片 | 3 |
-| `03-chat-organization.patch` | 会话组织：文件夹 / 置顶 / 归档的列与迁移（并入 23→24）、管理聊天页 | 4 |
+| `03-chat-organization.patch` | 会话组织：文件夹 / 置顶 / 归档的列与迁移（并入 23→24，逐列判重；旧定制库由幂等的 24→25 补齐）、管理聊天页 | 4 |
 | `04-memory-subsystem.patch` | 记忆子系统：画像 / 工作记忆 / 条目池与 EI、检索与归档、空闲整理、档案分卷与按节读（含档案页）、记忆页与工具、备份、内置 `memory-keeper` | 20 |
 | `05-agent-runtime.patch` | 运行时：工具体系与能力快照、提示词、模型客户端、多会话、Linux 运行通知、Root PTY、`Prefs` | 24 |
 | `06-ui-and-shell.patch` | 界面：聊天气体与输入栏、工作过程节点、侧栏、两行顶栏标题与副标题定位、滚动与跟底、自动朗读开关、设置页、路由 | 28 |
-| `07-build-resources-tests.patch` | 构建与资源：`build.gradle.kts`、`proguard-rules.pro`、Manifest、字符串资源、单元测试 | 24 |
+| `07-build-resources-tests.patch` | 构建与资源：`build.gradle.kts`、`proguard-rules.pro`、Manifest、字符串资源、单元测试 | 23 |
 | `08-scripts-page.patch` | 脚本管理：脚本库与运行采样（`ScriptLibrary`、`ScriptRuntimeUsage`）、`ScriptLibraryStore`、管理页、单元测试 | 6 |
 
 ## 应用方式
@@ -48,8 +48,8 @@ done
 ```
 
 - 补丁以 `git diff --binary 5e9d3a7b` 生成（按整文件分组），**必须按顺序应用**；`README.md` 与 `patches/` 不进补丁。
-- 数据库：3.3.3 上游已占用 `22→23`（`model_providers.auth_mode`），会话组织的列与 `conversation_folders` 表并入 `23→24`，DB 版本 24。
-- 验证：应用后 `git write-tree` 应得到 `74681df31931357b6a6a949e76b0506062065496`（与 `patches-3.3.3` 的源码树相同，不含 `patches/` 与 `README.md`）。
+- 数据库：3.3.3 上游已占用 `22→23`（`model_providers.auth_mode`），会话组织的列与 `conversation_folders` 表并入 `23→24`；3.3.1 定制库与 3.3.3 同号但 schema 不同，由逐列判重的 `24→25` 补齐，DB 版本 25。改 schema 必须递增 DB 版本号，同号不同 schema 会被 Room 判为迁移失败并触发破坏性重建。
+- 验证：应用后 `git write-tree` 应得到 `f3db25e86c77e4c61b9bb011869f639307535a34`（与 `patches-3.3.3` 的源码树相同，不含 `patches/` 与 `README.md`）。
 
 ## 改造内容
 

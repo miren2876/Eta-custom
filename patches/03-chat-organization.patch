@@ -132,7 +132,7 @@ index 4918bdb2..0ab369ec 100644
  
  internal data class ConversationMessageContent(val id: String, val content: String)
 diff --git a/app/src/main/kotlin/io/github/mangi/eta/data/db/EtaDatabase.kt b/app/src/main/kotlin/io/github/mangi/eta/data/db/EtaDatabase.kt
-index a5b4c78a..51c6fd24 100644
+index a5b4c78a..1057404b 100644
 --- a/app/src/main/kotlin/io/github/mangi/eta/data/db/EtaDatabase.kt
 +++ b/app/src/main/kotlin/io/github/mangi/eta/data/db/EtaDatabase.kt
 @@ -12,6 +12,7 @@ import androidx.room.migration.Migration
@@ -148,32 +148,60 @@ index a5b4c78a..51c6fd24 100644
          UserPersonaEntity::class,
      ],
 -    version = 23,
-+    version = 24,
++    version = 25,
      exportSchema = false,
  )
  internal abstract class EtaDatabase : RoomDatabase() {
-@@ -66,6 +67,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
+@@ -66,6 +67,8 @@ internal abstract class EtaDatabase : RoomDatabase() {
                          MIGRATION_20_21,
                          MIGRATION_21_22,
                          MIGRATION_22_23,
 +                        MIGRATION_23_24,
++                        MIGRATION_24_25,
                      )
                      .addCallback(object : Callback() {
                          override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
-@@ -118,6 +120,18 @@ internal abstract class EtaDatabase : RoomDatabase() {
+@@ -118,6 +121,45 @@ internal abstract class EtaDatabase : RoomDatabase() {
              database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
          }
  
-+        /** 会话组织：文件夹 / 置顶 / 归档。上游 3.3.3 已占用 22→23，这些列并到 23→24。 */
++        /**
++         * 会话组织：文件夹 / 置顶 / 归档。上游 3.3.3 已占用 22→23，这些列并到 23→24。
++         * 3.3.1 定制版的 22→23 加过其中一部分列，逐列判重后再补，避免 duplicate column 让整条迁移回滚。
++         */
 +        internal val MIGRATION_23_24 = Migration(23, 24) { database ->
-+            database.execSQL("ALTER TABLE conversations ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
-+            database.execSQL("ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
-+            database.execSQL("ALTER TABLE conversations ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
++            ensureConversationOrganizationColumns(database)
++        }
++
++        /**
++         * 3.3.1 定制分支的 24 版库缺 folder_id / is_pinned，与 3.3.3 的同号 schema 不同。
++         * 版本号递增到这里，用幂等补齐接住这批库，不重建、不清数据。
++         */
++        internal val MIGRATION_24_25 = Migration(24, 25) { database ->
++            ensureConversationOrganizationColumns(database)
++        }
++
++        private fun ensureConversationOrganizationColumns(database: androidx.sqlite.db.SupportSQLiteDatabase) {
 +            database.execSQL(
 +                "CREATE TABLE IF NOT EXISTS conversation_folders (" +
 +                    "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, " +
 +                    "sort_index INTEGER NOT NULL, created_at INTEGER NOT NULL)"
 +            )
++            val existingColumns = database.query("PRAGMA table_info(conversations)").use { cursor ->
++                val nameIndex = cursor.getColumnIndex("name")
++                buildSet {
++                    while (cursor.moveToNext()) add(cursor.getString(nameIndex))
++                }
++            }
++            if ("folder_id" !in existingColumns) {
++                database.execSQL("ALTER TABLE conversations ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
++            }
++            if ("is_pinned" !in existingColumns) {
++                database.execSQL("ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
++            }
++            if ("is_archived" !in existingColumns) {
++                database.execSQL("ALTER TABLE conversations ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
++            }
 +        }
 +
          private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {

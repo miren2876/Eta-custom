@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.AddComment
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Stop
@@ -465,6 +466,7 @@ private fun TopBarOverflowMenu(
         ) {
             val newConversationText = stringResource(R.string.action_new_conversation)
             val openTerminalText = stringResource(R.string.action_open_terminal)
+            val openScriptsText = stringResource(R.string.route_scripts)
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
@@ -475,6 +477,7 @@ private fun TopBarOverflowMenu(
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
+                openScriptsText,
                 launchKimiWebText,
                 openBrowserText,
                 stopKimiWebText,
@@ -501,6 +504,16 @@ private fun TopBarOverflowMenu(
                         icon = { modifier ->
                             Icon(
                                 imageVector = Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                modifier = modifier.size(TopBarMenuIconSize),
+                            )
+                        },
+                    ),
+                    DropdownItem(
+                        text = openScriptsText,
+                        icon = { modifier ->
+                            Icon(
+                                imageVector = Icons.Rounded.Code,
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
@@ -578,6 +591,7 @@ private fun TopBarOverflowMenu(
             val menuActions: List<() -> Unit> = buildList {
                 add(onNewConversation)
                 add(onOpenTerminal)
+                add(onOpenScripts)
                 add(onLaunchKimiWeb)
                 add(onOpenBrowser)
                 if (onOpenVirtualScreen != null) add(onOpenVirtualScreen)
