@@ -49,7 +49,7 @@ done
 
 - 补丁以 `git diff --binary 5e9d3a7b` 生成（按整文件分组），**必须按顺序应用**；`README.md` 与 `patches/` 不进补丁。
 - 数据库：3.3.3 上游已占用 `22→23`（`model_providers.auth_mode`），会话组织的列与 `conversation_folders` 表并入 `23→24`；3.3.1 定制库与 3.3.3 同号但 schema 不同，由逐列判重的 `24→25` 补齐，DB 版本 25。改 schema 必须递增 DB 版本号，同号不同 schema 会被 Room 判为迁移失败并触发破坏性重建。
-- 验证：应用后 `git write-tree` 应得到 `3279b7231361d1e46fe7a776cb3975cc39338779`（与 `patches-3.3.3` 的源码树相同，不含 `patches/` 与 `README.md`）。
+- 验证：应用后 `git write-tree` 应得到 `38f5e1ac6ab69c1632d6c8b8d21b0dc454c0f93e`（与 `patches-3.3.3` 的源码树相同，不含 `patches/` 与 `README.md`）。
 
 ## 改造内容
 
