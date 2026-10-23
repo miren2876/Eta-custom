@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.terminal.LinuxRunMonitor
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -37,6 +39,19 @@ internal class AgentExecutionService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
+        // 记忆整理用独立渠道，高重要度（弹横幅 + 响铃/震动按系统设置），让用户看得见它在跑与跑完。
+        // 系统不允许应用直接提高已有渠道的重要度，早期用 DEFAULT 建过的要删掉重建一次。
+        val existingReview = manager.getNotificationChannel(REVIEW_CHANNEL)
+        if (existingReview != null && existingReview.importance < NotificationManager.IMPORTANCE_HIGH) {
+            manager.deleteNotificationChannel(REVIEW_CHANNEL)
+        }
+        manager.createNotificationChannel(
+            NotificationChannel(
+                REVIEW_CHANNEL,
+                getString(R.string.memory_review_channel),
+                NotificationManager.IMPORTANCE_HIGH,
+            ),
+        )
         ensureForeground()
     }
 
@@ -60,6 +75,17 @@ internal class AgentExecutionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopTasks()
+        } else if (intent?.action == LinuxRunMonitor.ACTION_EXIT_LINUX) {
+            // 结束 Linux 进程要走 root shell，绝不能占在主线程上等（否则整个 App 冻住）。
+            LinuxRunMonitor.requestExit()
+            // 处理完就把自己收掉：这个动作的 PendingIntent 指向本服务，onCreate 里
+            // ensureForeground() 会先发一条「0 项任务正在运行」的通知；没有别的租约时
+            // 必须 stopForeground + stopSelf，否则那条通知会一直挂着。
+            if (leases.count() == 0) {
+                foregroundActive = false
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+            }
         } else {
             ensureForeground()
             refreshNotification()
@@ -88,15 +114,30 @@ internal class AgentExecutionService : Service() {
             foregroundActive = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+            // 执行通知已经收起，保留的虚拟屏改由自己的常驻通知承载入口。
+            io.github.mangi.eta.agent.display.VirtualScreenNotification.refresh(this)
         } else {
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
         }
     }
 
+    // 调用点自己按 SDK_INT_FULL 判版本（门槛刻意取 36.0，理由见下）；lint 的 API 库把
+    // setRequestPromotedOngoing 标成 36.1，所以这里显式抑制 NewApi。
+    @SuppressLint("NewApi")
     private fun notification(): Notification {
         val status = runStatus
+        val activePrompt = io.github.mangi.eta.agent.prompt.AgentUserPrompt.current()
+        // 有待回答的提问时，点通知直接回到聊天页（那里有完整卡片）；否则维持原有目标。
+        val openTarget = when {
+            activePrompt != null -> MainActivity::class.java
+            io.github.mangi.eta.agent.display.VirtualScreenSession.isActive() ->
+                io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java
+            else -> MainActivity::class.java
+        }
+        // 提问挂起时把会话 id 一起带过去：点通知/流体云直接落在提问所在的会话。
+        val promptConversationId = activePrompt?.conversationId
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, openTarget).apply { openConversation(promptConversationId) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
@@ -104,25 +145,71 @@ internal class AgentExecutionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val taskCount = leases.count()
-        val builder = Notification.Builder(this, CHANNEL)
+        // 没有 run 但有保留的虚拟屏会话：只有这一条通知时用虚拟屏文案。
+        val virtualScreenOnly = status == null &&
+            io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()
+        val reviewRun = leases.hasPrefix("run:${AgentMemoryIdleReview.REVIEW_RUN_PREFIX}")
+        val builder = Notification.Builder(this, if (reviewRun) REVIEW_CHANNEL else CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(getString(R.string.execution_title))
+            .setContentTitle(
+                when {
+                    reviewRun -> getString(R.string.memory_review_running_title)
+                    virtualScreenOnly -> getString(R.string.virtual_screen_notification_title)
+                    else -> getString(R.string.execution_title)
+                },
+            )
             .setContentText(
-                status?.localizedText(resources)
-                    ?: resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+                when {
+                    reviewRun -> getString(R.string.memory_review_running_content)
+                    activePrompt != null -> activePrompt.questions.firstOrNull()?.question
+                        ?.take(120) ?: getString(R.string.user_prompt_chip)
+                    virtualScreenOnly -> getString(R.string.virtual_screen_notification_content)
+                    status != null -> status.localizedText(resources)
+                    else -> resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+                },
             )
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        // 提问挂起时不放「停止」按钮：系统展开卡片里只提供「去作答」，选项在 App 的卡片里选。
+        val prompt = activePrompt
+        if (prompt == null) {
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        } else {
+            val answer = PendingIntent.getActivity(
+                this, 2,
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .apply { openConversation(promptConversationId) },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                Notification.Action.Builder(null, getString(R.string.user_prompt_open), answer).build(),
+            )
+        }
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+        // 门槛取 Baklava(Android 16, 36.0)：ColorOS 16/17 的流体云直接对接原生 Live Updates API，
+        // 36.0 设备同样支持提升（上游原先要求 QPR1，会把 36.0 的设备整体排除）。
+        // 整理 run 也申请提升：横幅被系统/渠道挡掉时，流体云胶囊是另一条可见路径。
+        if ((reviewRun || status != null || activePrompt != null) && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
-                .setShortCriticalText(status.shortText())
+                .setShortCriticalText(
+                    when {
+                        reviewRun -> getString(R.string.memory_review_chip)
+                        activePrompt != null -> getString(R.string.user_prompt_chip)
+                        else -> status!!.shortText()
+                    },
+                )
                 .setRequestPromotedOngoing(true)
         }
         return builder.build()
+    }
+
+    /** 带上「打开指定会话」的动作与 extra；会话 id 为空时保持原样。 */
+    private fun Intent.openConversation(conversationId: String?) {
+        if (conversationId.isNullOrBlank()) return
+        action = MainActivity.ACTION_OPEN_CONVERSATION_ID
+        putExtra(MainActivity.EXTRA_CONVERSATION_ID, conversationId)
     }
 
     /** 状态栏胶囊约 7 个字符可完整显示；更长时只取动作，工具名留在展开态。 */
@@ -136,13 +223,47 @@ internal class AgentExecutionService : Service() {
 
     companion object {
         private const val CHANNEL = "eta_execution"
+        private const val REVIEW_CHANNEL = "eta_memory_review"
+        private const val REVIEW_RESULT_NOTIFICATION_ID = 1109
+        private const val REVIEW_RESULT_TIMEOUT_MS = 30_000L
         private const val NOTIFICATION_ID = 1107
+
+        /**
+         * 记忆整理跑完后的短提醒：让用户看得见刚才发生了什么。
+         * 做成 **ongoing + 提升为 Live Update**（流体云胶囊），30 秒后自动消失——
+         * 横幅在 ColorOS 上可能被渠道/系统挡掉，胶囊是更稳的可见路径。
+         */
+        // 同上：调用点自己按 SDK_INT_FULL 判 36.0，lint 库标 36.1。
+        @SuppressLint("NewApi")
+        fun postMemoryReviewResult(context: Context, text: String) {
+            runCatching {
+                val builder = Notification.Builder(context, REVIEW_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(context.getString(R.string.memory_review_done_title))
+                    .setContentText(text)
+                    .setAutoCancel(true)
+                    .setTimeoutAfter(REVIEW_RESULT_TIMEOUT_MS)
+                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+                    builder
+                        .setOngoing(true)
+                        .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
+                        .setShortCriticalText(context.getString(R.string.memory_review_chip_done))
+                        .setRequestPromotedOngoing(true)
+                }
+                context.getSystemService(NotificationManager::class.java)
+                    .notify(REVIEW_RESULT_NOTIFICATION_ID, builder.build())
+            }.onFailure { failure ->
+                AndroidAgentLogger.warnThrottled("memory_review_notify_failed") {
+                    "Memory review notification failed: type=${failure.safeLogType()}"
+                }
+            }
+        }
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private val leases = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
         @Volatile private var instance: AgentExecutionService? = null
-        private var runStatus: AgentOverlayStatus? = null
+        @Volatile private var runStatus: AgentOverlayStatus? = null
         private var publishedStatusText: String? = null
 
         /**
@@ -151,13 +272,27 @@ internal class AgentExecutionService : Service() {
          */
         fun updateRunStatus(context: Context, status: AgentOverlayStatus?) {
             mainHandler.post {
+                val activeChanged = (runStatus != null) != (status != null)
                 runStatus = status
+                if (activeChanged) {
+                    // 运行期间执行通知已指向查看页，结束后才单独显示保留的虚拟屏。
+                    io.github.mangi.eta.agent.display.VirtualScreenNotification.refresh(context.applicationContext)
+                }
                 val text = status?.localizedText(context.resources)
                 if (text == publishedStatusText) return@post
                 publishedStatusText = text
                 instance?.takeIf { it.foregroundActive }?.refreshNotification()
             }
         }
+
+        /** 提问挂起或作答后刷新执行通知（流体云文案与选项按钮）。 */
+        fun refreshRunNotification() {
+            mainHandler.post { instance?.refreshNotification() }
+        }
+
+        /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
+        fun isRunActive(): Boolean =
+            runStatus != null || leases.hasPrefix("run:") || instance?.foregroundActive == true
 
         /** 必须从有效的用户入口取得引用，再创建会话或子进程；失败时调用方不启动任务。 */
         fun acquire(
@@ -167,7 +302,14 @@ internal class AgentExecutionService : Service() {
             onStop: () -> Unit,
         ): Boolean {
             if (instance?.startRejected == true) return false
-            if (!leases.acquire(id, allowBoundFallback, onStop)) return true
+            val acquired = leases.acquire(id, allowBoundFallback, onStop)
+            if (id.startsWith("run:")) {
+                mainHandler.post {
+                    io.github.mangi.eta.agent.display.VirtualScreenNotification
+                        .refresh(context.applicationContext)
+                }
+            }
+            if (!acquired) return true
             return try {
                 context.applicationContext.startForegroundService(Intent(context, AgentExecutionService::class.java))
                 true
@@ -180,7 +322,14 @@ internal class AgentExecutionService : Service() {
 
         fun release(id: String) {
             leases.release(id)
-            mainHandler.post { instance?.refreshNotification() }
+            mainHandler.post {
+                instance?.refreshNotification()
+                if (id.startsWith("run:")) {
+                    instance?.applicationContext?.let {
+                        io.github.mangi.eta.agent.display.VirtualScreenNotification.refresh(it)
+                    }
+                }
+            }
         }
     }
 }

@@ -2,11 +2,16 @@ package io.github.mangi.eta.agent.model
 
 import java.net.URI
 import java.util.Locale
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** 工具摘要面向用户展示，不包含敏感参数；终端命令通过独立字段提供给用户核对。 */
 internal class AgentTraceFormatter {
-    fun summarizeArguments(toolCall: AgentModelClient.ToolCall): String =
+    /** MCP 工具的显示名由运行时按冻结目录给出；其它工具不需要这个参数。 */
+    fun summarizeArguments(
+        toolCall: AgentModelClient.ToolCall,
+        mcpLabel: String? = null,
+    ): String =
         when (toolCall.name) {
             BROWSER_TOOL_NAME -> summarizeBrowserArguments(toolCall.argumentsJson)
             "web_search" -> "搜索网页"
@@ -52,17 +57,22 @@ internal class AgentTraceFormatter {
             "memory_get", "character_memory_get" -> summarizeMemoryGetArguments(toolCall.argumentsJson)
             "memory_write", "character_memory_write" -> summarizeMemoryWriteArguments(toolCall.argumentsJson)
             "skills_list" -> "查看技能列表"
-            "skills_read" -> "读取技能"
-            "skills_read_resource" -> "读取技能资源"
+            // 同一技能的正文与资源读取给出一致的摘要：聊天流据此把同轮同技能合并成一条节点。
+            "skills_read" -> summarizeSkillArguments("读取技能", toolCall.argumentsJson)
+            "skills_read_resource" -> summarizeSkillArguments("读取技能资源", toolCall.argumentsJson)
             "skills_list_curated" -> "浏览精选技能"
             "skills_inspect_github" -> "查看技能详情"
             "skills_install_from_github" -> "安装技能"
+            "ask_user" -> summarizeAskUserArguments(toolCall.argumentsJson)
             else -> {
                 val label = DEVICE_ACTION_LABELS[toolCall.name]
                     ?: AgentPhoneToolCatalog.entries.firstOrNull { it.name == toolCall.name }?.title
                     ?: io.github.mangi.eta.agent.context.PersonalSearchTools.searches.firstOrNull { it.name == toolCall.name }?.title
                     ?: when (toolCall.name) { "search_notes" -> "查询便签"; "search_system_memories" -> "查询系统记忆"; "read_personal_item" -> "读取检索详情"; "summarize_bills" -> "汇总账单"; else -> null }
                 when {
+                    // MCP 工具名形如 mcp_<服务器id片段>_<工具名>_<哈希>：优先用运行时给的「服务器 · 工具」。
+                    toolCall.name.startsWith(MCP_TOOL_PREFIX) || toolCall.name == MCP_CALL_TOOL ->
+                        summarizeMcpArguments(toolCall.name, mcpLabel)
                     label == null -> "准备执行"
                     toolCall.name.startsWith("search_") ->
                         summarizeQueryArguments(label, toolCall.argumentsJson)
@@ -240,24 +250,138 @@ internal class AgentTraceFormatter {
             if (arguments.optString("query").isNotBlank()) "检索记忆" else "读取记忆"
         }.getOrDefault("读取记忆")
 
+    /** 记忆写入的调用摘要：按 target / archive / match 说明这次做了什么，避免只显示 0 行 0 字节。 */
     private fun summarizeMemoryWriteArguments(argumentsJson: String): String =
         runCatching {
             val arguments = JSONObject(argumentsJson)
-            val mode = when (arguments.optString("mode")) {
-                "replace_range" -> "替换片段"
-                "append" -> "追加"
-                "clear" -> "清空"
-                else -> null
-            }
+            val target = arguments.optString("target").lowercase()
+            val archive = arguments.optString("archive")
+            val match = arguments.optString("match")
             val content = arguments.optString("content")
             val lines = if (content.isEmpty()) 0 else content.count { it == '\n' } + 1
+            val bytes = content.toByteArray(Charsets.UTF_8).size
             buildList {
-                add("更新记忆")
-                mode?.let(::add)
-                add("$lines 行")
-                add("${content.toByteArray(Charsets.UTF_8).size} 字节")
+                when {
+                    archive.isNotBlank() -> {
+                        add(if (arguments.optString("mode") == "replace") "覆盖档案" else "更新档案")
+                        add(archive)
+                    }
+
+                    target == "entry" -> add(
+                        when {
+                            content.isEmpty() -> "删除条目"
+                            match.isNotBlank() -> "改写条目"
+                            else -> "追加条目"
+                        },
+                    )
+
+                    target == "profile" -> add("覆盖用户画像")
+                    target == "working" -> add("覆盖工作记忆")
+                    else -> add("更新记忆")
+                }
+                if (match.isNotBlank()) add("匹配 ${match.take(20)}")
+                if (content.isNotEmpty()) {
+                    add("$lines 行")
+                    add("$bytes 字节")
+                }
             }.joinToString(" · ")
         }.getOrDefault("更新记忆")
+
+    /** MCP 调用：显示成「MCP · 服务器 · 工具」；运行时没给目录信息就从模型名里解析工具名。 */
+    private fun summarizeMcpArguments(modelName: String, mcpLabel: String?): String {
+        val text = mcpLabel?.takeIf(String::isNotBlank) ?: parseMcpToolName(modelName)
+        if (text.isBlank()) return MCP_LABEL + " 工具"
+        return MCP_LABEL + " · " + sanitizeSummaryValue(text, MAX_MCP_LABEL_CHARS)
+    }
+
+    /** mcp_<服务器id片段>_<工具名>_<哈希> → 工具名；解析不出来返回空串。 */
+    private fun parseMcpToolName(modelName: String): String {
+        if (!modelName.startsWith(MCP_TOOL_PREFIX)) return ""
+        return modelName.removePrefix(MCP_TOOL_PREFIX)
+            .substringAfter('_')
+            .substringBeforeLast('_', missingDelimiterValue = "")
+    }
+
+    /** 技能读取摘要：只带技能 id，取不到时退回工具标签；同技能的正文与资源读取摘要相同。 */
+    private fun summarizeSkillArguments(label: String, argumentsJson: String): String =
+        runCatching {
+            val skillId = sanitizeSummaryValue(JSONObject(argumentsJson).optString("skillId"))
+            if (skillId.isBlank()) label else "技能 · $skillId"
+        }.getOrDefault(label)
+
+    /** 提问摘要：只带第一题文本，题目多时补一个题数，不把整张卡片塞进一行。 */
+    private fun summarizeAskUserArguments(argumentsJson: String): String =
+        runCatching {
+            val questions = argumentsJson.askUserQuestions() ?: return@runCatching ASK_USER_LABEL
+            val first = sanitizeSummaryValue(
+                questions.optJSONObject(0)?.optString("question").orEmpty(),
+                MAX_QUERY_SUMMARY_CHARS,
+            )
+            if (first.isBlank()) return@runCatching ASK_USER_LABEL
+            buildString {
+                append(ASK_USER_LABEL).append(" · ").append(first)
+                if (questions.length() > 1) append(" · 共 ").append(questions.length()).append(" 题")
+            }
+        }.getOrDefault(ASK_USER_LABEL)
+
+    /** 提问结果：跳过、选中的选项标题，以及多题时的作答进度。 */
+    private fun summarizeAskUserResult(json: JSONObject): String {
+        val answers = json.optJSONArray("answers") ?: return ANSWERED_LABEL
+        val total = answers.length()
+        if (total == 0) return ANSWERED_LABEL
+        val answered = (0 until total).count { index ->
+            answers.optJSONObject(index)?.optBoolean("skipped") != true
+        }
+        if (answered == 0) return SKIPPED_LABEL
+        val titles = (0 until total).flatMap { index ->
+            val answer = answers.optJSONObject(index) ?: return@flatMap emptyList()
+            val selected = answer.optJSONArray("selected_titles")?.let { array ->
+                (0 until array.length()).mapNotNull { position ->
+                    sanitizeSummaryValue(array.optString(position)).takeIf(String::isNotBlank)
+                }
+            }.orEmpty()
+            if (selected.isNotEmpty()) {
+                selected
+            } else {
+                listOfNotNull(sanitizeSummaryValue(answer.optString("custom")).takeIf(String::isNotBlank))
+            }
+        }
+        return buildList {
+            add(if (titles.isEmpty()) ANSWERED_LABEL else "$ANSWERED_LABEL · ${titles.joinToString("、")}")
+            if (total > 1) add("已答 $answered/$total 题")
+        }.joinToString(" · ")
+    }
+
+    private fun String.askUserQuestions(): JSONArray? =
+        runCatching { JSONObject(this).optJSONArray("questions") }.getOrNull()
+
+    /** MCP 结果：正文预览（最多 6 行 / 600 字符）+ 最后一行结论。 */
+    private fun summarizeMcpResult(json: JSONObject?): String {
+        val body = json?.optJSONArray("content")?.let { array ->
+            (0 until array.length())
+                .mapNotNull { index -> array.opt(index) as? String }
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .joinToString("\n")
+        }.orEmpty()
+        val conclusion = buildList {
+            add("已返回")
+            add("${body.length} 字符")
+            if (json?.optBoolean("truncated") == true) add("已截断")
+            json?.optInt("omitted_items", 0)?.takeIf { it > 0 }?.let { add("省略 $it 项") }
+        }.joinToString(" · ")
+        val lines = body.lines()
+        val preview = lines.take(MAX_MCP_PREVIEW_LINES).joinToString("\n").take(MAX_MCP_PREVIEW_CHARS)
+        val capped = lines.size > MAX_MCP_PREVIEW_LINES || preview.length < body.length
+        return buildString {
+            if (preview.isNotBlank()) {
+                append(preview)
+                if (capped) append("\n…")
+                append("\n")
+            }
+            append(conclusion)
+        }
+    }
 
     /** 结果成败供事件与 UI 状态使用，不再依赖摘要文本里的标记。 */
     fun isSuccessResult(result: AgentModelClient.ToolResult): Boolean =
@@ -275,11 +399,15 @@ internal class AgentTraceFormatter {
         }
         if (json?.optString("status") == "unconfirmed") return "操作已提交，效果未确认"
         if (!isSuccessResult(result)) return summarizeFailure(json)
+        // MCP 结果正文（文件内容、PR 正文等）取一段当预览，展开后能看到；结论放在最后一行，
+        // 折叠时显示的就是它（与终端输出同一套做法）。
+        if (toolName.startsWith(MCP_TOOL_PREFIX)) return summarizeMcpResult(json)
         return when (toolName) {
             BROWSER_TOOL_NAME -> json?.let(::summarizeBrowserResult) ?: "浏览器操作完成"
             AgentConversationToolCatalog.READ_HISTORY -> "已读取历史分页"
             "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
                 json?.let { summarizeMemoryResult(toolName, it) } ?: "完成"
+            "ask_user" -> json?.let(::summarizeAskUserResult) ?: ANSWERED_LABEL
             "search_apps" -> json?.let(::summarizeSearchAppsResult) ?: "完成"
             "launch_app" -> json?.let(::summarizeLaunchAppResult) ?: "已打开"
             else -> json?.let { summarizeGenericResult(it, result) } ?: "完成"
@@ -604,6 +732,15 @@ internal class AgentTraceFormatter {
 
     private companion object {
         const val BROWSER_TOOL_NAME = "browser_use"
+        const val ASK_USER_LABEL = "向你提问"
+        const val MCP_TOOL_PREFIX = "mcp_"
+        const val MCP_CALL_TOOL = "mcp_call"
+        const val MCP_LABEL = "MCP"
+        const val MAX_MCP_LABEL_CHARS = 60
+        const val MAX_MCP_PREVIEW_LINES = 6
+        const val MAX_MCP_PREVIEW_CHARS = 600
+        const val ANSWERED_LABEL = "已回答"
+        const val SKIPPED_LABEL = "已跳过"
         const val MAX_DISPLAY_COMMAND_CHARS = 4_000
         const val MAX_QUERY_SUMMARY_CHARS = 30
         const val MAX_LISTED_APP_NAMES = 3

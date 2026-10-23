@@ -46,6 +46,20 @@ internal object Prefs {
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
 
+        /** 运行中允许继续发送：把新消息作为补充指令排入当前 run 的下一个 turn。 */
+
+        /** Linux 环境有进程运行时在通知栏显示状态，并支持一键退出。 */
+        const val AGENT_LINUX_RUN_NOTIFICATION = "agent_linux_run_notification"
+
+        /** 多会话运行策略：replace（原版替换）/ queue（排队）/ concurrent（并发）。 */
+        const val AGENT_MULTI_RUN_MODE = "agent_multi_run_mode"
+
+        /** 不确定时向用户提问：运行中弹出带选项的提问卡片。 */
+        const val AGENT_ASK_USER = "agent_ask_user"
+
+        /** 记忆空闲审查：任务结束后按活动打分判断值不值得整理，够门槛就起一个隐藏的整理 run。 */
+        const val AGENT_MEMORY_IDLE_REVIEW = "agent_memory_idle_review"
+
         /** 全部布尔开关及其默认值。 */
         val BOOLEAN_DEFAULTS: Map<String, Boolean> = mapOf(
             POWER_KEY_TAKEOVER to false,
@@ -64,6 +78,9 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
             AGENT_THINKING_ENABLED to true,
             AGENT_AUTO_COMPACTION_ENABLED to true,
+            AGENT_LINUX_RUN_NOTIFICATION to true,
+            AGENT_ASK_USER to false,
+            AGENT_MEMORY_IDLE_REVIEW to false,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */
@@ -75,6 +92,9 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
             AGENT_THINKING_ENABLED,
             AGENT_AUTO_COMPACTION_ENABLED,
+            AGENT_LINUX_RUN_NOTIFICATION,
+            AGENT_ASK_USER,
+            AGENT_MEMORY_IDLE_REVIEW,
         )
     }
 
@@ -123,6 +143,30 @@ internal object Prefs {
 
     fun getString(key: String): String {
         return remote?.getString(key, "") ?: ""
+    }
+
+    /** 读取 App 进程自己的字符串配置（不依赖 Xposed 的远程配置）。 */
+    fun agentString(key: String, default: String = ""): String =
+        localAgent?.getString(key, default) ?: default
+
+    /**
+     * 多会话运行策略。
+     *
+     * - [REPLACE]：原版行为，新任务替换正在跑的任务。
+     * - [QUEUE]：新任务排队，等当前任务结束后自动开始。
+     * - [CONCURRENT]：多个会话同时运行（手机上的 GUI/终端操作可能互相干扰）。
+     */
+    enum class MultiRunMode(val key: String) {
+        REPLACE("replace"),
+        QUEUE("queue"),
+        CONCURRENT("concurrent");
+
+        companion object {
+            fun current(): MultiRunMode {
+                val raw = Prefs.agentString(Keys.AGENT_MULTI_RUN_MODE)
+                return entries.firstOrNull { it.key == raw } ?: REPLACE
+            }
+        }
     }
 
     fun powerAssistantTarget(): PowerAssistantTarget = powerAssistantTarget(remote)

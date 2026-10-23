@@ -24,6 +24,7 @@ import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
 import io.github.mangi.eta.agent.tool.AgentLocalTools
+import io.github.mangi.eta.agent.tool.AgentMemoryWritePolicy
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.PendingSkillConflictCapabilityParser
@@ -126,10 +127,15 @@ internal class AgentRuntimeRunExecutor(
             }
             val memoryContext = if (memoryEnabled) {
                 runCatching {
+                    val core = AgentMemoryRepository.coreSnapshot()
+                    val coreBudget = AgentMemoryContextBuilder.coreBudgetChars(request.config.contextWindow)
                     ConversationMemoryPins.contextFor(
                         conversationId = conversationId,
-                        snapshot = AgentMemoryRepository.snapshot(),
+                        // revision/bytes 以核心记忆（USER.md + MEMORY.md）为准，档案写入不会改变它。
+                        snapshot = core,
                         contextWindow = request.config.contextWindow,
+                        // 注入投影：画像 + 按 EI 排序的活跃条目 + 一行档案统计（档案清单按需用 memory_get 取）。
+                        core = AgentMemoryRepository.coreProjection(coreBudget),
                     )
                 }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_context_failed") {
@@ -159,31 +165,41 @@ internal class AgentRuntimeRunExecutor(
                 }
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
+            // 记忆整理 run：只保留记忆工具，其余全部关掉，并且只允许写一层。
+            val memoryReview = request.config.memoryReviewMode
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
                 browserRunId = request.runId,
+                askUserConversationId = conversationId,
+                virtualScreenOwner = request.virtualScreenOwner,
+                isRunCancelled = { runController.isCancelled },
                 browserToolsEnabled = {
-                    request.config.browserTools && currentPermissions().browserTools
+                    !memoryReview && request.config.browserTools && currentPermissions().browserTools
                 },
                 terminalToolsEnabled = {
-                    request.config.terminalTools && currentPermissions().terminalTools
+                    !memoryReview && request.config.terminalTools && currentPermissions().terminalTools
                 },
                 deviceDirectToolsEnabled = {
-                    request.config.deviceDirectTools && currentPermissions().deviceDirectTools
+                    !memoryReview && request.config.deviceDirectTools && currentPermissions().deviceDirectTools
                 },
                 deviceSensitiveReadToolsEnabled = {
-                    request.config.deviceSensitiveReadTools &&
+                    !memoryReview && request.config.deviceSensitiveReadTools &&
                         currentPermissions().deviceSensitiveReadTools
                 },
                 deviceSensitiveActionToolsEnabled = {
-                    request.config.deviceSensitiveActionTools &&
+                    !memoryReview && request.config.deviceSensitiveActionTools &&
                         currentPermissions().deviceSensitiveActionTools
                 },
                 memoryToolsEnabled = {
                     runBlocking { AgentMemoryRepository.isEnabled() }
                 },
                 memoryWritable = roleplayContext == null,
+                memoryWritePolicy = if (memoryReview) {
+                    AgentMemoryWritePolicy.REVIEW
+                } else {
+                    AgentMemoryWritePolicy.FULL
+                },
                 screenshotExcludedPackages = {
                     entrySurfaceGuard?.consumeScreenshotExcludedPackages().orEmpty()
                 },
@@ -223,6 +239,8 @@ internal class AgentRuntimeRunExecutor(
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
+                onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
+                onVirtualTaskCancelled = { session.cancel("用户取消虚拟屏任务") },
             )
             val routingExecutor = RoutingToolExecutor(
                 local = executor,
@@ -276,7 +294,7 @@ internal class AgentRuntimeRunExecutor(
                     AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
                     session.updateTranscript(transcript)
                 },
-                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                capabilitiesProvider = { executor.capabilitiesForRun(AgentToolCapabilities.capture(appContext)) },
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,
@@ -286,6 +304,7 @@ internal class AgentRuntimeRunExecutor(
                 skillContext = skillContext,
                 memoryContext = memoryContext,
                 additionalTools = runTools,
+                mcpToolLabels = mcpSnapshot.labels,
                 executionContext = executor.terminalExecutionContext,
             ) { event ->
                 timing.accept(event)
@@ -298,6 +317,8 @@ internal class AgentRuntimeRunExecutor(
                 )
             }
             response = completedResponse
+            runController.throwIfCancelled()
+            executor.retainVirtualScreenOnSuccess()
             AgentRuntimeWire.RunResult(
                 runId = request.runId,
                 ok = true,
