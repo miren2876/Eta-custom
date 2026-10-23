@@ -205,6 +205,8 @@ fun AgentAppRoot(
     }
 
     var conversationPaneOpen by rememberSaveable { mutableStateOf(false) }
+    // 侧栏是独立浮层，盖在整棵界面之上；打开时手势卡片要让位，否则会压住侧栏内容。
+    LaunchedEffect(conversationPaneOpen) { onConversationPaneChanged(conversationPaneOpen) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
@@ -546,6 +548,7 @@ fun AgentAppRoot(
             }
             entry<AppRoute.WebToolsSettings>(swipeDismiss = swipeDismiss) {
                 WebToolsSettingsScreen(onBack = ::popRoute)
+            }
             entry<AppRoute.Scripts>(swipeDismiss = swipeDismiss) {
                 ScriptManagerScreen(store = appViewModel.scriptStore, onBack = ::popRoute)
             }

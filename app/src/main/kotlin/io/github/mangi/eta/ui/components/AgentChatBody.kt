@@ -175,12 +175,13 @@ internal fun AgentChatBody(
     onSuggestionClick: (String) -> Unit,
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
-    conversationId: String? = null,
     hasEarlierMessages: Boolean = false,
     messageStartIndex: Int = 0,
     historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
     onLoadEarlierMessages: () -> Unit = {},
     onHistoryViewportChanged: (Boolean) -> Unit = {},
+    characterName: String? = null,
+    conversationId: String? = null,
     isDrawerOpen: Boolean = false,
     scrollToTopRequest: Int = 0,
     workProcessRequest: Int = 0,
@@ -244,9 +245,9 @@ internal fun AgentChatBody(
         AgentChatScaffold(
             visibleMessages = visibleMessages,
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
+            scrollToTopRequest = scrollToTopRequest,
             workProcessRequest = workProcessRequest,
             scrollState = scrollState,
-            scrollToTopRequest = scrollToTopRequest,
             conversationId = conversationId,
             input = input,
             modelPickerState = modelPickerState,
@@ -598,7 +599,7 @@ internal fun AgentConversationMessages(
         keepBottomAnchored,
         suppressBottomAnchor,
     ) {
-        if (!isListMeasured) return@LaunchedEffect
+        if (!isListMeasured || suppressBottomAnchor) return@LaunchedEffect
         val next = resolveKeepBottomAnchored(
             current = keepBottomAnchored,
             isUserDragging = isUserDragging,
@@ -651,6 +652,7 @@ internal fun AgentConversationMessages(
         onLoadEarlier = onLoadEarlierMessages,
         onViewportChanged = onHistoryViewportChanged,
     )
+
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
             isStreaming = isStreaming,
@@ -1204,8 +1206,6 @@ private val ChatBottomFrostHeight = 24.dp
 
 /** 副标题定位后，等展开动画把列表撑开再放开跟底抑制。 */
 private const val WorkProcessRevealSettleMillis = 400L
-
-private const val ChatBottomSentinelKey = "agent-chat-bottom-sentinel"
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f

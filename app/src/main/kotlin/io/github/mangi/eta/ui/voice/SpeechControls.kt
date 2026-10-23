@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -316,6 +318,24 @@ internal fun SpeechAutoReadAloud(messages: List<AgentChatMessageUi>, isStreaming
     LaunchedEffect(enabled) {
         if (wasEnabled && !enabled) controller.stop()
         wasEnabled = enabled
+    }
+}
+
+/** 顶栏的自动朗读开关；未配置播报服务时不显示。 */
+@Composable
+internal fun SpeechAutoReadToggle() {
+    val scope = rememberCoroutineScope()
+    val settings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
+    val current = settings ?: return
+    if (current.tts == TtsProvider.NONE) return
+    val on = current.chatAutoSpeak
+    IconButton(onClick = { scope.launch { SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !on)) } }) {
+        Icon(
+            imageVector = if (on) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
+            contentDescription = stringResource(if (on) R.string.speech_auto_read_on else R.string.speech_auto_read_off),
+            modifier = Modifier.size(22.dp),
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
     }
 }
 

@@ -465,7 +465,6 @@ private fun TopBarOverflowMenu(
         ) {
             val newConversationText = stringResource(R.string.action_new_conversation)
             val openTerminalText = stringResource(R.string.action_open_terminal)
-            val openScriptsText = stringResource(R.string.route_scripts)
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
@@ -476,7 +475,6 @@ private fun TopBarOverflowMenu(
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
-                openScriptsText,
                 launchKimiWebText,
                 openBrowserText,
                 stopKimiWebText,
@@ -485,6 +483,7 @@ private fun TopBarOverflowMenu(
                 autoReadText,
                 hasSpeechPlayback,
                 autoReadEnabled,
+                onOpenVirtualScreen,
             ) {
                 listOf(
                     DropdownItem(
@@ -499,16 +498,6 @@ private fun TopBarOverflowMenu(
                     ),
                     DropdownItem(
                         text = openTerminalText,
-                        icon = { modifier ->
-                            Icon(
-                                imageVector = Icons.Rounded.Terminal,
-                                contentDescription = null,
-                                modifier = modifier.size(TopBarMenuIconSize),
-                            )
-                        },
-                    ),
-                    DropdownItem(
-                        text = openScriptsText,
                         icon = { modifier ->
                             Icon(
                                 imageVector = Icons.Rounded.Terminal,
@@ -537,7 +526,22 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                ) + (if (canStopKimiWeb) {
+                ) + (if (onOpenVirtualScreen != null) {
+                    listOf(
+                        DropdownItem(
+                            text = openVirtualScreenText,
+                            icon = { modifier ->
+                                Icon(
+                                    imageVector = Icons.Rounded.Smartphone,
+                                    contentDescription = null,
+                                    modifier = modifier.size(TopBarMenuIconSize),
+                                )
+                            },
+                        ),
+                    )
+                } else {
+                    emptyList()
+                }) + (if (canStopKimiWeb) {
                     listOf(
                         DropdownItem(
                             text = stopKimiWebText,
@@ -559,47 +563,34 @@ private fun TopBarOverflowMenu(
                             icon = { modifier ->
                                 Icon(
                                     imageVector = if (autoReadEnabled) Icons.AutoMirrored.Rounded.VolumeUp
-                                        else Icons.AutoMirrored.Rounded.VolumeOff,
+                                    else Icons.AutoMirrored.Rounded.VolumeOff,
                                     contentDescription = null,
                                     modifier = modifier.size(TopBarMenuIconSize),
                                 )
                             },
                         ),
                     )
-                } else emptyList()
-                ) + (if (onOpenVirtualScreen != null) listOf(
-                    DropdownItem(
-                        text = openVirtualScreenText,
-                        icon = { modifier ->
-                            Icon(
-                                imageVector = Icons.Rounded.Smartphone,
-                                contentDescription = null,
-                                modifier = modifier.size(TopBarMenuIconSize),
-                            )
-                        },
-                    ),
-                ) else emptyList()) + (if (canStopKimiWeb) listOf(
-                    DropdownItem(
-                        text = stopKimiWebText,
-                        icon = { modifier ->
-                            Icon(
-                                imageVector = Icons.Rounded.Stop,
-                                contentDescription = null,
-                                modifier = modifier.size(TopBarMenuIconSize),
-                            )
-                        },
-                    ),
-                ) else emptyList())
+                } else {
+                    emptyList()
+                }
             }
-            // 菜单项与动作一一对应：加了「打开虚拟屏」后索引不再固定，改为按列表分派。
+            // 可选条目会改变索引，动作列表按同一顺序构造后分派。
             val menuActions: List<() -> Unit> = buildList {
                 add(onNewConversation)
                 add(onOpenTerminal)
-                add(onOpenScripts)
                 add(onLaunchKimiWeb)
                 add(onOpenBrowser)
                 if (onOpenVirtualScreen != null) add(onOpenVirtualScreen)
                 if (canStopKimiWeb) add(onStopKimiWeb)
+                if (hasSpeechPlayback) {
+                    add {
+                        speechSettings?.let { current ->
+                            scope.launch {
+                                SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))
+                            }
+                        }
+                    }
+                }
             }
             ListPopupColumn {
                 menuItems.forEachIndexed { index, item ->
@@ -610,19 +601,7 @@ private fun TopBarOverflowMenu(
                         index = index,
                         onSelectedIndexChange = {
                             showMenu = false
-                            if (hasSpeechPlayback && index == menuItems.lastIndex) {
-                                speechSettings?.let { current ->
-                                    scope.launch {
-                                        SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))
-                                    }
-                                }
-                            } else when (index) {
-                                0 -> onNewConversation()
-                                1 -> onOpenTerminal()
-                                2 -> onLaunchKimiWeb()
-                                3 -> onOpenBrowser()
-                                4 -> onStopKimiWeb()
-                            }
+                            menuActions.getOrNull(index)?.invoke()
                         },
                     )
                 }

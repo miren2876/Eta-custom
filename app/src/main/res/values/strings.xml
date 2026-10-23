@@ -1250,10 +1250,6 @@
   <string name="context_compact_action">Compact context</string>
   <string name="settings_auto_compaction">Automatic context compaction</string>
   <string name="settings_conversation">Conversation</string>
-  <string name="settings_mid_run_interjection">Interject during a run</string>
-  <string name="settings_mid_run_interjection_summary">While Eta is working you can keep typing; sending queues that message into the running turn so Eta sees it at its next thinking step. Off restores the original behavior (sends during a run are discarded).</string>
-  <string name="chat_interjection_unavailable">This run already finished, so the message was not sent. Send it again to start a new turn.</string>
-  <string name="chat_interjection_attachments_queued">Attachments can\'t be sent mid-run. Kept as a draft and will be sent automatically when this run finishes.</string>
   <string name="settings_linux_run_notification">Linux run notification</string>
   <string name="settings_linux_run_notification_summary">Show a notification while processes are running inside the Linux environment, with a one-tap exit. Off restores the original behavior (nothing shown, nothing probed).</string>
   <string name="linux_run_channel">Linux run</string>
@@ -1796,4 +1792,6 @@
   <string name="top_bar_status_thinking">Thinking</string>
   <string name="top_bar_status_running">Running</string>
   <string name="top_bar_status_idle">%1$d messages · %2$s</string>
+  <string name="speech_auto_read_on">Auto read-aloud on, tap to turn off</string>
+  <string name="speech_auto_read_off">Auto read-aloud off, tap to turn on</string>
 </resources>

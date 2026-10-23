@@ -1407,7 +1407,6 @@
     <string name="settings_ask_user_summary">任務需要你決定或資訊不足時，彈出帶選項的提問卡片：可單選、多選、自訂回答或略過。</string>
     <string name="settings_memory_idle_review_title">記憶自動整理</string>
     <string name="settings_memory_idle_review_summary">任務結束後依活動量打分，過門檻就等 30 秒空閒，起一個隱藏的整理子任務把專案記錄寫進檔案；失敗不重放。</string>
-    <string name="chat_interjection_attachments_queued">執行中不能帶圖片/檔案插話：已保留草稿與附件，這一輪結束後會自動送出。</string>
     <string name="memory_review_channel">記憶整理</string>
     <string name="memory_review_running_title">正在整理記憶</string>
     <string name="memory_review_running_content">把這次的專案記錄寫進檔案，不影響你目前的對話。</string>
@@ -1689,4 +1688,6 @@
   <string name="top_bar_status_thinking">思考中</string>
   <string name="top_bar_status_running">正在執行</string>
   <string name="top_bar_status_idle">%1$d 則訊息 · %2$s</string>
+  <string name="speech_auto_read_on">自動朗讀已開啟，點按關閉</string>
+  <string name="speech_auto_read_off">自動朗讀已關閉，點按開啟</string>
 </resources>
