@@ -243,13 +243,8 @@ internal fun AgentChatBody(
         SpeechAutoReadAloud(messages = messages, isStreaming = isStreaming)
         AgentChatScaffold(
             visibleMessages = visibleMessages,
-<<<<<<< HEAD
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
-=======
-            hasMessages = visibleMessages.isNotEmpty(),
-            scrollToTopRequest = scrollToTopRequest,
             workProcessRequest = workProcessRequest,
->>>>>>> d1883070 (feat(chat): 首页顶栏改两行左对齐标题，副标题点击定位本轮工作过程)
             scrollState = scrollState,
             scrollToTopRequest = scrollToTopRequest,
             conversationId = conversationId,
@@ -642,8 +637,6 @@ internal fun AgentConversationMessages(
         }
     }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     val historyPaging = rememberChatHistoryPaging(
         scrollState = scrollState,
         entries = timelineEntries,
@@ -658,32 +651,6 @@ internal fun AgentConversationMessages(
         onLoadEarlier = onLoadEarlierMessages,
         onViewportChanged = onHistoryViewportChanged,
     )
-=======
-    // 临时诊断：把滚动位置、跟底状态与拖动状态打到日志里，用于定位"只能单向滚动"。
-    LaunchedEffect(scrollState) {
-        snapshotFlow {
-            val info = scrollState.layoutInfo
-            listOf(
-                info.visibleItemsInfo.firstOrNull()?.index ?: -1,
-                info.visibleItemsInfo.lastOrNull()?.index ?: -1,
-                scrollState.canScrollBackward,
-                scrollState.canScrollForward,
-                keepBottomAnchored,
-                isUserDragging,
-                isBottomSettling,
-                info.totalItemsCount,
-            )
-        }.distinctUntilChanged().collect { state ->
-            AndroidAgentLogger.info(
-                "ChatScroll first=${state[0]} last=${state[1]} back=${state[2]} fwd=${state[3]} " +
-                    "anchor=${state[4]} drag=${state[5]} settle=${state[6]} total=${state[7]}",
-            )
-        }
-    }
->>>>>>> 78b5aaf2 (chore(chat): 加临时诊断日志，定位只能单向滚动的问题)
-
-=======
->>>>>>> 956076bd (fix(chat): 修首页列表只能单向滚动，撤掉临时诊断日志)
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
             isStreaming = isStreaming,
@@ -1235,13 +1202,10 @@ private fun AgentChatBottomBar(
 
 private val ChatBottomFrostHeight = 24.dp
 
-<<<<<<< HEAD
-=======
 /** 副标题定位后，等展开动画把列表撑开再放开跟底抑制。 */
 private const val WorkProcessRevealSettleMillis = 400L
 
 private const val ChatBottomSentinelKey = "agent-chat-bottom-sentinel"
->>>>>>> d1883070 (feat(chat): 首页顶栏改两行左对齐标题，副标题点击定位本轮工作过程)
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f

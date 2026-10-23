@@ -45,11 +45,7 @@ sealed interface AgentToolsAction {
     data object OpenPermissions : AgentToolsAction
     data object NavigateBack : AgentToolsAction
     data object OpenBrowser : AgentToolsAction
-<<<<<<< HEAD
     data object OpenWebToolsSettings : AgentToolsAction
-    data object OpenScripts : AgentToolsAction
-=======
->>>>>>> 58f2e10b (refactor(scripts): 管理脚本入口从工具列表页挪到设置页工具分组)
 }
 
 sealed interface AgentSkillsAction {
