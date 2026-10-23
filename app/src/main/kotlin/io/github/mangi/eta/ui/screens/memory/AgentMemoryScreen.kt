@@ -1,174 +1,610 @@
 package io.github.mangi.eta.ui.screens.memory
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Notes
-import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreference
-import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
+import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaTextButton
 import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
-import io.github.mangi.eta.ui.markdown.MarkdownTone
-import io.github.mangi.eta.ui.markdown.StaticMarkdown
+import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.ui.model.AgentMemoryAction
+import io.github.mangi.eta.ui.model.AgentMemoryEntryUi
+import io.github.mangi.eta.ui.model.AgentMemoryFileUi
+import io.github.mangi.eta.ui.model.AgentMemorySectionUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import java.text.NumberFormat
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.squircle.squircleSurface
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.sp
+import io.github.mangi.eta.ui.markdown.MarkdownTone
+import io.github.mangi.eta.ui.markdown.StaticMarkdown
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.squircle.squircleSurface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 
-private enum class MemoryViewMode { Preview, Edit }
-
-/**
- * 记忆页：顶部是开关与预算，下方 MEMORY.md 以“文档”形式占满剩余高度。
- * 默认渲染 Markdown 便于阅读，切到编辑后是无边框的整页编辑区；只有存在未保存修改时才浮出保存栏。
- */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AgentMemoryScreen(
     state: AgentMemoryUiState,
     onAction: (AgentMemoryAction) -> Unit,
 ) {
-    var showClearDialog by remember { mutableStateOf(false) }
-    var mode by rememberSaveable { mutableStateOf<MemoryViewMode?>(null) }
-    // 首次读到内容前不决定模式：空记忆直接进入编辑，已有内容先给出可读的预览。
-    LaunchedEffect(state.isLoading) {
-        if (!state.isLoading && mode == null) {
-            mode = if (state.savedContent.isBlank()) MemoryViewMode.Edit else MemoryViewMode.Preview
-        }
+    var showArchiveDialog by remember { mutableStateOf(false) }
+    var showUnarchiveDialog by remember { mutableStateOf(false) }
+    // 章节分区默认展开（最常看），归档分区默认收起。
+    var sectionsExpanded by remember { mutableStateOf(true) }
+    var archiveExpanded by remember { mutableStateOf(false) }
+    var selectionScope by remember { mutableStateOf<MemorySelection?>(null) }
+    var sectionSelection by remember { mutableStateOf(emptySet<String>()) }
+    var archiveSelection by remember { mutableStateOf(emptySet<String>()) }
+    var fileSelection by remember { mutableStateOf(emptySet<String>()) }
+    var pendingArchiveFileNames by remember { mutableStateOf(emptyList<String>()) }
+    var showArchiveFilesDialog by remember { mutableStateOf(false) }
+    var showMergeDialog by remember { mutableStateOf(false) }
+    // 「建议归档」区块：候选默认全勾上，确认归档走同一套动作。
+    var suggestedSelection by remember(state.coldFiles) {
+        mutableStateOf(state.coldFiles.map { it.name }.toSet())
     }
-    val currentMode = mode ?: MemoryViewMode.Preview
-    val imeVisible = WindowInsets.isImeVisible
+    var pendingArchiveTitles by remember { mutableStateOf(emptyList<String>()) }
+    // 离开记忆页（含退出设置）时收起「撤销归档」入口。
+    DisposableEffect(Unit) {
+        onDispose { onAction(AgentMemoryAction.ClearUndo) }
+    }
+    val exitSelection = {
+        selectionScope = null
+        sectionSelection = emptySet()
+        archiveSelection = emptySet()
+    }
+    // 核心记忆（独立文件）同样是折叠编辑器。
+    var profileExpanded by remember { mutableStateOf(false) }
+    var workingExpanded by remember { mutableStateOf(false) }
+    var filesExpanded by remember { mutableStateOf(false) }
+    var entriesExpanded by remember { mutableStateOf(false) }
+    var showClearProfileDialog by remember { mutableStateOf(false) }
+    var showClearWorkingDialog by remember { mutableStateOf(false) }
 
     MiuixScaffold(
         title = stringResource(R.string.ui_memory_b55ff5),
         onBack = { onAction(AgentMemoryAction.NavigateBack) },
-        actions = {
-            IconButton(
-                onClick = { showClearDialog = true },
-                enabled = !state.isLoading && !state.isSaving && state.draft.isNotEmpty(),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = stringResource(R.string.ui_clear_all_memory_a43bd3),
-                    tint = if (!state.isLoading && state.draft.isNotEmpty()) {
-                        MiuixTheme.colorScheme.onSurface
-                    } else {
-                        MiuixTheme.colorScheme.disabledOnSurface
-                    },
-                )
-            }
-        },
     ) { paddingValues, scrollBehavior, sidePadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .horizontalCutoutPadding()
-                .padding(top = paddingValues.calculateTopPadding())
-                .padding(horizontal = sidePadding)
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .imePadding()
-                .navigationBarsPadding(),
+                .padding(top = paddingValues.calculateTopPadding()),
         ) {
-            // 键盘弹出时收起设置区，把有限高度全部让给正在编辑的文档。
-            AnimatedVisibility(
-                visible = !imeVisible,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                MemorySettingsGroup(state = state, onAction = onAction)
-            }
-            MemoryDocumentCard(
-                state = state,
-                mode = currentMode,
-                onModeChange = { mode = it },
-                onDraftChange = { onAction(AgentMemoryAction.DraftChanged(it)) },
+            // 状态区与编辑器滚动分离。weight fill=false：内容少时只占自身高度，避免中部空档；
+            // 空间不足（键盘弹出、横屏）时压缩为可滚动区域，编辑器保持完整可见
+            LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = EtaPreferenceDefaults.SidePadding),
-            )
-            MemorySaveBar(
-                state = state,
-                onDiscard = { onAction(AgentMemoryAction.DraftChanged(state.savedContent)) },
-                onSave = { onAction(AgentMemoryAction.Save) },
-            )
-            Spacer(Modifier.height(12.dp))
+                    .weight(1f, fill = false)
+                    .scrollEndHaptic()
+                    .overScrollVertical()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    start = sidePadding,
+                    end = sidePadding,
+                ),
+                overscrollEffect = null,
+            ) {
+                item(key = "status-title") { EtaPreferenceGroupTitle(stringResource(R.string.ui_memory_b55ff5)) }
+                item(key = "status-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        EtaSwitchPreference(
+                            title = stringResource(R.string.ui_enable_memory_4b69b7),
+                            summary = stringResource(R.string.ui_after_closing_no_memory_will_be_injected_and_the_mod_db3d23),
+                            checked = state.enabled,
+                            enabled = !state.isLoading,
+                            onCheckedChange = { onAction(AgentMemoryAction.ToggleEnabled(it)) },
+                        )
+                    }
+                }
+
+                item(key = "profile-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_profile_title)) }
+                item(key = "profile-card") {
+                    CoreEditorCard(
+                        title = stringResource(R.string.memory_profile_title),
+                        summary = stringResource(R.string.memory_profile_summary),
+                        draft = state.profileDraft,
+                        saved = state.profileSaved,
+                        limitBytes = AgentMemoryStore.PROFILE_MAX_BYTES,
+                        expanded = profileExpanded,
+                        enabled = !state.isLoading && !state.isSavingCore,
+                        saving = state.isSavingCore,
+                        onToggle = { profileExpanded = !profileExpanded },
+                        onDraftChange = { onAction(AgentMemoryAction.ProfileDraftChanged(it)) },
+                        onClear = { showClearProfileDialog = true },
+                        onSave = { onAction(AgentMemoryAction.SaveProfile) },
+                    )
+                }
+
+                item(key = "working-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_working_title)) }
+                item(key = "working-card") {
+                    CoreEditorCard(
+                        title = stringResource(R.string.memory_working_title),
+                        summary = stringResource(R.string.memory_working_summary),
+                        draft = state.workingDraft,
+                        saved = state.workingSaved,
+                        limitBytes = AgentMemoryStore.WORKING_MAX_BYTES,
+                        expanded = workingExpanded,
+                        enabled = !state.isLoading && !state.isSavingCore,
+                        saving = state.isSavingCore,
+                        onToggle = { workingExpanded = !workingExpanded },
+                        onDraftChange = { onAction(AgentMemoryAction.WorkingDraftChanged(it)) },
+                        onClear = { showClearWorkingDialog = true },
+                        onSave = { onAction(AgentMemoryAction.SaveWorking) },
+                    )
+                }
+
+                item(key = "entries-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_entries_title)) }
+                item(key = "entries-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        ExpandableHeader(
+                            title = stringResource(R.string.memory_entries_title),
+                            summary = stringResource(R.string.memory_entries_summary, state.entries.size),
+                            expanded = entriesExpanded,
+                            onToggle = { entriesExpanded = !entriesExpanded },
+                        )
+                        if (entriesExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            if (state.entries.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_entries_empty))
+                            } else {
+                                state.entries.forEachIndexed { index, entry ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    EntryRow(entry = entry)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item(key = "files-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_files_title)) }
+                item(key = "files-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        ExpandableHeader(
+                            title = stringResource(R.string.memory_files_title),
+                            summary = stringResource(
+                                R.string.memory_files_summary,
+                                state.files.size,
+                                state.coldFileCount,
+                            ),
+                            expanded = filesExpanded,
+                            onToggle = { filesExpanded = !filesExpanded },
+                            trailing = "${formatBytes(state.files.sumOf { it.byteSize })} / " +
+                                formatBytes(AgentMemoryStore.FILE_MAX_BYTES),
+                        )
+                        if (filesExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            if (state.files.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_files_empty))
+                            } else {
+                                state.files.forEachIndexed { index, file ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    val selecting = selectionScope == MemorySelection.Files
+                                    val expanded = !selecting && state.expandedFileName == file.name
+                                    FileRow(
+                                        file = file,
+                                        selected = if (selecting) file.name in fileSelection else null,
+                                        expanded = if (selecting) null else expanded,
+                                        onClick = {
+                                            if (selecting) {
+                                                fileSelection = fileSelection.toggle(file.name)
+                                            } else if (expanded) {
+                                                onAction(AgentMemoryAction.CollapseFile)
+                                            } else {
+                                                onAction(AgentMemoryAction.ExpandFile(file.name))
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectionScope = MemorySelection.Files
+                                            fileSelection = setOf(file.name)
+                                        },
+                                    )
+                                    if (expanded) {
+                                        FileEditor(
+                                            label = file.name,
+                                            draft = state.fileDraft,
+                                            saved = state.fileSaved,
+                                            saving = state.isSavingFile,
+                                            onDraftChange = { onAction(AgentMemoryAction.FileDraftChanged(it)) },
+                                            onSave = { onAction(AgentMemoryAction.SaveFile) },
+                                        )
+                                    }
+                                }
+                            }
+                            if (selectionScope == MemorySelection.Files) {
+                                EtaPreferenceDivider(hasLeading = false)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_cancel),
+                                        onClick = { exitSelection() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_archive_selected, fileSelection.size),
+                                        enabled = fileSelection.isNotEmpty() && !state.isArchiving,
+                                        onClick = {
+                                            pendingArchiveFileNames = fileSelection.toList()
+                                            showArchiveFilesDialog = true
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_merge_selected, fileSelection.size),
+                                        enabled = fileSelection.size >= 2 && !state.isMerging,
+                                        onClick = { showMergeDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            } else if (state.files.isNotEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_files_select_hint))
+                            }
+                        }
+                    }
+                }
+                if (state.lastArchivedTitles.isNotEmpty()) {
+                    item(key = "undo-card") {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.memory_archive_undo_hint,
+                                        state.lastArchivedTitles.size,
+                                    ),
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    style = MiuixTheme.textStyles.body2,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_undo),
+                                    enabled = !state.isArchiving,
+                                    onClick = { onAction(AgentMemoryAction.UndoArchive) },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (state.coldFiles.isNotEmpty()) {
+                    item(key = "suggest-title") {
+                        EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_suggest_title))
+                    }
+                    item(key = "suggest-card") {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            state.coldFiles.forEachIndexed { index, file ->
+                                if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                FileRow(
+                                    file = file,
+                                    selected = file.name in suggestedSelection,
+                                    expanded = null,
+                                    onClick = {
+                                        suggestedSelection = suggestedSelection.toggle(file.name)
+                                    },
+                                )
+                            }
+                            EtaPreferenceDivider(hasLeading = false)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_selected, suggestedSelection.size),
+                                    enabled = suggestedSelection.isNotEmpty() && !state.isArchiving,
+                                    onClick = {
+                                        pendingArchiveFileNames = suggestedSelection.toList()
+                                        showArchiveFilesDialog = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                EtaTextButton(
+                                    text = stringResource(R.string.memory_archive_all),
+                                    enabled = !state.isArchiving,
+                                    onClick = {
+                                        val all = state.coldFiles.map { it.name }
+                                        suggestedSelection = all.toSet()
+                                        pendingArchiveFileNames = all
+                                        showArchiveFilesDialog = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+                item(key = "archive-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_capacity_archive_title)) }
+                item(key = "archive-card") {
+                    EtaPreferenceGroup(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        ExpandableHeader(
+                            title = stringResource(R.string.memory_archive_files_title),
+                            summary = if (state.archiveSections > 0) {
+                                stringResource(
+                                    R.string.memory_capacity_archive_summary,
+                                    state.archiveSections,
+                                    formatBytes(state.archiveBytes),
+                                )
+                            } else {
+                                stringResource(R.string.memory_archive_empty)
+                            },
+                            expanded = archiveExpanded,
+                            onToggle = { archiveExpanded = !archiveExpanded },
+                        )
+                        if (archiveExpanded) {
+                            EtaPreferenceDivider(hasLeading = false)
+                            if (state.archiveList.isEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_archive_empty))
+                            } else {
+                                state.archiveList.forEachIndexed { index, section ->
+                                    if (index > 0) EtaPreferenceDivider(hasLeading = true)
+                                    val selecting = selectionScope == MemorySelection.Archive
+                                    SectionRow(
+                                        section = section,
+                                        selected = if (selecting) section.rawTitle in archiveSelection else null,
+                                        expanded = null,
+                                        onClick = {
+                                            if (selecting) {
+                                                archiveSelection = archiveSelection.toggle(section.rawTitle)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectionScope = MemorySelection.Archive
+                                            archiveSelection = setOf(section.rawTitle)
+                                        },
+                                    )
+                                }
+                            }
+                            if (selectionScope == MemorySelection.Archive) {
+                                EtaPreferenceDivider(hasLeading = false)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_selection_cancel),
+                                        onClick = { exitSelection() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EtaTextButton(
+                                        text = stringResource(R.string.memory_unarchive_selected, archiveSelection.size),
+                                        enabled = archiveSelection.isNotEmpty() && !state.isArchiving,
+                                        onClick = { showUnarchiveDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            } else if (state.archiveList.isNotEmpty()) {
+                                SectionHint(text = stringResource(R.string.memory_archive_select_hint))
+                            }
+                        }
+                    }
+                }
+            }
+
         }
     }
 
-    if (showClearDialog) {
+    if (showMergeDialog) {
+        val mergeNames = state.files.filter { it.name in fileSelection }.map { it.name }
         EtaWindowDialog(
             show = true,
-            title = stringResource(R.string.ui_clear_all_memory_a43bd3),
-            summary = stringResource(R.string.ui_the_entire_contents_of_memory_md_will_be_deleted_and_83a8ac),
-            onDismissRequest = { showClearDialog = false },
+            title = stringResource(R.string.memory_merge_confirm_title),
+            summary = stringResource(
+                R.string.memory_merge_confirm_message,
+                mergeNames.size,
+                mergeNames.firstOrNull().orEmpty(),
+            ),
+            onDismissRequest = { showMergeDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_merge_selected, mergeNames.size),
+                confirmEnabled = mergeNames.size >= 2 && !state.isMerging,
+                onCancel = { showMergeDialog = false },
+                onConfirm = {
+                    showMergeDialog = false
+                    onAction(AgentMemoryAction.MergeFiles(mergeNames))
+                    exitSelection()
+                },
+            )
+        }
+    }
+
+    if (showArchiveFilesDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_archive_files_confirm_title),
+            summary = stringResource(R.string.memory_archive_files_confirm_message, pendingArchiveFileNames.size),
+            onDismissRequest = { showArchiveFilesDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_archive_selected, pendingArchiveFileNames.size),
+                confirmEnabled = pendingArchiveFileNames.isNotEmpty() && !state.isArchiving,
+                onCancel = { showArchiveFilesDialog = false },
+                onConfirm = {
+                    showArchiveFilesDialog = false
+                    onAction(AgentMemoryAction.ArchiveFiles(pendingArchiveFileNames))
+                    exitSelection()
+                },
+            )
+        }
+    }
+
+    if (showClearProfileDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_profile_clear_title),
+            summary = stringResource(R.string.memory_profile_clear_message),
+            onDismissRequest = { showClearProfileDialog = false },
         ) {
             MiuixDialogActions(
                 confirmText = stringResource(R.string.memory_clear),
                 destructive = true,
-                confirmEnabled = !state.isSaving,
-                onCancel = { showClearDialog = false },
+                confirmEnabled = !state.isSavingCore,
+                onCancel = { showClearProfileDialog = false },
                 onConfirm = {
-                    showClearDialog = false
-                    onAction(AgentMemoryAction.Clear)
+                    showClearProfileDialog = false
+                    onAction(AgentMemoryAction.ClearProfile)
+                },
+            )
+        }
+    }
+
+    if (showClearWorkingDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_working_clear_title),
+            summary = stringResource(R.string.memory_working_clear_message),
+            onDismissRequest = { showClearWorkingDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_clear),
+                destructive = true,
+                confirmEnabled = !state.isSavingCore,
+                onCancel = { showClearWorkingDialog = false },
+                onConfirm = {
+                    showClearWorkingDialog = false
+                    onAction(AgentMemoryAction.ClearWorking)
+                },
+            )
+        }
+    }
+
+    if (showArchiveDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_archive_confirm_title),
+            summary = stringResource(R.string.memory_archive_confirm_message, pendingArchiveTitles.size),
+            onDismissRequest = { showArchiveDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_archive_selected, pendingArchiveTitles.size),
+                confirmEnabled = pendingArchiveTitles.isNotEmpty() && !state.isArchiving,
+                onCancel = { showArchiveDialog = false },
+                onConfirm = {
+                    showArchiveDialog = false
+                    onAction(AgentMemoryAction.ArchiveSections(pendingArchiveTitles))
+                    exitSelection()
+                },
+            )
+        }
+    }
+
+    if (showUnarchiveDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_unarchive_confirm_title),
+            summary = stringResource(R.string.memory_unarchive_confirm_message, archiveSelection.size),
+            onDismissRequest = { showUnarchiveDialog = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.memory_unarchive_selected, archiveSelection.size),
+                confirmEnabled = archiveSelection.isNotEmpty() && !state.isArchiving,
+                onCancel = { showUnarchiveDialog = false },
+                onConfirm = {
+                    showUnarchiveDialog = false
+                    onAction(AgentMemoryAction.UnarchiveSections(archiveSelection.toList()))
+                    exitSelection()
                 },
             )
         }
@@ -191,140 +627,534 @@ internal fun AgentMemoryScreen(
 }
 
 @Composable
-private fun MemorySettingsGroup(
-    state: AgentMemoryUiState,
-    onAction: (AgentMemoryAction) -> Unit,
+private fun SectionRow(
+    section: AgentMemorySectionUi,
+    selected: Boolean?,
+    expanded: Boolean?,
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)? = null,
 ) {
-    EtaPreferenceGroup(
+    val usageLabel = when {
+        section.hitCount > 0 -> stringResource(R.string.memory_section_hits, section.hitCount)
+        else -> stringResource(R.string.memory_section_never_used)
+    }
+    val idleLabel = section.idleDays?.takeIf { it > 0 }
+        ?.let { days -> " · " + stringResource(R.string.memory_section_idle_days, days) }
+        .orEmpty()
+    Row(
         modifier = Modifier
-            .padding(horizontal = EtaPreferenceDefaults.SidePadding)
-            .padding(top = 8.dp, bottom = EtaPreferenceDefaults.GroupSpacing),
+            .fillMaxWidth()
+            .then(
+                when {
+                    onClick != null && onLongClick != null -> Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
+
+                    onClick != null -> Modifier.clickable(onClick = onClick)
+                    else -> Modifier
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        EtaSwitchPreference(
-            title = stringResource(R.string.ui_enable_memory_4b69b7),
-            summary = stringResource(R.string.ui_after_closing_no_memory_will_be_injected_and_the_mod_db3d23),
-            checked = state.enabled,
-            enabled = !state.isLoading,
-            onCheckedChange = { onAction(AgentMemoryAction.ToggleEnabled(it)) },
-        )
-        EtaPreferenceDivider(hasLeading = false)
-        EtaPreference(
-            title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),
-            summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),
+        if (selected != null) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) MiuixTheme.colorScheme.primary else Color.Transparent)
+                    .border(
+                        width = 1.5.dp,
+                        color = if (selected) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        },
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.White,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = section.title,
+                color = MiuixTheme.colorScheme.onSurface,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.memory_section_meta, section.lines, usageLabel) + idleLabel,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (expanded != null) {
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Rounded.KeyboardArrowUp
+                } else {
+                    Icons.Rounded.KeyboardArrowDown
+                },
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+/** 展开后的章节正文：只读、等宽字体，便于看 Markdown 结构。 */
+@Composable
+private fun SectionBody(text: String) {
+    Text(
+        text = text.ifBlank { "…" },
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        style = MiuixTheme.textStyles.footnote1.copy(fontFamily = FontFamily.Monospace),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+    )
+}
+
+private fun formatBytes(bytes: Int): String = when {
+    bytes < 1_024 -> "$bytes B"
+    bytes < 1_024 * 1_024 -> "%.1f KiB".format(bytes / 1_024.0)
+    else -> "%.2f MiB".format(bytes / (1_024.0 * 1_024.0))
+}
+
+private fun formatNumber(value: Int): String = NumberFormat.getIntegerInstance().format(value)
+
+/** 分区标题行：点一下展开 / 收起该分区内容。 */
+/** 分区标题：两行布局（标题 + 说明），右侧可带占用与展开箭头。 */
+@Composable
+private fun ExpandableHeader(
+    title: String,
+    summary: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    trailing: String? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = MiuixTheme.colorScheme.onSurface,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = summary,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+            )
+        }
+        if (trailing != null) {
+            Text(
+                text = trailing,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Icon(
+            imageVector = if (expanded) {
+                Icons.Rounded.KeyboardArrowUp
+            } else {
+                Icons.Rounded.KeyboardArrowDown
+            },
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
     }
 }
 
-/** 文档卡片：标题栏承载文件名、体积与预览/编辑切换，正文区占满卡片剩余高度并独立滚动。 */
+/** 区块内的小字提示。 */
 @Composable
-private fun MemoryDocumentCard(
-    state: AgentMemoryUiState,
-    mode: MemoryViewMode,
-    onModeChange: (MemoryViewMode) -> Unit,
+private fun SectionHint(text: String) {
+    Text(
+        text = text,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        style = MiuixTheme.textStyles.footnote1,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+    )
+}
+
+/** 工作记忆条目：正文 + 重要度 / EI / 引用次数 / 距今时间。 */
+@Composable
+private fun EntryRow(entry: AgentMemoryEntryUi) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = entry.text,
+            color = MiuixTheme.colorScheme.onSurface,
+            style = MiuixTheme.textStyles.body2,
+        )
+        Text(
+            text = listOfNotNull(
+                stringResource(R.string.memory_entry_meta, entry.importance, entry.eiLabel),
+                if (entry.hitCount > 0) stringResource(R.string.memory_entry_hits, entry.hitCount) else null,
+                entry.idleDays?.takeIf { days -> days > 0 }?.let { days ->
+                    stringResource(R.string.memory_entry_idle_days, days)
+                },
+            ).joinToString(" · "),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.footnote1,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** 章节列表与归档列表各自的多选范围。 */
+private enum class MemorySelection { Sections, Archive, Files }
+
+private fun Set<String>.toggle(title: String): Set<String> = if (title in this) this - title else this + title
+
+/** 核心记忆的一节（用户画像 / 工作记忆）：折叠 + 编辑 + 保存。 */
+@Composable
+private fun CoreEditorCard(
+    title: String,
+    summary: String,
+    draft: String,
+    saved: String,
+    limitBytes: Int,
+    expanded: Boolean,
+    enabled: Boolean,
+    saving: Boolean,
+    onToggle: () -> Unit,
     onDraftChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    onClear: () -> Unit,
+    onSave: () -> Unit,
 ) {
-    val colors = MiuixTheme.colorScheme
-    val overLimit = state.draftBytes > state.maxBytes
-    EtaCard(modifier = modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+    var editing by rememberSaveable(title) { mutableStateOf(false) }
+    val bytes = draft.toByteArray(Charsets.UTF_8).size
+    val overLimit = bytes > limitBytes
+    val changed = draft != saved
+    EtaPreferenceGroup(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.Notes,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = colors.primary,
-            )
-            Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "MEMORY.md",
-                    style = MiuixTheme.textStyles.body2,
+                    text = title,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    style = MiuixTheme.textStyles.body1,
                     fontWeight = FontWeight.Medium,
-                    color = colors.onSurface,
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${formatBytes(state.draftBytes)} / ${formatBytes(state.maxBytes)}",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = if (overLimit) colors.error else colors.onSurfaceVariantSummary,
+                    text = if (changed) stringResource(R.string.memory_unsaved_changes) else summary,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    style = MiuixTheme.textStyles.footnote1,
                 )
             }
-            MemoryModeSwitch(mode = mode, enabled = !state.isLoading, onModeChange = onModeChange)
+            Text(
+                text = "${formatBytes(bytes)} / ${formatBytes(limitBytes)}",
+                color = if (overLimit) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Rounded.KeyboardArrowUp
+                } else {
+                    Icons.Rounded.KeyboardArrowDown
+                },
+                contentDescription = stringResource(
+                    if (expanded) R.string.memory_editor_collapse else R.string.memory_editor_expand,
+                ),
+                modifier = Modifier.size(20.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
         }
+        if (expanded) {
+            EtaPreferenceDivider(hasLeading = false)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(MemoryDocumentBodyHeight),
+            ) {
+                if (editing) {
+                    MemoryEditor(
+                        value = draft,
+                        enabled = enabled,
+                        placeholder = summary,
+                        onValueChange = onDraftChange,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (draft.isNotEmpty()) {
+                            MemoryBodyAction(
+                                text = stringResource(R.string.ui_clear_84fcd7),
+                                enabled = !saving,
+                                onClick = onClear,
+                            )
+                        }
+                        MemoryBodyAction(
+                            text = stringResource(R.string.memory_mode_preview),
+                            enabled = true,
+                            onClick = { editing = false },
+                        )
+                    }
+                } else {
+                    MemoryPreview(
+                        content = draft,
+                        placeholder = summary,
+                        onStartEditing = { if (enabled) editing = true },
+                    )
+                }
+            }
+            MemorySaveBar(
+                visible = changed || saving || overLimit,
+                overLimit = overLimit,
+                saving = saving,
+                canSave = enabled && changed && !overLimit,
+                onDiscard = { onDraftChange(saved) },
+                onSave = onSave,
+            )
+        }
+    }
+}
+
+/** 正文区右上角的小动作：回到预览、清空。 */
+@Composable
+private fun MemoryBodyAction(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.footnote1,
+        color = if (enabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledOnSurface,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+/** 记忆档案行：点一下展开看内容。 */
+@Composable
+private fun FileRow(
+    file: AgentMemoryFileUi,
+    selected: Boolean?,
+    expanded: Boolean?,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                when {
+                    onLongClick != null -> Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
+
+                    else -> Modifier.clickable(onClick = onClick)
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selected != null) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) MiuixTheme.colorScheme.primary else Color.Transparent)
+                    .border(
+                        width = 1.5.dp,
+                        color = if (selected) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        },
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.White,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = file.name,
+                color = MiuixTheme.colorScheme.onSurface,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = buildString {
+                    append(stringResource(R.string.memory_file_lines, file.lineCount))
+                    append(" · ")
+                    append(
+                        if (file.hitCount > 0) {
+                            stringResource(R.string.memory_section_hits, file.hitCount)
+                        } else {
+                            stringResource(R.string.memory_section_never_used)
+                        },
+                    )
+                    file.idleDays?.takeIf { it > 0 }?.let { days ->
+                        append(" · ").append(stringResource(R.string.memory_section_idle_days, days))
+                    }
+                },
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+            )
+        }
+        if (expanded != null) {
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Rounded.KeyboardArrowUp
+                } else {
+                    Icons.Rounded.KeyboardArrowDown
+                },
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+/** 展开的档案：可直接编辑并保存。 */
+@Composable
+private fun FileEditor(
+    label: String,
+    draft: String,
+    saved: String,
+    saving: Boolean,
+    onDraftChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    var editing by rememberSaveable(label) { mutableStateOf(false) }
+    val changed = draft != saved
+    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(0.5.dp)
-                .background(colors.dividerLine),
-        )
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            when {
-                state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    InfiniteProgressIndicator(size = 24.dp)
+                .height(MemoryDocumentBodyHeight),
+        ) {
+            if (editing) {
+                MemoryEditor(
+                    value = draft,
+                    enabled = !saving,
+                    placeholder = label,
+                    onValueChange = onDraftChange,
+                )
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                ) {
+                    MemoryBodyAction(
+                        text = stringResource(R.string.memory_mode_preview),
+                        enabled = true,
+                        onClick = { editing = false },
+                    )
                 }
-                else -> Crossfade(targetState = mode, label = "memory_mode") { current ->
-                    when (current) {
-                        MemoryViewMode.Preview -> MemoryPreview(
-                            content = state.draft,
-                            onStartEditing = { onModeChange(MemoryViewMode.Edit) },
-                        )
-                        MemoryViewMode.Edit -> MemoryEditor(
-                            value = state.draft,
-                            enabled = !state.isSaving,
-                            onValueChange = onDraftChange,
-                        )
-                    }
-                }
+            } else {
+                MemoryPreview(
+                    content = draft,
+                    placeholder = label,
+                    onStartEditing = { if (!saving) editing = true },
+                )
             }
         }
+        MemorySaveBar(
+            visible = changed || saving,
+            overLimit = false,
+            saving = saving,
+            canSave = !saving && changed,
+            onDiscard = { onDraftChange(saved) },
+            onSave = onSave,
+        )
     }
 }
 
+
+/** 文档正文区在列表里固定高度，预览与编辑都在这块区域内滚动。 */
+private val MemoryDocumentBodyHeight = 260.dp
+
+/** 预览态：Markdown 渲染，双击切到编辑（单击留给后续可能的展开等操作）。 */
 @Composable
-private fun MemoryPreview(content: String, onStartEditing: () -> Unit) {
-    if (content.isBlank()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(onClick = onStartEditing)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.memory_empty_title),
-                style = MiuixTheme.textStyles.body1,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.ui_core_memory_user_name_long_term_preferences_aa6ff9),
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        return
-    }
+private fun MemoryPreview(content: String, placeholder: String, onStartEditing: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(onStartEditing) {
+                detectTapGestures(onDoubleTap = { onStartEditing() })
+            }
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        StaticMarkdown(content = content, tone = MarkdownTone.Answer, modifier = Modifier.fillMaxWidth())
+        if (content.isBlank()) {
+            Text(
+                text = placeholder,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        } else {
+            StaticMarkdown(content = content, tone = MarkdownTone.Answer, modifier = Modifier.fillMaxWidth())
+        }
     }
 }
 
-/** 无边框整页编辑：与卡片同色，不再嵌一层灰色输入框；点到空白处也能把光标落进正文。 */
+/** 编辑态：无边框整页编辑，与卡片同色；点到空白处也能把光标落进正文。 */
 @Composable
 private fun MemoryEditor(
     value: String,
     enabled: Boolean,
+    placeholder: String,
     onValueChange: (String) -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
@@ -338,7 +1168,7 @@ private fun MemoryEditor(
     ) {
         if (value.isEmpty()) {
             Text(
-                text = stringResource(R.string.ui_core_memory_user_name_long_term_preferences_aa6ff9),
+                text = placeholder,
                 style = MemoryTextStyle(),
                 color = colors.onSurfaceVariantSummary,
             )
@@ -359,63 +1189,27 @@ private fun MemoryEditor(
 @Composable
 private fun MemoryTextStyle() = MiuixTheme.textStyles.body2.copy(lineHeight = 22.sp)
 
-/** 轻量分段切换：两个选项常驻可见，选中项用浮起的胶囊表示，比整行 TabRow 更贴合卡片标题栏。 */
-@Composable
-private fun MemoryModeSwitch(
-    mode: MemoryViewMode,
-    enabled: Boolean,
-    onModeChange: (MemoryViewMode) -> Unit,
-) {
-    val colors = MiuixTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .squircleSurface(color = colors.surfaceContainerHigh, cornerRadius = 12.dp)
-            .padding(3.dp),
-    ) {
-        MemoryViewMode.entries.forEach { option ->
-            val selected = option == mode
-            val background by animateColorAsState(
-                if (selected) colors.surface else colors.surfaceContainerHigh,
-                label = "memory_mode_tab",
-            )
-            Box(
-                modifier = Modifier
-                    .squircleSurface(color = background, cornerRadius = 9.dp)
-                    .clickable(enabled = enabled && !selected) { onModeChange(option) }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(
-                        if (option == MemoryViewMode.Preview) R.string.memory_mode_preview else R.string.memory_mode_edit,
-                    ),
-                    style = MiuixTheme.textStyles.footnote1,
-                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                    color = if (selected) colors.onSurface else colors.onSurfaceVariantSummary,
-                )
-            }
-        }
-    }
-}
 
-/** 有未保存修改或超限时才出现：左侧说明状态，右侧放弃与保存，避免常驻一个灰掉的保存按钮。 */
+/** 有未保存修改或超限时才出现：左侧说明状态，右侧放弃与保存。 */
 @Composable
 private fun MemorySaveBar(
-    state: AgentMemoryUiState,
+    visible: Boolean,
+    overLimit: Boolean,
+    saving: Boolean,
+    canSave: Boolean,
     onDiscard: () -> Unit,
     onSave: () -> Unit,
 ) {
-    val overLimit = state.draftBytes > state.maxBytes
     AnimatedVisibility(
-        visible = !state.isLoading && (state.hasUnsavedChanges || state.isSaving),
+        visible = visible,
         enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
         exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = EtaPreferenceDefaults.SidePadding)
-                .padding(top = 12.dp),
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -428,9 +1222,11 @@ private fun MemorySaveBar(
                             CircleShape,
                         ),
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(if (overLimit) R.string.memory_over_limit else R.string.memory_unsaved_changes),
+                    text = stringResource(
+                        if (overLimit) R.string.memory_over_limit else R.string.memory_unsaved_changes,
+                    ),
                     style = MiuixTheme.textStyles.footnote1,
                     color = if (overLimit) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     maxLines = 2,
@@ -438,30 +1234,15 @@ private fun MemorySaveBar(
             }
             EtaTextButton(
                 text = stringResource(R.string.memory_discard),
-                enabled = !state.isSaving,
+                enabled = !saving,
                 onClick = onDiscard,
-                minHeight = 40.dp,
-                cornerRadius = 20.dp,
-                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             )
             EtaTextButton(
-                text = stringResource(if (state.isSaving) R.string.memory_saving else R.string.memory_save),
-                enabled = state.canSave,
+                text = stringResource(if (saving) R.string.memory_saving else R.string.memory_save),
+                enabled = canSave,
                 onClick = onSave,
-                minHeight = 40.dp,
-                cornerRadius = 20.dp,
-                insideMargin = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
             )
         }
     }
 }
-
-private fun formatBytes(bytes: Int): String = when {
-    bytes < 1_024 -> "$bytes B"
-    bytes < 1_024 * 1_024 -> "%.1f KiB".format(bytes / 1_024.0)
-    bytes % (1_024 * 1_024) == 0 -> "${bytes / (1_024 * 1_024)} MiB"
-    else -> "%.2f MiB".format(bytes / (1_024.0 * 1_024.0))
-}
-
-private fun formatNumber(value: Int): String = NumberFormat.getIntegerInstance().format(value)
