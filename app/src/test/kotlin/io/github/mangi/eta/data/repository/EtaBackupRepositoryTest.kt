@@ -132,7 +132,7 @@ class EtaBackupRepositoryTest {
         AgentMemoryRepository.replaceAll("旧记忆")
         val dao = EtaDatabase.get(context).providerDao()
         val stored = requireNotNull(dao.providerById(provider.id))
-        val document = EtaBackupDocument(exportedAt = 0, memoryMd = "导入记忆", providers = listOf(
+        val document = EtaBackupDocument(exportedAt = 0, memoryCoreMd = "导入记忆", providers = listOf(
             EtaBackupProvider(stored.provider.copy(name = "导入连接")),
         ))
         var committed = false
