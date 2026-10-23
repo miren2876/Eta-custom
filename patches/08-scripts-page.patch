@@ -1,0 +1,1193 @@
+diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/terminal/ScriptLibrary.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/terminal/ScriptLibrary.kt
+new file mode 100644
+index 00000000..b5bac551
+--- /dev/null
++++ b/app/src/main/kotlin/io/github/mangi/eta/agent/terminal/ScriptLibrary.kt
+@@ -0,0 +1,100 @@
++package io.github.mangi.eta.agent.terminal
++
++import android.content.Context
++import java.io.File
++import java.util.UUID
++import org.json.JSONArray
++import org.json.JSONObject
++
++/**
++ * 一条脚本定义。脚本库只存定义，运行状态每次都从 [DetachedTaskSupervisor] 现查：
++ * 任务记录会被 prune 清理，而「脚本」和「一次运行」不是同一件事。
++ */
++internal data class ScriptDefinition(
++    val id: String,
++    val name: String,
++    val command: String,
++    val environment: TerminalEnvironment,
++    val cwd: String,
++    val identity: String,
++    val createdAt: Long,
++    val updatedAt: Long,
++    val lastTaskId: String? = null,
++    /** 停止会连任务记录一起删掉，这里留最后一次结果供列表展示。 */
++    val lastResult: String? = null,
++    val lastFinishedAt: Long? = null,
++)
++
++internal fun ScriptDefinition.toScriptJson(): JSONObject = JSONObject()
++    .put("id", id)
++    .put("name", name)
++    .put("command", command)
++    .put("environment", environment.wireName)
++    .put("cwd", cwd)
++    .put("identity", identity)
++    .put("created_at", createdAt)
++    .put("updated_at", updatedAt)
++    .put("last_task_id", lastTaskId ?: JSONObject.NULL)
++    .put("last_result", lastResult ?: JSONObject.NULL)
++    .put("last_finished_at", lastFinishedAt ?: JSONObject.NULL)
++
++internal fun JSONObject.toScriptDefinition(): ScriptDefinition = ScriptDefinition(
++    id = getString("id"),
++    name = optString("name"),
++    command = getString("command"),
++    environment = when (optString("environment")) {
++        TerminalEnvironment.ALPINE.wireName -> TerminalEnvironment.ALPINE
++        TerminalEnvironment.DEBIAN.wireName -> TerminalEnvironment.DEBIAN
++        else -> TerminalEnvironment.ANDROID
++    },
++    cwd = optString("cwd"),
++    identity = optString("identity").ifBlank { "root" },
++    createdAt = optLong("created_at", 0),
++    updatedAt = optLong("updated_at", 0),
++    lastTaskId = optString("last_task_id").takeIf { it.isNotBlank() && it != "null" },
++    lastResult = optString("last_result").takeIf { it.isNotBlank() && it != "null" },
++    lastFinishedAt = if (isNull("last_finished_at")) null else optLong("last_finished_at"),
++)
++
++/** 脚本库：Eta 私有目录里的一个 JSON 文件，读-改-写经同一把锁串行，写入走临时文件替换。 */
++internal class ScriptLibrary(private val file: File) {
++
++    companion object {
++        fun defaultFile(context: Context): File = File(context.filesDir, "scripts.json")
++
++        fun newScript(name: String, command: String, environment: TerminalEnvironment, cwd: String): ScriptDefinition {
++            val now = System.currentTimeMillis()
++            return ScriptDefinition(
++                id = "sc_" + UUID.randomUUID().toString().take(8),
++                name = name.trim().ifBlank { command.lineSequence().firstOrNull().orEmpty().trim().take(24) },
++                command = command.trim(),
++                environment = environment,
++                cwd = cwd.trim(),
++                identity = "root",
++                createdAt = now,
++                updatedAt = now,
++            )
++        }
++    }
++
++    @Synchronized
++    fun load(): List<ScriptDefinition> {
++        if (!file.exists()) return emptyList()
++        return runCatching {
++            val array = JSONArray(file.readText())
++            (0 until array.length()).map { index -> array.getJSONObject(index).toScriptDefinition() }
++        }.getOrDefault(emptyList())
++    }
++
++    @Synchronized
++    fun save(scripts: List<ScriptDefinition>): Boolean = runCatching {
++        file.parentFile?.mkdirs()
++        val array = JSONArray()
++        scripts.forEach { array.put(it.toScriptJson()) }
++        val text = array.toString()
++        val tmp = File(file.parentFile, file.name + ".tmp")
++        tmp.writeText(text)
++        if (!tmp.renameTo(file)) file.writeText(text)
++        true
++    }.getOrDefault(false)
++}
+diff --git a/app/src/main/kotlin/io/github/mangi/eta/agent/terminal/ScriptRuntimeUsage.kt b/app/src/main/kotlin/io/github/mangi/eta/agent/terminal/ScriptRuntimeUsage.kt
+new file mode 100644
+index 00000000..d55347da
+--- /dev/null
++++ b/app/src/main/kotlin/io/github/mangi/eta/agent/terminal/ScriptRuntimeUsage.kt
+@@ -0,0 +1,149 @@
++package io.github.mangi.eta.agent.terminal
++
++/**
++ * 一个脚本运行时的进程树占用。pid 只是外壳（su / chroot / proot 包装下几乎不耗 CPU），
++ * 所以统计口径是以宿主 pid 为根的整棵进程树。
++ */
++internal data class ScriptRuntimeUsage(
++    val cpuPercent: Double,
++    val rssBytes: Long,
++    val processCount: Int,
++)
++
++/**
++ * 读取脚本进程树的 CPU / RSS / 进程数。
++ *
++ * 采样在 Root 一次性 Shell 里完成：先全量扫一遍 /proc 建 ppid 表并累加树内 RSS，
++ * 隔 1 秒再读树内进程的 utime+stime 取差值。读不到（无 Root、进程已退出、/proc 不可读）
++ * 一律返回空，由 UI 显示「不可用」，不抛异常也不报 0。
++ */
++internal class ScriptRuntimeUsageReader(
++    private val processSupervisor: ShellProcessSupervisor = ShellProcessSupervisor(),
++    private val rootAvailable: () -> Boolean = { TerminalRuntime.rootAvailable },
++) : AutoCloseable {
++
++    fun read(pids: List<Long>): Map<Long, ScriptRuntimeUsage> {
++        val roots = pids.filter { it > 1 }.distinct()
++        if (roots.isEmpty() || !rootAvailable()) return emptyMap()
++        val result = runOneShotShell(
++            processSupervisor = processSupervisor,
++            identity = "root",
++            command = samplingScript(roots),
++            timeoutSeconds = 20,
++            maxOutputBytes = 64 * 1024,
++        )
++        if (result.exitCode != 0) return emptyMap()
++        return parseScriptUsage(result.output.decodeToString())
++    }
++
++    fun read(pid: Long): ScriptRuntimeUsage? = read(listOf(pid))[pid]
++
++    override fun close() {
++        processSupervisor.beginClosing()
++    }
++}
++
++/** CLK_TCK 在 Android 上固定为 100；差值除以它换算成秒。 */
++private const val CLOCK_TICKS_PER_SECOND = 100.0
++
++private fun samplingScript(roots: List<Long>): String = """
++eta_roots='${roots.joinToString(" ")}'
++eta_all=''
++read -r eta_u0 eta_x < /proc/uptime 2>/dev/null || eta_u0=0
++for d in /proc/[0-9]*; do
++  p=${'$'}{d#/proc/}
++  read -r eta_line 2>/dev/null < "${'$'}d/stat" || continue
++  case "${'$'}eta_line" in *") "*) ;; *) continue ;; esac
++  eta_rest=${'$'}{eta_line##*) }
++  set -- ${'$'}eta_rest
++  eval "eta_pp_${'$'}p=${'$'}2"
++  eval "eta_tk_${'$'}p=${'$'}(( ${'$'}{12} + ${'$'}{13} ))"
++  eta_all="${'$'}eta_all ${'$'}p"
++done
++for r in ${'$'}eta_roots; do
++  eta_tree=''
++  eta_ticks=0
++  eta_count=0
++  for p in ${'$'}eta_all; do
++    eta_c=${'$'}p
++    eta_n=0
++    eta_hit=1
++    while [ "${'$'}eta_n" -lt 16 ]; do
++      if [ "${'$'}eta_c" = "${'$'}r" ]; then eta_hit=0; break; fi
++      if [ -z "${'$'}eta_c" ] || [ "${'$'}eta_c" = "0" ] || [ "${'$'}eta_c" = "1" ]; then break; fi
++      eval "eta_c=\${'$'}eta_pp_${'$'}eta_c"
++      eta_n=$((eta_n+1))
++    done
++    if [ "${'$'}eta_hit" = "0" ]; then
++      eta_tree="${'$'}eta_tree ${'$'}p"
++      eta_count=$((eta_count+1))
++      eval "eta_tk=\${'$'}eta_tk_${'$'}p"
++      eta_ticks=$((eta_ticks+eta_tk))
++    fi
++  done
++  eta_rss=0
++  for p in ${'$'}eta_tree; do
++    eta_v=0
++    while read -r eta_k eta_val eta_x2; do
++      if [ "${'$'}eta_k" = "VmRSS:" ]; then eta_v=${'$'}eta_val; break; fi
++    done 2>/dev/null < "/proc/${'$'}p/status"
++    eta_rss=$((eta_rss+eta_v))
++  done
++  eval "eta_tree_${'$'}r=\${'$'}eta_tree"
++  eval "eta_ticks_${'$'}r=${'$'}eta_ticks"
++  eval "eta_rss_${'$'}r=${'$'}eta_rss"
++  eval "eta_count_${'$'}r=${'$'}eta_count"
++done
++sleep 1
++read -r eta_u1 eta_x < /proc/uptime 2>/dev/null || eta_u1=0
++for r in ${'$'}eta_roots; do
++  eval "eta_tree=\${'$'}eta_tree_${'$'}r"
++  eval "eta_t1=\${'$'}eta_ticks_${'$'}r"
++  eval "eta_rss=\${'$'}eta_rss_${'$'}r"
++  eval "eta_count=\${'$'}eta_count_${'$'}r"
++  eta_t2=0
++  for p in ${'$'}eta_tree; do
++    if read -r eta_line 2>/dev/null < "/proc/${'$'}p/stat"; then
++      eta_rest=${'$'}{eta_line##*) }
++      set -- ${'$'}eta_rest
++      eta_t2=$(( eta_t2 + ${'$'}{12} + ${'$'}{13} ))
++    fi
++  done
++  eta_alive=1
++  [ -r "/proc/${'$'}r/stat" ] || eta_alive=0
++  echo "USAGE ${'$'}r ${'$'}eta_alive ${'$'}eta_count ${'$'}eta_rss ${'$'}eta_t1 ${'$'}eta_t2"
++done
++echo "ELAPSED ${'$'}eta_u0 ${'$'}eta_u1"
++""".trimIndent()
++
++/** 解析采样脚本输出；进程已退出或间隔不可用（<=0）时该 pid 直接不出现。 */
++internal fun parseScriptUsage(output: String): Map<Long, ScriptRuntimeUsage> {
++    var elapsed = 0.0
++    val rows = mutableListOf<List<String>>()
++    output.lineSequence().forEach { line ->
++        val parts = line.trim().split(' ')
++        when (parts.firstOrNull()) {
++            "USAGE" -> if (parts.size == 7) rows += parts
++            "ELAPSED" -> if (parts.size == 3) {
++                val start = parts[1].toDoubleOrNull()
++                val end = parts[2].toDoubleOrNull()
++                if (start != null && end != null) elapsed = end - start
++            }
++        }
++    }
++    if (elapsed <= 0.0) return emptyMap()
++    return rows.mapNotNull { parts ->
++        val pid = parts[1].toLongOrNull() ?: return@mapNotNull null
++        if (parts[2] != "1") return@mapNotNull null
++        val count = parts[3].toIntOrNull() ?: return@mapNotNull null
++        val rssKb = parts[4].toLongOrNull() ?: return@mapNotNull null
++        val ticks1 = parts[5].toLongOrNull() ?: return@mapNotNull null
++        val ticks2 = parts[6].toLongOrNull() ?: return@mapNotNull null
++        val delta = (ticks2 - ticks1).coerceAtLeast(0L)
++        pid to ScriptRuntimeUsage(
++            cpuPercent = delta / CLOCK_TICKS_PER_SECOND / elapsed * 100.0,
++            rssBytes = rssKb * 1024,
++            processCount = count,
++        )
++    }.toMap()
++}
+diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppViewModel.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppViewModel.kt
+index 1ea7a6af..f671da65 100644
+--- a/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppViewModel.kt
++++ b/app/src/main/kotlin/io/github/mangi/eta/ui/app/AgentAppViewModel.kt
+@@ -28,6 +28,7 @@ internal class AgentAppViewModel(application: Application) : AndroidViewModel(ap
+     val skills = AgentSkillsStore(application, viewModelScope)
+     val memory = AgentMemoryStore(application, viewModelScope)
+     val permissionHealth = PermissionHealthStore(application, viewModelScope)
++    val scriptStore = ScriptLibraryStore(application, viewModelScope)
+     private val terminalHost = TerminalSessionHost.get(application)
+     val terminalStore = terminalHost.terminal
+     val consoleStore = terminalHost.console
+diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/app/ScriptLibraryStore.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/app/ScriptLibraryStore.kt
+new file mode 100644
+index 00000000..83139586
+--- /dev/null
++++ b/app/src/main/kotlin/io/github/mangi/eta/ui/app/ScriptLibraryStore.kt
+@@ -0,0 +1,268 @@
++package io.github.mangi.eta.ui.app
++
++import android.content.Context
++import androidx.compose.runtime.Immutable
++import io.github.mangi.eta.R
++import io.github.mangi.eta.agent.terminal.DaemonStartResult
++import io.github.mangi.eta.agent.terminal.DetachedTaskStatus
++import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
++import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
++import io.github.mangi.eta.agent.terminal.ScriptDefinition
++import io.github.mangi.eta.agent.terminal.ScriptLibrary
++import io.github.mangi.eta.agent.terminal.ScriptRuntimeUsage
++import io.github.mangi.eta.agent.terminal.ScriptRuntimeUsageReader
++import io.github.mangi.eta.agent.terminal.SharedFolderMounts
++import io.github.mangi.eta.agent.terminal.TerminalEnvironment
++import io.github.mangi.eta.agent.terminal.TerminalRuntime
++import io.github.mangi.eta.agent.terminal.commandStatus
++import io.github.mangi.eta.agent.terminal.isLinux
++import io.github.mangi.eta.core.AndroidAgentLogger
++import io.github.mangi.eta.ui.components.ansiPlainText
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.flow.update
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++
++@Immutable
++internal data class ScriptUi(
++    val id: String,
++    val name: String,
++    val command: String,
++    val environment: TerminalEnvironment,
++    val cwd: String,
++    val running: Boolean = false,
++    val taskId: String? = null,
++    val startedAt: Long? = null,
++    val lastFinishedAt: Long? = null,
++    /** success / failed / stopped；没有记录时为 null。 */
++    val lastResult: String? = null,
++    /** 读不到占用时为 null，UI 显示「不可用」，不显示 0。 */
++    val usage: ScriptRuntimeUsage? = null,
++)
++
++@Immutable
++internal data class ScriptManagerUiState(
++    val scripts: List<ScriptUi> = emptyList(),
++    val loaded: Boolean = false,
++    val notice: String? = null,
++)
++
++/**
++ * 管理脚本页的状态所有者：脚本库（文件）只存定义，运行状态每轮从 [DetachedTaskSupervisor] 现查，
++ * 占用由 [ScriptRuntimeUsageReader] 在 Root 侧采样。页面负责驱动轮询，这里不常驻定时器。
++ */
++internal class ScriptLibraryStore(
++    context: Context,
++    private val scope: CoroutineScope,
++) {
++    private val appContext = context.applicationContext
++    private val library = ScriptLibrary(ScriptLibrary.defaultFile(appContext))
++    private val libraryLock = Any()
++    private val supervisor = DetachedTaskSupervisor(
++        logger = AndroidAgentLogger,
++        recordsFile = DetachedTaskSupervisor.defaultRecordsFile(appContext),
++        linuxRootfsPathProvider = { environment ->
++            environment.linuxDistribution?.let { distribution ->
++                LinuxEnvironmentPaths.rootfsDir(appContext, distribution).absolutePath
++            }
++        },
++        linuxSharedMountsProvider = { SharedFolderMounts.current() },
++    )
++    private val usageReader = ScriptRuntimeUsageReader()
++
++    private val _uiState = MutableStateFlow(ScriptManagerUiState())
++    val uiState: StateFlow<ScriptManagerUiState> = _uiState.asStateFlow()
++
++    private var refreshJob: Job? = null
++
++    /** 页面可见时每轮调用；上一轮还没跑完（采样要 ~1.3 秒）就跳过，不排队堆积。 */
++    fun refresh() {
++        if (refreshJob?.isActive == true) return
++        refreshJob = scope.launch { reload() }
++    }
++
++    /** 动作之后立刻反映结果：打断正在跑的轮询，重新读一遍。 */
++    private fun refreshNow() {
++        refreshJob?.cancel()
++        refreshJob = scope.launch { reload() }
++    }
++
++    fun dismissNotice() {
++        _uiState.update { it.copy(notice = null) }
++    }
++
++    fun createScript(name: String, command: String, environment: TerminalEnvironment, cwd: String) {
++        if (command.isBlank()) return
++        scope.launch {
++            val script = ScriptLibrary.newScript(name, command, environment, cwd.ifBlank { defaultCwd(environment) })
++            val saved = withContext(Dispatchers.IO) { mutate { it + script } }
++            if (!saved) notice(R.string.scripts_save_failed)
++            refreshNow()
++        }
++    }
++
++    fun updateScript(id: String, name: String, command: String, environment: TerminalEnvironment, cwd: String) {
++        if (command.isBlank()) return
++        scope.launch {
++            val saved = withContext(Dispatchers.IO) {
++                mutate { scripts ->
++                    scripts.map { script ->
++                        if (script.id != id) script else script.copy(
++                            name = name.trim().ifBlank { script.name },
++                            command = command.trim(),
++                            environment = environment,
++                            cwd = cwd.trim().ifBlank { defaultCwd(environment) },
++                            updatedAt = System.currentTimeMillis(),
++                        )
++                    }
++                }
++            }
++            if (!saved) notice(R.string.scripts_save_failed)
++            refreshNow()
++        }
++    }
++
++    fun startScript(id: String) {
++        scope.launch {
++            val script = withContext(Dispatchers.IO) { library.load() }.firstOrNull { it.id == id } ?: return@launch
++            val result = withContext(Dispatchers.IO) {
++                supervisor.start(
++                    command = script.command,
++                    cwd = script.cwd.ifBlank { defaultCwd(script.environment) },
++                    identity = script.identity,
++                    environment = script.environment,
++                    description = script.name,
++                )
++            }
++            when (result) {
++                is DaemonStartResult.Started -> withContext(Dispatchers.IO) {
++                    mutate { scripts ->
++                        scripts.map {
++                            if (it.id == id) it.copy(lastTaskId = result.task.id, updatedAt = System.currentTimeMillis()) else it
++                        }
++                    }
++                }
++                is DaemonStartResult.Failed -> notice(R.string.scripts_start_failed, result.message)
++            }
++            refreshNow()
++        }
++    }
++
++    fun stopScript(id: String) {
++        scope.launch {
++            val stopped = withContext(Dispatchers.IO) { stopTask(id) }
++            if (!stopped) notice(R.string.scripts_stop_failed)
++            refreshNow()
++        }
++    }
++
++    /** 删除前先停止（记录会被 stop 一起清掉）；只删脚本库条目，不动别的任务记录。 */
++    fun deleteScript(id: String) {
++        scope.launch {
++            withContext(Dispatchers.IO) {
++                stopTask(id)
++                mutate { scripts -> scripts.filterNot { it.id == id } }
++            }
++            refreshNow()
++        }
++    }
++
++    suspend fun readLogs(taskId: String): String = withContext(Dispatchers.IO) {
++        val result = supervisor.readLogs(taskId)
++        when {
++            result.ok && result.text.isBlank() -> appContext.getString(R.string.terminal_daemon_logs_empty)
++            result.ok -> ansiPlainText(result.text.trimEnd())
++            else -> result.message.ifBlank { appContext.getString(R.string.terminal_daemon_logs_empty) }
++        }
++    }
++
++    /** 停止当前关联的任务；没有在跑的直接算成功。 */
++    private fun stopTask(id: String): Boolean {
++        val script = library.load().firstOrNull { it.id == id } ?: return false
++        val statuses = supervisor.list()
++        val taskId = resolveTask(script, statuses, statuses.filter { it.running })?.task?.id ?: return true
++        if (!supervisor.stop(taskId)) return false
++        mutate { scripts ->
++            scripts.map {
++                if (it.id != id) it else it.copy(
++                    lastTaskId = null,
++                    lastResult = "stopped",
++                    lastFinishedAt = System.currentTimeMillis(),
++                )
++            }
++        }
++        return true
++    }
++
++    private fun mutate(transform: (List<ScriptDefinition>) -> List<ScriptDefinition>): Boolean =
++        synchronized(libraryLock) { library.save(transform(library.load())) }
++
++    private fun notice(resId: Int, vararg args: Any?) {
++        val text = appContext.getString(resId, *args)
++        _uiState.update { it.copy(notice = text) }
++    }
++
++    private suspend fun reload() {
++        val scripts = withContext(Dispatchers.IO) { library.load() }
++        val statuses = withContext(Dispatchers.IO) { supervisor.list() }
++        val running = statuses.filter { it.running }
++        val resolved = scripts.map { script -> script to resolveTask(script, statuses, running) }
++        val pids = resolved.mapNotNull { (_, status) -> status?.takeIf { it.running }?.task?.pid }
++        val usage = withContext(Dispatchers.IO) { usageReader.read(pids) }
++        _uiState.update { state ->
++            state.copy(
++                scripts = resolved.map { (script, status) -> toScriptUi(script, status, usage) },
++                loaded = true,
++            )
++        }
++    }
++
++    /** 优先按 lastTaskId 认任务；记录已被清理时用 command + environment 兜底匹配最近一条。 */
++    private fun resolveTask(
++        script: ScriptDefinition,
++        statuses: List<DetachedTaskStatus>,
++        running: List<DetachedTaskStatus>,
++    ): DetachedTaskStatus? = script.lastTaskId?.let { id -> statuses.firstOrNull { it.task.id == id } }
++        ?: running
++            .filter { it.task.command == script.command && it.task.environment == script.environment }
++            .maxByOrNull { it.task.startedAt }
++
++    private fun toScriptUi(
++        script: ScriptDefinition,
++        status: DetachedTaskStatus?,
++        usage: Map<Long, ScriptRuntimeUsage>,
++    ): ScriptUi {
++        val running = status?.running == true
++        val task = status?.task
++        return ScriptUi(
++            id = script.id,
++            name = script.name,
++            command = script.command,
++            environment = script.environment,
++            cwd = script.cwd,
++            running = running,
++            taskId = task?.id,
++            startedAt = task?.takeIf { running }?.startedAt,
++            lastFinishedAt = task?.completedAt ?: script.lastFinishedAt,
++            lastResult = when {
++                running -> null
++                // 守护任务的记录不会自己写 completedAt，进程没了就按「已结束」显示。
++                task != null -> when (task.commandStatus) {
++                    "completed" -> "success"
++                    "failed" -> "failed"
++                    else -> "stopped"
++                }
++                else -> script.lastResult
++            },
++            usage = task?.takeIf { running }?.let { usage[it.pid] },
++        )
++    }
++
++    private fun defaultCwd(environment: TerminalEnvironment): String =
++        if (environment.isLinux) TerminalRuntime.LINUX_WORKSPACE_PATH else TerminalRuntime.ROOT_WORKSPACE_PATH
++}
+diff --git a/app/src/main/kotlin/io/github/mangi/eta/ui/screens/terminal/ScriptManagerScreen.kt b/app/src/main/kotlin/io/github/mangi/eta/ui/screens/terminal/ScriptManagerScreen.kt
+new file mode 100644
+index 00000000..8aad7f26
+--- /dev/null
++++ b/app/src/main/kotlin/io/github/mangi/eta/ui/screens/terminal/ScriptManagerScreen.kt
+@@ -0,0 +1,562 @@
++package io.github.mangi.eta.ui.screens.terminal
++
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.rounded.Article
++import androidx.compose.material.icons.rounded.Add
++import androidx.compose.material.icons.rounded.PlayArrow
++import androidx.compose.material.icons.rounded.Stop
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableLongStateOf
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.unit.dp
++import io.github.mangi.eta.R
++import io.github.mangi.eta.agent.terminal.TerminalEnvironment
++import io.github.mangi.eta.ui.app.ConversationTimeLabels
++import io.github.mangi.eta.ui.app.ScriptLibraryStore
++import io.github.mangi.eta.ui.app.ScriptUi
++import io.github.mangi.eta.ui.app.displayName
++import io.github.mangi.eta.ui.components.EtaChoiceChip
++import io.github.mangi.eta.ui.components.EtaMonospace
++import io.github.mangi.eta.ui.components.EtaPreference
++import io.github.mangi.eta.ui.components.EtaPreferenceDivider
++import io.github.mangi.eta.ui.components.EtaPreferenceGroup
++import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
++import io.github.mangi.eta.ui.components.EtaWindowDialog
++import io.github.mangi.eta.ui.components.MiuixDialogActions
++import io.github.mangi.eta.ui.components.MiuixScaffoldPage
++import io.github.mangi.eta.ui.components.StatusSuccess
++import io.github.mangi.eta.ui.components.ansiPlainText
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.isActive
++import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
++import top.yukonga.miuix.kmp.basic.Text
++import top.yukonga.miuix.kmp.basic.TextField
++import top.yukonga.miuix.kmp.squircle.squircleBackground
++import top.yukonga.miuix.kmp.theme.MiuixTheme
++import androidx.compose.runtime.collectAsState
++
++/** 管理脚本页：脚本库的增删改与启停，运行中的脚本每 2 秒刷新一次进程树占用。 */
++@Composable
++internal fun ScriptManagerScreen(
++    store: ScriptLibraryStore,
++    onBack: () -> Unit,
++) {
++    val state by store.uiState.collectAsState()
++    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
++    var editor by remember { mutableStateOf<ScriptDraft?>(null) }
++    var actionsFor by remember { mutableStateOf<ScriptUi?>(null) }
++    var stopTarget by remember { mutableStateOf<ScriptUi?>(null) }
++    var deleteTarget by remember { mutableStateOf<ScriptUi?>(null) }
++    var logsTaskId by remember { mutableStateOf<String?>(null) }
++
++    // 只在本页可见时轮询；离开页面这一协程随组合取消，不留后台定时器。
++    LaunchedEffect(Unit) {
++        while (isActive) {
++            store.refresh()
++            now = System.currentTimeMillis()
++            delay(2_000)
++        }
++    }
++
++    MiuixScaffoldPage(
++        title = stringResource(R.string.route_scripts),
++        onBack = onBack,
++        actions = {
++            RowIconAction(
++                icon = Icons.Rounded.Add,
++                contentDescription = stringResource(R.string.scripts_new),
++                onClick = { editor = ScriptDraft() },
++            )
++        },
++    ) {
++        state.notice?.let { notice ->
++            item(key = "notice") {
++                EtaPreferenceGroup {
++                    EtaPreference(
++                        title = notice,
++                        titleColor = top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
++                            color = MiuixTheme.colorScheme.error,
++                        ),
++                        onClick = store::dismissNotice,
++                    )
++                }
++            }
++        }
++        val running = state.scripts.filter { it.running }
++        val saved = state.scripts.filterNot { it.running }
++        if (state.loaded && state.scripts.isEmpty()) {
++            item(key = "empty") {
++                EtaPreferenceGroup {
++                    EtaPreference(
++                        title = stringResource(R.string.scripts_empty),
++                        onClick = { editor = ScriptDraft() },
++                    )
++                }
++            }
++        }
++        if (running.isNotEmpty()) {
++            item(key = "running-title") {
++                EtaPreferenceGroupTitle(stringResource(R.string.scripts_group_running))
++            }
++            item(key = "running") {
++                EtaPreferenceGroup {
++                    running.forEachIndexed { index, script ->
++                        if (index > 0) EtaPreferenceDivider()
++                        ScriptRow(
++                            script = script,
++                            now = now,
++                            onStart = { store.startScript(script.id) },
++                            onStop = { stopTarget = script },
++                            onLogs = script.taskId?.let { taskId -> { logsTaskId = taskId } },
++                            onClick = { actionsFor = script },
++                        )
++                    }
++                }
++            }
++        }
++        if (saved.isNotEmpty()) {
++            item(key = "saved-title") {
++                EtaPreferenceGroupTitle(stringResource(R.string.scripts_group_saved))
++            }
++            item(key = "saved") {
++                EtaPreferenceGroup {
++                    saved.forEachIndexed { index, script ->
++                        if (index > 0) EtaPreferenceDivider()
++                        ScriptRow(
++                            script = script,
++                            now = now,
++                            onStart = { store.startScript(script.id) },
++                            onStop = { stopTarget = script },
++                            onLogs = script.taskId?.let { taskId -> { logsTaskId = taskId } },
++                            onClick = { actionsFor = script },
++                        )
++                    }
++                }
++            }
++        }
++    }
++
++    editor?.let { draft ->
++        ScriptEditorDialog(
++            draft = draft,
++            onDismiss = { editor = null },
++            onSave = { name, command, environment, cwd ->
++                if (draft.id == null) {
++                    store.createScript(name, command, environment, cwd)
++                } else {
++                    store.updateScript(draft.id, name, command, environment, cwd)
++                }
++                editor = null
++            },
++        )
++    }
++
++    actionsFor?.let { script ->
++        ScriptActionsDialog(
++            script = script,
++            onDismiss = { actionsFor = null },
++            onStart = { store.startScript(script.id); actionsFor = null },
++            onStop = { actionsFor = null; stopTarget = script },
++            onLogs = { actionsFor = null; logsTaskId = script.taskId },
++            onEdit = {
++                actionsFor = null
++                editor = ScriptDraft(
++                    id = script.id,
++                    name = script.name,
++                    command = script.command,
++                    environment = script.environment,
++                    cwd = script.cwd,
++                    running = script.running,
++                )
++            },
++            onDelete = { actionsFor = null; deleteTarget = script },
++        )
++    }
++
++    stopTarget?.let { script ->
++        EtaWindowDialog(
++            show = true,
++            title = stringResource(R.string.scripts_stop_title),
++            summary = stringResource(R.string.scripts_stop_message, script.name),
++            onDismissRequest = { stopTarget = null },
++        ) {
++            MiuixDialogActions(
++                confirmText = stringResource(R.string.terminal_stop),
++                destructive = true,
++                onCancel = { stopTarget = null },
++                onConfirm = {
++                    store.stopScript(script.id)
++                    stopTarget = null
++                },
++            )
++        }
++    }
++
++    deleteTarget?.let { script ->
++        EtaWindowDialog(
++            show = true,
++            title = stringResource(R.string.action_delete),
++            summary = if (script.running) {
++                stringResource(R.string.scripts_delete_running_message)
++            } else {
++                stringResource(R.string.scripts_delete_message)
++            },
++            onDismissRequest = { deleteTarget = null },
++        ) {
++            MiuixDialogActions(
++                confirmText = stringResource(R.string.action_delete),
++                destructive = true,
++                onCancel = { deleteTarget = null },
++                onConfirm = {
++                    store.deleteScript(script.id)
++                    deleteTarget = null
++                },
++            )
++        }
++    }
++
++    logsTaskId?.let { taskId ->
++        ScriptLogsDialog(store = store, taskId = taskId, onDismiss = { logsTaskId = null })
++    }
++}
++
++private data class ScriptDraft(
++    val id: String? = null,
++    val name: String = "",
++    val command: String = "",
++    val environment: TerminalEnvironment = TerminalEnvironment.ANDROID,
++    val cwd: String = "",
++    val running: Boolean = false,
++)
++
++@Composable
++private fun ScriptRow(
++    script: ScriptUi,
++    now: Long,
++    onStart: () -> Unit,
++    onStop: () -> Unit,
++    onLogs: (() -> Unit)?,
++    onClick: () -> Unit,
++) {
++    val colors = MiuixTheme.colorScheme
++    val summaryColor = colors.onSurfaceVariantSummary
++    EtaPreference(
++        content = {
++            Text(
++                text = script.name,
++                style = MiuixTheme.textStyles.body1,
++                fontWeight = FontWeight.Medium,
++                color = colors.onSurface,
++                maxLines = 1,
++                overflow = TextOverflow.Ellipsis,
++            )
++            Text(
++                text = script.command.lineSequence().firstOrNull().orEmpty(),
++                style = MiuixTheme.textStyles.footnote2.copy(fontFamily = EtaMonospace),
++                color = summaryColor,
++                maxLines = 1,
++                overflow = TextOverflow.Ellipsis,
++                modifier = Modifier.padding(top = 2.dp),
++            )
++            Text(
++                text = scriptMeta(script, now),
++                style = MiuixTheme.textStyles.footnote2,
++                color = summaryColor,
++                modifier = Modifier.padding(top = 2.dp),
++            )
++        },
++        startAction = { StatusDot(color = scriptStatusColor(script)) },
++        endActions = {
++            onLogs?.let { open ->
++                RowIconAction(
++                    icon = Icons.AutoMirrored.Rounded.Article,
++                    contentDescription = stringResource(R.string.terminal_daemon_view_logs),
++                    onClick = open,
++                )
++            }
++            if (script.running) {
++                RowIconAction(
++                    icon = Icons.Rounded.Stop,
++                    contentDescription = stringResource(R.string.terminal_stop),
++                    tint = colors.error,
++                    onClick = onStop,
++                )
++            } else {
++                RowIconAction(
++                    icon = Icons.Rounded.PlayArrow,
++                    contentDescription = stringResource(R.string.scripts_start),
++                    tint = colors.primary,
++                    onClick = onStart,
++                )
++            }
++        },
++        onClick = onClick,
++    )
++}
++
++@Composable
++private fun scriptStatusColor(script: ScriptUi) = when {
++    script.running -> StatusSuccess
++    script.lastResult == "failed" -> MiuixTheme.colorScheme.error
++    else -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.5f)
++}
++
++/** 运行中显示时长与占用；已停止显示环境、最近运行与上次结果。 */
++@Composable
++private fun scriptMeta(script: ScriptUi, now: Long): String {
++    val environment = script.environment.displayName
++    if (script.running) {
++        val usage = script.usage
++        val uptime = formatUptime(now - (script.startedAt ?: now))
++        val cpu = usage?.let { "%.1f%%".format(it.cpuPercent) }
++            ?: stringResource(R.string.scripts_unavailable)
++        val memory = usage?.let { "%.1f MB".format(it.rssBytes / 1024.0 / 1024.0) }
++            ?: stringResource(R.string.scripts_unavailable)
++        val count = usage?.processCount?.let { stringResource(R.string.scripts_processes, it) }
++            ?: stringResource(R.string.scripts_unavailable)
++        return buildString {
++            append(environment)
++            append(" · ")
++            append(stringResource(R.string.scripts_uptime, uptime))
++            append(" · ")
++            append(stringResource(R.string.scripts_cpu, cpu))
++            append(" · ")
++            append(stringResource(R.string.scripts_memory, memory))
++            append(" · ")
++            append(count)
++        }
++    }
++    val lastRun = script.lastFinishedAt?.takeIf { it > 0 }
++        ?.let {
++            stringResource(
++                R.string.scripts_last_run,
++                ConversationTimeLabels.label(
++                    timestampMillis = it,
++                    yesterdayLabel = stringResource(R.string.time_yesterday),
++                    recentLabel = stringResource(R.string.time_recent),
++                ),
++            )
++        }
++        ?: stringResource(R.string.scripts_never_run)
++    val result = when (script.lastResult) {
++        "success" -> stringResource(R.string.scripts_result_success)
++        "failed" -> stringResource(R.string.scripts_result_failed)
++        "stopped" -> stringResource(R.string.scripts_result_stopped)
++        else -> null
++    }
++    return buildString {
++        append(environment)
++        append(" · ")
++        append(lastRun)
++        if (result != null) {
++            append(" · ")
++            append(result)
++        }
++    }
++}
++
++private fun formatUptime(millis: Long): String {
++    val total = (millis.coerceAtLeast(0) / 1000)
++    val hours = total / 3600
++    val minutes = total % 3600 / 60
++    val seconds = total % 60
++    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
++}
++
++@Composable
++private fun ScriptActionsDialog(
++    script: ScriptUi,
++    onDismiss: () -> Unit,
++    onStart: () -> Unit,
++    onStop: () -> Unit,
++    onLogs: () -> Unit,
++    onEdit: () -> Unit,
++    onDelete: () -> Unit,
++) {
++    EtaWindowDialog(show = true, title = script.name, onDismissRequest = onDismiss) {
++        Column {
++            Text(
++                text = script.command,
++                style = MiuixTheme.textStyles.footnote2.copy(fontFamily = EtaMonospace),
++                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                maxLines = 3,
++                overflow = TextOverflow.Ellipsis,
++                modifier = Modifier.padding(bottom = 8.dp),
++            )
++            EtaPreferenceGroup(modifier = Modifier.padding(0.dp)) {
++                if (script.running) {
++                    EtaPreference(
++                        title = stringResource(R.string.terminal_stop),
++                        titleColor = top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
++                            color = MiuixTheme.colorScheme.error,
++                        ),
++                        onClick = onStop,
++                    )
++                } else {
++                    EtaPreference(title = stringResource(R.string.scripts_start), onClick = onStart)
++                }
++                if (script.taskId != null) {
++                    EtaPreferenceDivider()
++                    EtaPreference(title = stringResource(R.string.terminal_daemon_view_logs), onClick = onLogs)
++                }
++                EtaPreferenceDivider()
++                EtaPreference(title = stringResource(R.string.scripts_edit), onClick = onEdit)
++                EtaPreferenceDivider()
++                EtaPreference(
++                    title = stringResource(R.string.action_delete),
++                    titleColor = top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
++                        color = MiuixTheme.colorScheme.error,
++                    ),
++                    onClick = onDelete,
++                )
++            }
++        }
++    }
++}
++
++@Composable
++private fun ScriptEditorDialog(
++    draft: ScriptDraft,
++    onDismiss: () -> Unit,
++    onSave: (name: String, command: String, environment: TerminalEnvironment, cwd: String) -> Unit,
++) {
++    var name by remember { mutableStateOf(draft.name) }
++    var command by remember { mutableStateOf(draft.command) }
++    var environment by remember { mutableStateOf(draft.environment) }
++    var cwd by remember { mutableStateOf(draft.cwd) }
++    var commandMissing by remember { mutableStateOf(false) }
++
++    EtaWindowDialog(
++        show = true,
++        title = stringResource(if (draft.id == null) R.string.scripts_new else R.string.scripts_edit),
++        onDismissRequest = onDismiss,
++    ) {
++        Column {
++            TextField(
++                value = name,
++                onValueChange = { name = it },
++                label = stringResource(R.string.scripts_name_label),
++                singleLine = true,
++                modifier = Modifier.fillMaxWidth(),
++            )
++            TextField(
++                value = command,
++                onValueChange = {
++                    command = it
++                    commandMissing = false
++                },
++                label = stringResource(R.string.scripts_command_label),
++                singleLine = false,
++                minLines = 4,
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .padding(top = 8.dp),
++            )
++            Text(
++                text = stringResource(R.string.scripts_environment_label),
++                style = MiuixTheme.textStyles.footnote1,
++                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
++            )
++            Row(
++                horizontalArrangement = Arrangement.spacedBy(8.dp),
++                verticalAlignment = Alignment.CenterVertically,
++            ) {
++                TerminalEnvironment.entries.forEach { candidate ->
++                    EtaChoiceChip(
++                        text = candidate.displayName,
++                        selected = candidate == environment,
++                        onClick = { environment = candidate },
++                    )
++                }
++            }
++            TextField(
++                value = cwd,
++                onValueChange = { cwd = it },
++                label = stringResource(R.string.scripts_cwd_label),
++                singleLine = true,
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .padding(top = 8.dp),
++            )
++            if (commandMissing) {
++                Text(
++                    text = stringResource(R.string.scripts_command_required),
++                    style = MiuixTheme.textStyles.footnote1,
++                    color = MiuixTheme.colorScheme.error,
++                    modifier = Modifier.padding(top = 4.dp),
++                )
++            }
++            if (draft.running) {
++                Text(
++                    text = stringResource(R.string.scripts_restart_hint),
++                    style = MiuixTheme.textStyles.footnote1,
++                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                    modifier = Modifier.padding(top = 4.dp),
++                )
++            }
++            MiuixDialogActions(
++                confirmText = stringResource(R.string.scripts_save),
++                // 按钮行自带 top padding：输入框以及其上方的错误/重启提示都靠它与按钮拉开距离。
++                modifier = Modifier.padding(top = 16.dp),
++                onCancel = onDismiss,
++                onConfirm = {
++                    if (command.isBlank()) commandMissing = true else onSave(name, command, environment, cwd)
++                },
++            )
++        }
++    }
++}
++
++@Composable
++private fun ScriptLogsDialog(
++    store: ScriptLibraryStore,
++    taskId: String,
++    onDismiss: () -> Unit,
++) {
++    var logs by remember(taskId) { mutableStateOf<String?>(null) }
++    LaunchedEffect(taskId) { logs = store.readLogs(taskId) }
++    EtaWindowDialog(
++        show = true,
++        title = stringResource(R.string.terminal_daemon_view_logs),
++        onDismissRequest = onDismiss,
++    ) {
++        Box(
++            modifier = Modifier
++                .fillMaxWidth()
++                .heightIn(max = 320.dp)
++                .squircleBackground(MiuixTheme.colorScheme.surface, 10.dp)
++                .verticalScroll(rememberScrollState())
++                .padding(10.dp),
++        ) {
++            val text = logs
++            if (text == null) {
++                InfiniteProgressIndicator(size = 14.dp)
++            } else {
++                Text(
++                    text = ansiPlainText(text),
++                    style = MiuixTheme.textStyles.footnote2.copy(fontFamily = EtaMonospace),
++                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.86f),
++                )
++            }
++        }
++    }
++}
+diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/terminal/ScriptLibraryTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/terminal/ScriptLibraryTest.kt
+new file mode 100644
+index 00000000..9259accf
+--- /dev/null
++++ b/app/src/test/kotlin/io/github/mangi/eta/agent/terminal/ScriptLibraryTest.kt
+@@ -0,0 +1,72 @@
++package io.github.mangi.eta.agent.terminal
++
++import java.io.File
++import org.json.JSONObject
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++
++class ScriptLibraryTest {
++
++    @get:Rule
++    val temporaryFolder = TemporaryFolder()
++
++    @Test
++    fun `脚本库保存后能原样读回`() {
++        val library = ScriptLibrary(File(temporaryFolder.root, "scripts.json"))
++        val script = ScriptLibrary.newScript("测试", "  sleep 300  ", TerminalEnvironment.DEBIAN, "")
++        val saved = script.copy(lastTaskId = "dm_1", updatedAt = 42L, lastResult = "stopped", lastFinishedAt = 7L)
++
++        assertTrue(library.save(listOf(saved)))
++        assertEquals(listOf(saved), library.load())
++        assertEquals("sleep 300", library.load().single().command)
++        assertEquals("root", library.load().single().identity)
++    }
++
++    @Test
++    fun `旧记录缺新字段时按默认值读取`() {
++        val legacy = JSONObject()
++            .put("id", "sc_old")
++            .put("name", "old")
++            .put("command", "sleep 1")
++            .put("environment", "alpine")
++            .put("cwd", "/data/local/tmp/eta")
++            .put("identity", "root")
++            .put("created_at", 1L)
++            .put("updated_at", 2L)
++        val script = legacy.toScriptDefinition()
++
++        assertEquals(TerminalEnvironment.ALPINE, script.environment)
++        assertNull(script.lastTaskId)
++        assertNull(script.lastResult)
++        assertNull(script.lastFinishedAt)
++    }
++
++    @Test
++    fun `占用采样按进程树差值算 CPU`() {
++        // 2 个进程的树，1.0 秒里 utime+stime 一共涨了 200 tick，即 2 个核满载。
++        val output = """
++            USAGE 100 1 2 8192 500 700
++            USAGE 200 0 1 4096 1 1
++            ELAPSED 100.00 101.00
++        """.trimIndent()
++
++        val usage = parseScriptUsage(output)
++
++        assertEquals(1, usage.size)
++        val tree = requireNotNull(usage[100L])
++        assertEquals(2, tree.processCount)
++        assertEquals(8192L * 1024, tree.rssBytes)
++        assertEquals(200.0, tree.cpuPercent, 0.01)
++        assertNull(usage[200L])
++    }
++
++    @Test
++    fun `采样间隔不可用时返回空`() {
++        assertTrue(parseScriptUsage("USAGE 100 1 2 8192 500 700").isEmpty())
++        assertTrue(parseScriptUsage("").isEmpty())
++    }
++}
