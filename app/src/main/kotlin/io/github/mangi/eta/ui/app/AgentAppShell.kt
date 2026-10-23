@@ -369,6 +369,7 @@ private fun TopBarOverflowMenu(
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
+            val openVirtualScreenText = stringResource(R.string.virtual_screen_open_menu)
             val autoReadText = stringResource(
                 if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
             )

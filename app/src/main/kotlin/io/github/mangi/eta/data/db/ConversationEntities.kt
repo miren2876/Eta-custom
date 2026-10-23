@@ -70,6 +70,9 @@ internal data class ConversationIndexRow(
     @ColumnInfo(name = "message_preview") val messagePreview: String?,
     @ColumnInfo(name = "tool_name") val toolName: String?,
     @ColumnInfo(name = "has_roleplay") val hasRoleplay: Boolean,
+    @ColumnInfo(name = "folder_id") val folderId: String = "",
+    @ColumnInfo(name = "is_pinned") val isPinned: Boolean = false,
+    @ColumnInfo(name = "is_archived") val isArchived: Boolean = false,
 )
 
 internal data class ConversationIdentity(

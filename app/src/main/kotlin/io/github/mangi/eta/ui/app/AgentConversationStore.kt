@@ -197,6 +197,9 @@ internal object AgentConversationStore {
     private suspend fun loadSnapshot(context: Context): Snapshot {
         val dao = EtaDatabase.get(context).conversationDao()
         val conversations = dao.conversationIndex()
+        val folders = dao.folders().map { folder ->
+            ConversationFolderUi(id = folder.id, name = folder.name, sortIndex = folder.sortIndex)
+        }
         if (conversations.isEmpty()) {
             return Snapshot(
                 selectedConversationId = null,
@@ -242,9 +245,9 @@ internal object AgentConversationStore {
             ?: states.keys.first()
         val loaded = loadConversation(context, selected)
         if (loaded != null) states[selected] = loaded
-        val unaligned = if (loaded != null &&
+        if (loaded != null &&
             dao.nextMessageIndex(selected) != loaded.messageStartIndex + loaded.messages.size
-        ) setOf(selected) else emptySet()
+        ) unaligned += selected
 
         return Snapshot(
             selectedConversationId = selected,

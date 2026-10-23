@@ -17,6 +17,7 @@ internal interface ConversationDao : ChunkedTextDao {
             "COALESCE((SELECT substr(content, 1, 256) FROM agent_text_chunks " +
             "WHERE owner_table = 'conversation_messages' AND owner_id = m.id AND field = 'content' " +
             "AND chunk_index = 0), substr(m.content, 1, 256)) AS message_preview " +
+            ", c.folder_id, c.is_pinned, c.is_archived " +
             "FROM conversations c LEFT JOIN conversation_messages m ON m.conversation_id = c.id " +
             "AND m.sort_index = (SELECT MAX(sort_index) FROM conversation_messages WHERE conversation_id = c.id) " +
             "ORDER BY c.updated_at DESC, c.id ASC"

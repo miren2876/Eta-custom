@@ -852,7 +852,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (!isActiveSession(session)) return@post
             lastCompletedRunContext = completedContext
-            activeSession = null
             setKeepScreenOn(false)
             rememberFinishedSession(session.runId)
             removeActiveSession(session)
@@ -1825,14 +1824,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = null
         capsuleParams = null
         glowParams = null
-    }
-
-    private fun dismissAndStop() {
-        // stopSelf 不会销毁仍被客户端绑定的服务；窗口关闭后不再保留完整请求与结果历史。
-        lastCompletedRunContext = null
-        mainHandler.removeCallbacks(restoreCapsule)
-        capsuleYielded.value = false
-        removeOverlayWindows()
     }
 
     private fun removeOverlayWindows() {
