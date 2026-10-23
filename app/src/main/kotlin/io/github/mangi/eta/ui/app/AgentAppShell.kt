@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
@@ -260,18 +259,12 @@ private fun AgentTopBar(
     val isHome = route is AppRoute.Home
     val navigationIcon: @Composable () -> Unit = {
         if (isHome) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onOpenConversationPane) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ShortText,
-                        modifier = Modifier.size(24.dp),
-                        contentDescription = stringResource(R.string.action_conversation_history),
-                    )
-                }
-                // 角色对话的身份标识放在顶栏左侧，点按进入角色详情；普通对话保持空标题。
-                homeCharacter?.let { character ->
-                    CharacterTopBarIdentity(character = character, onClick = onOpenCharacter)
-                }
+            IconButton(onClick = onOpenConversationPane) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ShortText,
+                    modifier = Modifier.size(24.dp),
+                    contentDescription = stringResource(R.string.action_conversation_history),
+                )
             }
         } else {
             MiuixBackButton(onClick = onBack)
@@ -305,6 +298,8 @@ private fun AgentTopBar(
         HomeTopAppBar(
             title = homeConversationTitle,
             subtitle = homeConversationSubtitle,
+            character = homeCharacter,
+            onOpenCharacter = onOpenCharacter,
             color = color,
             scrollBehavior = scrollBehavior,
             navigationIcon = navigationIcon,
@@ -348,6 +343,8 @@ private const val TopBarTitleMaxWidthFraction = 0.8f
 private fun HomeTopAppBar(
     title: String,
     subtitle: String,
+    character: RoleplayChatUi?,
+    onOpenCharacter: () -> Unit,
     color: Color,
     scrollBehavior: ScrollBehavior?,
     navigationIcon: @Composable () -> Unit,
@@ -385,39 +382,53 @@ private fun HomeTopAppBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             navigationIcon()
-            Column(
-                // weight 必须填满剩余宽度：否则右侧按钮会贴着标题，而不是贴屏幕右边。
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 4.dp),
-                horizontalAlignment = Alignment.Start,
-            ) {
-                if (title.isNotBlank()) {
-                    Text(
-                        text = title,
-                        style = MiuixTheme.textStyles.body1,
-                        fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .widthIn(max = titleWidthCap)
-                            .pointerInput(title) {
-                                detectTapGestures(onDoubleTap = { onTitleDoubleTap() })
-                            },
-                    )
-                }
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .widthIn(max = titleWidthCap)
-                            .clickable(onClick = onSubtitleClick),
-                    )
+            if (character != null) {
+                // 角色会话的标题默认就是角色名，再单独放一个身份块会让同一个名字出现两次；
+                // 这里头像直接并入标题列，名字只渲染一次。
+                RoleplayTopBarHeader(
+                    character = character,
+                    title = title.ifBlank { character.characterName },
+                    subtitle = subtitle,
+                    titleWidthCap = titleWidthCap,
+                    onTitleDoubleTap = onTitleDoubleTap,
+                    onSubtitleClick = onSubtitleClick,
+                    onOpenCharacter = onOpenCharacter,
+                )
+            } else {
+                Column(
+                    // weight 必须填满剩余宽度：否则右侧按钮会贴着标题，而不是贴屏幕右边。
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    if (title.isNotBlank()) {
+                        Text(
+                            text = title,
+                            style = MiuixTheme.textStyles.body1,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .widthIn(max = titleWidthCap)
+                                .pointerInput(title) {
+                                    detectTapGestures(onDoubleTap = { onTitleDoubleTap() })
+                                },
+                        )
+                    }
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .widthIn(max = titleWidthCap)
+                                .clickable(onClick = onSubtitleClick),
+                        )
+                    }
                 }
             }
             Row(
@@ -666,30 +677,68 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     null -> stringResource(R.string.app_name)
 }
 
+/**
+ * 角色对话的身份头：头像与名字合成一个整体，名字只出现一次。
+ *
+ * 头像点按进角色详情，名字双击回顶，状态行单击看本轮运行详情——热区与原身份块一致。
+ */
 @Composable
-private fun CharacterTopBarIdentity(character: RoleplayChatUi, onClick: () -> Unit) {
+private fun RowScope.RoleplayTopBarHeader(
+    character: RoleplayChatUi,
+    title: String,
+    subtitle: String,
+    titleWidthCap: Dp,
+    onTitleDoubleTap: () -> Unit,
+    onSubtitleClick: () -> Unit,
+    onOpenCharacter: () -> Unit,
+) {
     Row(
+        // weight 必须填满剩余宽度：否则右侧按钮会贴着标题，而不是贴屏幕右边。
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
+            .weight(1f)
+            .padding(start = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CharacterAvatar(
             name = character.characterName,
             avatarPath = character.avatarPath,
-            size = 32.dp,
+            size = 40.dp,
             shape = CircleShape,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onOpenCharacter),
         )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = character.characterName,
-            style = MiuixTheme.textStyles.body1,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 180.dp),
-        )
+        Spacer(Modifier.width(9.dp))
+        Column(
+            modifier = Modifier.weight(1f, fill = false),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Text(
+                text = title,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .widthIn(max = titleWidthCap)
+                    .pointerInput(title) {
+                        detectTapGestures(onDoubleTap = { onTitleDoubleTap() })
+                    },
+            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .widthIn(max = titleWidthCap)
+                        .clickable(onClick = onSubtitleClick),
+                )
+            }
+        }
     }
 }
