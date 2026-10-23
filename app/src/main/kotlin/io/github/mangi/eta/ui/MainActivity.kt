@@ -11,9 +11,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AppearanceThemeMode
@@ -41,6 +44,10 @@ class MainActivity : ComponentActivity() {
             setContent {
                 val appearance by AppearanceSettingsRepository.settingsFlow()
                     .collectAsState(initial = initialAppearance)
+                // 提问卡片按会话过滤，需要知道当前打开的是哪条会话。
+                val agentAppViewModel = viewModel<io.github.mangi.eta.ui.app.AgentAppViewModel>()
+                // 侧栏打开时收起卡片：卡片画在整棵界面之上，会把侧栏内容盖住。
+                var conversationPaneOpen by remember { mutableStateOf(false) }
 
                 LaunchedEffect(appearance.themeMode) {
                     updateApplicationNightMode(appearance.themeMode)
@@ -91,6 +98,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     )
+                    io.github.mangi.eta.agent.display.VirtualScreenAppConflictDialog()
                 }
             }
             contentReady = true

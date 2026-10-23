@@ -72,4 +72,53 @@ sealed interface AgentMemoryAction {
     data object Save : AgentMemoryAction
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
+
+    /** 把选中的冷章节移入 memory/archive/（一档一文件）。 */
+    data class ArchiveSections(val titles: List<String>) : AgentMemoryAction
+
+    /** 把归档档案全部移回档案目录。 */
+    data object RestoreArchive : AgentMemoryAction
+
+    /** 把选中的归档档案移回档案目录（取消归档）。 */
+    data class UnarchiveSections(val titles: List<String>) : AgentMemoryAction
+
+    /** 撤销刚刚这一次归档（把这次归档的档案移回档案目录）。 */
+    data object UndoArchive : AgentMemoryAction
+
+    /** 离开记忆页时清掉撤销入口。 */
+    data object ClearUndo : AgentMemoryAction
+
+    /** 核心记忆：用户画像 / 工作记忆各自的编辑与保存。 */
+    data class ProfileDraftChanged(val content: String) : AgentMemoryAction
+
+    data class WorkingDraftChanged(val content: String) : AgentMemoryAction
+
+    data object SaveProfile : AgentMemoryAction
+
+    data object SaveWorking : AgentMemoryAction
+
+    data object ClearProfile : AgentMemoryAction
+
+    data object ClearWorking : AgentMemoryAction
+
+    /** 展开 / 收起一个记忆档案（按需读取内容）。 */
+    data class ExpandFile(val name: String) : AgentMemoryAction
+
+    data object CollapseFile : AgentMemoryAction
+
+    /** 档案归档与编辑保存。 */
+    data class ArchiveFiles(val names: List<String>) : AgentMemoryAction
+
+    data class FileDraftChanged(val content: String) : AgentMemoryAction
+
+    data object SaveFile : AgentMemoryAction
+
+    /** 把选中的档案合并成一个（用当前模型），并同步工作记忆。 */
+    data class MergeFiles(val names: List<String>) : AgentMemoryAction
+
+    /** 展开某一节的正文（点击章节行）。 */
+    data class ExpandSection(val title: String) : AgentMemoryAction
+
+    /** 收起已展开的章节正文。 */
+    data object CollapseSection : AgentMemoryAction
 }

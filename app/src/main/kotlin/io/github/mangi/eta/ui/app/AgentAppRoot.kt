@@ -9,11 +9,17 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -26,7 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -34,6 +42,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -57,6 +67,7 @@ import io.github.mangi.eta.ui.model.AgentSkillsAction
 import io.github.mangi.eta.ui.model.AgentSystemEnhanceAction
 import io.github.mangi.eta.ui.model.AgentToolsAction
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.conversationTopBarTitle
 import io.github.mangi.eta.ui.model.LOCAL_NETWORK_PERMISSION_ITEM_ID
 import io.github.mangi.eta.ui.model.PermissionHealthAction
 import io.github.mangi.eta.ui.model.roleplayChatUi
@@ -68,6 +79,7 @@ import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserScreen
+import io.github.mangi.eta.ui.screens.chat.ManageChatsScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
@@ -95,6 +107,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
@@ -102,6 +116,7 @@ import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
@@ -111,6 +126,8 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 fun AgentAppRoot(
     assistantConversationKey: String? = null,
     requestedConversationId: String? = null,
+    /** 侧栏（会话抽屉）开合变化时通知宿主，宿主据此收起浮层卡片。 */
+    onConversationPaneChanged: (Boolean) -> Unit = {},
     onRequestedConversationOpened: () -> Unit = {},
     requestedArchivedConversation: ArchivedConversationRequest? = null,
     onArchivedConversationOpened: () -> Unit = {},
@@ -121,6 +138,17 @@ fun AgentAppRoot(
     onAssistantConversationOpened: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    // 用户回到 Eta：清掉悬浮胶囊上的「已完成」未读提示。
+    LaunchedEffect(Unit) {
+        runCatching {
+            context.startService(
+                android.content.Intent(
+                    context,
+                    io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java,
+                ).setAction(io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_CLEAR_READ),
+            )
+        }
+    }
     val resources = LocalResources.current
     val uiScope = rememberCoroutineScope()
     val backStack = rememberNavBackStack<AppRoute>(AppRoute.Home)
@@ -178,6 +206,7 @@ fun AgentAppRoot(
     var conversationPaneOpen by rememberSaveable { mutableStateOf(false) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
+    var conversationMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var messageDeleteTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var messageRegenerateTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
@@ -273,6 +302,18 @@ fun AgentAppRoot(
         conversationPaneOpen = false
     }
 
+    // 顶栏标题双击 → 回到第一条消息：这里只累加请求号，聊天区自己决定是否响应。
+    var chatScrollToTopRequest by remember { mutableIntStateOf(0) }
+
+    // 聊天页顶栏左侧显示当前会话标题；草稿（未选中会话）时留空。
+    val paneUiState = agentState.conversationPaneState
+    val conversationPaneTitle = conversationTopBarTitle(
+        paneUiState.historyConversations
+            .firstOrNull { it.id == paneUiState.selectedConversationId }
+            ?.title
+            .orEmpty(),
+    )
+
     @Composable
     fun RoutedShell(
         route: AppRoute,
@@ -281,8 +322,13 @@ fun AgentAppRoot(
         AgentAppShell(
             currentRoute = route,
             isCurrentRoute = backStack.lastOrNull() == route,
-            conversationPaneState = agentState.conversationPaneState,
+            conversationPaneState = paneUiState,
             isConversationPaneOpen = conversationPaneOpen,
+            homeConversationTitle = conversationPaneTitle,
+            onConversationTitleDoubleTap = {
+                AndroidAgentLogger.info("Chat top bar title double tap")
+                chatScrollToTopRequest += 1
+            },
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
@@ -326,6 +372,21 @@ fun AgentAppRoot(
             onConversationDelete = { conversation ->
                 conversationDeleteTarget = conversation
             },
+            onConversationMoveToFolder = { conversation ->
+                conversationMoveTarget = conversation
+            },
+            onConversationTogglePin = { conversation ->
+                agentState.toggleConversationPinned(conversation.id)
+            },
+            onConversationToggleArchive = { conversation ->
+                agentState.setConversationArchived(conversation.id, !conversation.isArchived)
+            },
+            onSelectArchive = { showing -> agentState.selectArchiveView(showing) },
+            onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
+            onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
+            onCreateFolder = { name -> agentState.createFolder(name) },
+            onRenameFolder = { folderId, name -> agentState.renameFolder(folderId, name) },
+            onDeleteFolder = { folderId -> agentState.deleteFolder(folderId) },
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
@@ -420,8 +481,30 @@ fun AgentAppRoot(
                         conversationLoadFailed = agentState.conversationLoadFailed,
                         historyLoadState = agentState.historyLoadState,
                         isDrawerOpen = conversationPaneOpen,
+                        scrollToTopRequest = chatScrollToTopRequest,
                     )
                 }
+            }
+            entry<AppRoute.ManageChats>(swipeDismiss = null) {
+                ManageChatsScreen(
+                    conversations = agentState.conversationPaneState.historyConversations,
+                    folders = agentState.conversationPaneState.folders,
+                    onBack = ::popRoute,
+                    onOpenConversation = { conversationId ->
+                        popRoute()
+                        selectConversation(conversationId)
+                    },
+                    onTogglePin = { conversation -> agentState.toggleConversationPinned(conversation.id) },
+                    onRename = { conversation -> conversationRenameTarget = conversation },
+                    onDelete = { conversation -> conversationDeleteTarget = conversation },
+                    onToggleArchive = { conversation ->
+                        agentState.setConversationArchived(conversation.id, !conversation.isArchived)
+                    },
+                    onArchiveSelected = { ids, archived -> agentState.archiveConversations(ids, archived) },
+                    onPinSelected = { ids, pinned -> agentState.pinConversations(ids, pinned) },
+                    onMoveSelected = { ids, folderId -> agentState.moveConversationsToFolder(ids, folderId) },
+                    onDeleteSelected = { ids -> agentState.deleteConversations(ids) },
+                )
             }
             entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Browser) {
@@ -690,9 +773,31 @@ fun AgentAppRoot(
                             AgentMemoryAction.Save -> memory.saveMemory()
                             AgentMemoryAction.Clear -> memory.clearMemory()
                             AgentMemoryAction.DismissNotice -> memory.dismissMemoryNotice()
+                            is AgentMemoryAction.ArchiveSections -> memory.archiveSections(action.titles)
+                            AgentMemoryAction.RestoreArchive -> memory.restoreArchive()
+                            is AgentMemoryAction.UnarchiveSections -> memory.unarchiveSections(action.titles)
+                            AgentMemoryAction.UndoArchive -> memory.undoArchive()
+                            AgentMemoryAction.ClearUndo -> memory.clearUndo()
+                            is AgentMemoryAction.ProfileDraftChanged -> memory.updateProfileDraft(action.content)
+                            is AgentMemoryAction.WorkingDraftChanged -> memory.updateWorkingDraft(action.content)
+                            AgentMemoryAction.SaveProfile -> memory.saveProfile()
+                            AgentMemoryAction.SaveWorking -> memory.saveWorking()
+                            AgentMemoryAction.ClearProfile -> memory.clearProfile()
+                            AgentMemoryAction.ClearWorking -> memory.clearWorking()
+                            is AgentMemoryAction.ExpandFile -> memory.expandFile(action.name)
+                            AgentMemoryAction.CollapseFile -> memory.collapseFile()
+                            is AgentMemoryAction.ArchiveFiles -> memory.archiveFiles(action.names)
+                            is AgentMemoryAction.FileDraftChanged -> memory.updateFileDraft(action.content)
+                            AgentMemoryAction.SaveFile -> memory.saveFile()
+                            is AgentMemoryAction.MergeFiles -> memory.mergeFiles(action.names)
+                            is AgentMemoryAction.ExpandSection -> memory.expandSection(action.title)
+                            AgentMemoryAction.CollapseSection -> memory.collapseSection()
                         }
                     },
                 )
+            }
+            entry<AppRoute.VirtualScreen>(swipeDismiss = swipeDismiss) {
+                io.github.mangi.eta.ui.screens.tasks.VirtualScreenSettingsScreen(onBack = { popRoute() })
             }
             entry<AppRoute.LinuxEnvironment>(swipeDismiss = swipeDismiss) {
                 LinuxEnvironmentScreen(
@@ -773,6 +878,36 @@ fun AgentAppRoot(
             top.yukonga.miuix.kmp.basic.TextButton(
                 text = "知道了", onClick = characterStore::dismissNotice, modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+
+    conversationMoveTarget?.let { conversation ->
+        WindowDialog(
+            show = true,
+            cornerRadius = DialogDefaults.CornerRadius,
+            title = stringResource(R.string.action_move_to_folder),
+            onDismissRequest = { conversationMoveTarget = null },
+        ) {
+            Column {
+                MoveToFolderRow(
+                    label = stringResource(R.string.move_to_folder_unfiled),
+                    selected = conversation.folderId.isBlank(),
+                    onClick = {
+                        agentState.moveConversationToFolder(conversation.id, null)
+                        conversationMoveTarget = null
+                    },
+                )
+                agentState.conversationPaneState.folders.forEach { folder ->
+                    MoveToFolderRow(
+                        label = folder.name,
+                        selected = conversation.folderId == folder.id,
+                        onClick = {
+                            agentState.moveConversationToFolder(conversation.id, folder.id)
+                            conversationMoveTarget = null
+                        },
+                    )
+                }
+            }
         }
     }
 
@@ -878,6 +1013,40 @@ fun AgentAppRoot(
                     agentState.regenerateMessage(target.messageId)
                     messageRegenerateTarget = null
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoveToFolderRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
+            style = MiuixTheme.textStyles.body1,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MiuixTheme.colorScheme.primary,
             )
         }
     }

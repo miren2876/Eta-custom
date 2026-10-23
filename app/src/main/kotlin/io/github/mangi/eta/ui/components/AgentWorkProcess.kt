@@ -33,7 +33,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -64,6 +66,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownState
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
@@ -242,6 +245,8 @@ private fun AgentWorkStepNode(
             ToolGroupRow(group = step, onOpenBrowser = onOpenBrowser)
         }
 
+        is AgentWorkStep.Skill -> SkillNodeRow(step = step, isLast = isLast)
+
         is AgentWorkStep.Single -> when (val message = step.message) {
             is ToolActivityMessageUi -> WorkTimelineNode(
                 icon = iconForTool(message.toolName),
@@ -305,11 +310,12 @@ internal fun WorkTimelineNode(
     tone: WorkNodeTone,
     isLast: Boolean,
     connectTop: Boolean = true,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val lineColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.6f)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .drawBehind {
                 val x = WorkGutterWidth.toPx() / 2f
@@ -453,6 +459,74 @@ internal fun ExpandChevron(
             .graphicsLayer { rotationZ = rotation },
         tint = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f),
     )
+}
+
+/**
+ * 无展开、无跳转的节点内容：标题 + 可选副标题，几何与取色跟工具行一致。
+ * 技能读取与记忆整理这类「只说明发生了什么」的节点用它。
+ */
+@Composable
+internal fun WorkNodeLabel(
+    title: String,
+    subtitle: String? = null,
+    running: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = WorkRowHeight)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            ShimmerText(
+                text = title,
+                active = running,
+                style = MiuixTheme.textStyles.body2,
+                color = if (running) {
+                    MiuixTheme.colorScheme.onSurface
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 记忆整理跑完后的一句话结论：新建 / 追加 / 无需记录；不带展开，点击不跳页。 */
+@Composable
+internal fun MemoryReviewNode(
+    code: SystemNoticeCode,
+    detail: String?,
+    modifier: Modifier = Modifier,
+) {
+    val title = when (code) {
+        SystemNoticeCode.MemoryReviewNew -> stringResource(R.string.work_memory_review_new, detail.orEmpty())
+        SystemNoticeCode.MemoryReviewAppended ->
+            stringResource(R.string.work_memory_review_appended, detail.orEmpty())
+        else -> stringResource(R.string.work_memory_review_none)
+    }
+    Box(modifier = modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+        WorkTimelineNode(
+            icon = Icons.Rounded.Psychology,
+            tone = WorkNodeTone.Done,
+            isLast = true,
+            connectTop = false,
+        ) {
+            WorkNodeLabel(title = title)
+        }
+    }
 }
 
 /** 时间线标题行与节点徽章共用的几何尺寸，保证图标中心与首行文字中线对齐。 */

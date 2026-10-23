@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.components
 
+import io.github.mangi.eta.agent.prompt.AgentUserPrompt
+import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -47,6 +49,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
@@ -96,7 +101,6 @@ import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.latestContextUsage
 import io.github.mangi.eta.ui.voice.SpeechAutoReadAloud
-import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import kotlin.math.exp
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
@@ -108,7 +112,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -123,6 +126,7 @@ import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import androidx.compose.foundation.border
 
 /**
  * 聊天主体：消息流 + 底部输入框。
@@ -175,6 +179,7 @@ internal fun AgentChatBody(
     onLoadEarlierMessages: () -> Unit = {},
     onHistoryViewportChanged: (Boolean) -> Unit = {},
     isDrawerOpen: Boolean = false,
+    scrollToTopRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState(initialFirstVisibleItemIndex = messages.size + if (hasEarlierMessages) 1 else 0)
@@ -236,6 +241,7 @@ internal fun AgentChatBody(
             visibleMessages = visibleMessages,
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
             scrollState = scrollState,
+            conversationId = conversationId,
             input = input,
             modelPickerState = modelPickerState,
             isCompacting = isCompacting,
@@ -304,7 +310,9 @@ internal fun AgentChatBody(
 private fun AgentChatScaffold(
     visibleMessages: List<AgentChatMessageUi>,
     hasMessages: Boolean,
+    scrollToTopRequest: Int,
     scrollState: LazyListState,
+    conversationId: String?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
@@ -372,6 +380,7 @@ private fun AgentChatScaffold(
         bottomBar = {
             AgentChatBottomBar(
                 messageBackdrop = messageBackdrop.takeIf { frostEnabled },
+                conversationId = conversationId,
                 input = input,
                 modelPickerState = modelPickerState,
                 isCompacting = isCompacting,
@@ -418,6 +427,7 @@ private fun AgentChatScaffold(
             AgentConversationMessages(
                 visibleMessages = visibleMessages,
                 scrollState = scrollState,
+                scrollToTopRequest = scrollToTopRequest,
                 isStreaming = isStreaming,
                 bottomInset = bottomPadding,
                 keepBottomAnchored = keepBottomAnchored,
@@ -450,6 +460,7 @@ private fun AgentChatScaffold(
 internal fun AgentConversationMessages(
     visibleMessages: List<AgentChatMessageUi>,
     scrollState: LazyListState,
+    scrollToTopRequest: Int = 0,
     isStreaming: Boolean,
     bottomInset: Dp,
     keepBottomAnchored: Boolean,
@@ -521,11 +532,30 @@ internal fun AgentConversationMessages(
     val densityScale = LocalDensity.current.density
     val coroutineScope = rememberCoroutineScope()
 
+    // 顶栏标题双击：回到第一条消息。请求计数由外层持有，这里只处理「本次组合之后新增的请求」。
+    var handledScrollToTopRequest by remember { mutableIntStateOf(scrollToTopRequest) }
+    // 回顶期间必须压住「贴底锚点」：此刻列表还在底部，锚点一旦重新评估就会立刻恢复跟底，
+    // 把回顶动画直接拽回尾部——表现为双击没反应，只有先上滑过（锚点已关）才生效。
+    var suppressBottomAnchor by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollToTopRequest) {
+        if (scrollToTopRequest == handledScrollToTopRequest) return@LaunchedEffect
+        handledScrollToTopRequest = scrollToTopRequest
+        AndroidAgentLogger.info("Chat scroll to top (request=$scrollToTopRequest)")
+        suppressBottomAnchor = true
+        onBottomAnchorChanged(false)
+        try {
+            scrollState.animateScrollToItem(0)
+        } finally {
+            suppressBottomAnchor = false
+        }
+    }
+
     LaunchedEffect(
         isListMeasured,
         isUserDragging,
         isAtBottom,
         keepBottomAnchored,
+        suppressBottomAnchor,
     ) {
         if (!isListMeasured) return@LaunchedEffect
         val next = resolveKeepBottomAnchored(
@@ -598,10 +628,8 @@ internal fun AgentConversationMessages(
         bottomItemIndex,
         keepBottomAnchored,
         isUserDragging,
-        isStreaming,
     ) {
         if (shouldRequestInitialBottom(
-                isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
             )
@@ -826,10 +854,10 @@ internal fun AgentConversationMessages(
                         shape = CircleShape,
                         shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
                     )
-                    .squircleBorder(
+                    .border(
                         width = 0.5.dp,
                         color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        cornerRadius = IconButtonDefaults.CornerRadius,
+                        shape = CircleShape,
                     ),
                 onClick = {
                     onBottomAnchorChanged(true)
@@ -989,6 +1017,7 @@ internal fun resolveFinalResultMessageIds(
 @Composable
 private fun AgentChatBottomBar(
     messageBackdrop: LayerBackdrop?,
+    conversationId: String?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
@@ -1078,7 +1107,13 @@ private fun AgentChatBottomBar(
                 .navigationBarsPadding()
                 .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         ) {
-            AgentChatInputBar(
+            val promptRequests by AgentUserPrompt.state.collectAsState()
+            val pendingPrompt = promptRequests.firstOrNull {
+                it.conversationId == null || it.conversationId == conversationId
+            }
+            if (pendingPrompt != null) {
+                AgentUserPromptCardContent(pendingPrompt, Modifier.fillMaxWidth())
+            } else AgentChatInputBar(
                 input = input,
                 modelPickerState = modelPickerState,
                 isCompacting = isCompacting,
@@ -1142,11 +1177,14 @@ internal fun resolveBottomFollowEnabled(
     isBottomSettling: Boolean = false,
 ): Boolean = (isStreaming || isBottomSettling) && keepBottomAnchored && !isUserDragging
 
+/**
+ * 打开会话（含冷启动恢复）先贴到最新一条消息；流式输出同理。
+ * 用户主动上滑离开底部后 keepBottomAnchored 为 false，不再强制回到底部。
+ */
 internal fun shouldRequestInitialBottom(
-    isStreaming: Boolean,
     keepBottomAnchored: Boolean,
     isUserDragging: Boolean,
-): Boolean = isStreaming && keepBottomAnchored && !isUserDragging
+): Boolean = keepBottomAnchored && !isUserDragging
 
 @Composable
 private fun EmptyChatState(

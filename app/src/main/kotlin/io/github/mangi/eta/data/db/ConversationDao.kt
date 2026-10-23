@@ -31,7 +31,8 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, " +
+            "folder_id, is_pinned, is_archived " +
             "FROM conversations WHERE id = :conversationId"
     )
     suspend fun conversationMetadataRow(conversationId: String): ConversationMetadata?

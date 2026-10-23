@@ -10,6 +10,7 @@ import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
 import io.github.mangi.eta.data.db.ConversationEntity
+import io.github.mangi.eta.data.db.ConversationFolderEntity
 import io.github.mangi.eta.data.db.ConversationMetadata
 import io.github.mangi.eta.data.db.ConversationDao
 import io.github.mangi.eta.data.db.ConversationMessageEntity
@@ -23,6 +24,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.core.safeStackTrace
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
@@ -58,6 +60,13 @@ internal object AgentConversationStore {
          * 重启后列表被压紧；增量保存按下标截断后缀，这些会话必须先整段重写一次。
          */
         val unalignedConversationIds: Set<String> = emptySet(),
+        /** 侧栏文件夹定义。 */
+        val folders: List<ConversationFolderUi> = emptyList(),
+        /** 会话 → 文件夹 id；未归类会话不在表内。 */
+        val folderIds: Map<String, String> = emptyMap(),
+        val pinnedIds: Set<String> = emptySet(),
+        /** 已归档会话 id；默认列表隐藏。 */
+        val archivedIds: Set<String> = emptySet(),
     )
 
     private val saveMutex = Mutex()
@@ -115,6 +124,9 @@ internal object AgentConversationStore {
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     modelId = state.modelId,
+                                    // 置顶与文件夹归属由 saveOrganization 单独维护，增量写元数据时保留原值。
+                                    folderId = stored[id]?.folderId.orEmpty(),
+                                    isPinned = stored[id]?.isPinned == true,
                                 )
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
@@ -191,12 +203,18 @@ internal object AgentConversationStore {
                 conversationsById = emptyMap(),
                 titles = emptyMap(),
                 updatedAt = emptyMap(),
+                folders = folders,
             )
         }
 
         val states = linkedMapOf<String, AgentChatHomeUiState>()
         val titles = mutableMapOf<String, String>()
         val updatedAt = mutableMapOf<String, Long>()
+        val unaligned = mutableSetOf<String>()
+        val folderIds = mutableMapOf<String, String>()
+        val pinnedIds = mutableSetOf<String>()
+        val archivedIds = mutableSetOf<String>()
+
         conversations.forEach { conversation ->
             val effort = ReasoningEffort.fromWireValue(conversation.reasoningEffort) ?: ReasoningEffort.DEFAULT
             val character = if (conversation.hasRoleplay) loadCharacterSummary(dao, conversation.id) else null
@@ -214,6 +232,9 @@ internal object AgentConversationStore {
             )
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
+            conversation.folderId.takeIf(String::isNotBlank)?.let { folderIds[conversation.id] = it }
+            if (conversation.isArchived) archivedIds += conversation.id
+            if (conversation.isPinned) pinnedIds += conversation.id
         }
 
         val selected = dao.state()?.selectedConversationId
@@ -231,6 +252,10 @@ internal object AgentConversationStore {
             titles = titles,
             updatedAt = updatedAt,
             unalignedConversationIds = unaligned,
+            folders = folders,
+            folderIds = folderIds,
+            archivedIds = archivedIds,
+            pinnedIds = pinnedIds,
         )
     }
 

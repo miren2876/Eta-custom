@@ -1,8 +1,11 @@
 package io.github.mangi.eta.ui.app
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -24,11 +28,13 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +59,7 @@ import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.MiuixBackButton
 import io.github.mangi.eta.ui.components.RoleplayChatUi
 import io.github.mangi.eta.ui.components.TopBarBackdrop
+import io.github.mangi.eta.ui.components.rememberVirtualScreenMenuAction
 import io.github.mangi.eta.ui.components.captureForTopBar
 import io.github.mangi.eta.ui.components.rememberTopBarBackdrop
 import io.github.mangi.eta.ui.components.topBarContainerColor
@@ -87,6 +95,8 @@ internal fun AgentAppShell(
     isCurrentRoute: Boolean,
     conversationPaneState: ConversationPaneUiState?,
     isConversationPaneOpen: Boolean,
+    homeConversationTitle: String,
+    onConversationTitleDoubleTap: () -> Unit,
     onBack: () -> Unit,
     onOpenConversationPane: () -> Unit,
     onDismissConversationPane: () -> Unit,
@@ -103,6 +113,15 @@ internal fun AgentAppShell(
     onConversationRename: (ConversationSummaryUi) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
+    onConversationTogglePin: (ConversationSummaryUi) -> Unit,
+    onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
+    onSelectArchive: (Boolean) -> Unit,
+    onOpenManageChats: () -> Unit,
+    onSelectFolder: (String?) -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
     onOpenCharacters: () -> Unit,
@@ -128,6 +147,8 @@ internal fun AgentAppShell(
                     TopBarBackdrop(backdrop) {
                         AgentTopBar(
                             route = currentRoute,
+                            homeConversationTitle = homeConversationTitle,
+                            onConversationTitleDoubleTap = onConversationTitleDoubleTap,
                             scrollBehavior = scrollBehavior,
                             color = topBarColor,
                             onBack = onBack,
@@ -171,6 +192,16 @@ internal fun AgentAppShell(
                 onConversationRename = onConversationRename,
                 onConversationExport = onConversationExport,
                 onConversationDelete = onConversationDelete,
+                onConversationMoveToFolder = onConversationMoveToFolder,
+                onConversationTogglePin = onConversationTogglePin,
+                onConversationToggleArchive = onConversationToggleArchive,
+                onSelectArchive = onSelectArchive,
+                onNewConversation = onNewConversation,
+                onOpenManageChats = onOpenManageChats,
+                onSelectFolder = onSelectFolder,
+                onCreateFolder = onCreateFolder,
+                onRenameFolder = onRenameFolder,
+                onDeleteFolder = onDeleteFolder,
                 onOpenSettings = onOpenSettings,
                 onOpenModelProviders = onOpenModelProviders,
                 onOpenTools = onOpenTools,
@@ -189,6 +220,8 @@ internal fun AgentAppShell(
 @Composable
 private fun AgentTopBar(
     route: AppRoute?,
+    homeConversationTitle: String,
+    onConversationTitleDoubleTap: () -> Unit,
     scrollBehavior: ScrollBehavior,
     color: Color,
     onBack: () -> Unit,
@@ -224,6 +257,8 @@ private fun AgentTopBar(
             MiuixBackButton(onClick = onBack)
         }
     }
+    // 虚拟屏入口放进「···」菜单；虚拟屏未启用时返回 null，菜单项不显示。
+    val onOpenVirtualScreen = rememberVirtualScreenMenuAction()
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
             TopBarOverflowMenu(
@@ -235,14 +270,42 @@ private fun AgentTopBar(
                 onStopKimiWeb = onStopKimiWeb,
                 onRefreshKimiWeb = onRefreshKimiWeb,
                 onOpenBrowser = onOpenBrowser,
+                onOpenVirtualScreen = onOpenVirtualScreen,
             )
         }
     }
 
-    // 首页聊天舞台与浏览器、终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
-    // 白占一屏顶部；它们使用紧凑标题，其余二级内容页统一使用可折叠大标题。
-    val compactTitle = isHome || route is AppRoute.Browser || route is AppRoute.Terminal
-    if (compactTitle) {
+    // 双击回调每次重组都是新实例，若直接拿它当 key，手势识别器会不断重启，
+    // 两次点击之间状态被清掉就识别不出双击；这里用 rememberUpdatedState 固定。
+    val currentOnTitleDoubleTap by rememberUpdatedState(onConversationTitleDoubleTap)
+    if (isHome) {
+        // 首页聊天舞台保持紧凑；二级内容页统一使用可折叠大标题。
+        Box {
+            SmallTopAppBar(
+                title = homeConversationTitle,
+                color = color,
+                scrollBehavior = scrollBehavior,
+                navigationIcon = navigationIcon,
+                actions = actions,
+            )
+            if (homeConversationTitle.isNotBlank()) {
+                // 标题仍由 Miuix 渲染（样式与顶栏完全一致），这里只叠一层透明的双击接收区。
+                // 必须和顶栏一样让开状态栏内边距：否则这层会落进状态栏那一行，
+                // 点击被系统状态栏截走（早期版本"双击没反应"的原因之一）。
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                        .height(TopBarTitleHeight)
+                        .fillMaxWidth(TopBarTitleMaxWidthFraction)
+                        .pointerInput(homeConversationTitle) {
+                            detectTapGestures(onDoubleTap = { currentOnTitleDoubleTap() })
+                        },
+                )
+            }
+        }
+    } else if (route is AppRoute.Browser || route is AppRoute.Terminal) {
+        // 浏览器与终端是整屏工具页，没有可驱动折叠的滚动列表，大标题会一直白占顶部。
         SmallTopAppBar(
             title = titleForRoute(route),
             color = color,
@@ -263,6 +326,10 @@ private fun AgentTopBar(
 
 private val TopBarMenuIconSize = 20.dp
 
+/** 顶栏标题双击区：只覆盖标题所在的中段，左右两侧的按钮不受影响。 */
+private const val TopBarTitleMaxWidthFraction = 0.66f
+private val TopBarTitleHeight = 50.dp
+
 /**
  * 首页顶栏溢出菜单。WindowListPopup 以父布局为锚点，因此与触发按钮包在同一个 Box 中，
  * 弹层从按钮下方右对齐展开。
@@ -277,6 +344,7 @@ private fun TopBarOverflowMenu(
     onStopKimiWeb: () -> Unit,
     onRefreshKimiWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenVirtualScreen: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -310,6 +378,7 @@ private fun TopBarOverflowMenu(
                 launchKimiWebText,
                 openBrowserText,
                 stopKimiWebText,
+                openVirtualScreenText,
                 canStopKimiWeb,
                 autoReadText,
                 hasSpeechPlayback,
@@ -417,9 +486,11 @@ private fun TopBarOverflowMenu(
     }
 }
 
+
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Home -> ""
+    is AppRoute.ManageChats -> stringResource(R.string.drawer_manage_chats)
     is AppRoute.Browser -> stringResource(R.string.route_browser)
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)
@@ -440,6 +511,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.AppearanceSettings -> stringResource(R.string.appearance_title)
     is AppRoute.DataBackup -> stringResource(R.string.data_backup_title)
     is AppRoute.Memory -> stringResource(R.string.route_memory)
+    is AppRoute.VirtualScreen -> stringResource(R.string.virtual_screen_title)
     is AppRoute.LinuxEnvironment -> stringResource(R.string.route_linux_environment)
     is AppRoute.Workspace -> stringResource(R.string.capability_workspace)
     is AppRoute.SharedFolders -> stringResource(R.string.route_shared_folders)

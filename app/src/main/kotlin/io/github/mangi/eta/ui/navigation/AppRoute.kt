@@ -9,6 +9,9 @@ sealed interface AppRoute : NavKey {
     data object Home : AppRoute
 
     @Serializable
+    data object ManageChats : AppRoute
+
+    @Serializable
     data object Browser : AppRoute
 
     @Serializable
@@ -67,6 +70,8 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object Memory : AppRoute
+    @Serializable
+    data object VirtualScreen : AppRoute
 
     @Serializable
     data object LinuxEnvironment : AppRoute
