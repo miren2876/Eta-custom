@@ -49,7 +49,7 @@ done
 
 - 补丁以 `git diff --binary 5e9d3a7b` 生成（按整文件分组），**必须按顺序应用**；`README.md` 与 `patches/` 不进补丁。
 - 数据库：3.3.3 上游已占用 `22→23`（`model_providers.auth_mode`），会话组织的列与 `conversation_folders` 表并入 `23→24`，DB 版本 24。
-- 验证：应用后 `git write-tree` 应得到 `6cd1ae5e2eb5b0722d4a16bc1b4cd432ef236401`（与 `patches-3.3.3` 的源码树相同，不含 `patches/` 与 `README.md`）。
+- 验证：应用后 `git write-tree` 应得到 `93a994dfc0bda9ffd5581d1b0f12798d7c40dcaa`（与 `patches-3.3.3` 的源码树相同，不含 `patches/` 与 `README.md`）。
 
 ## 改造内容
 
