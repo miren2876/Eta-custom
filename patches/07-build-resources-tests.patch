@@ -1657,33 +1657,27 @@ index 1d312627..6a28548d 100644
              Prefs.Keys.LOCAL_AGENT_KEYS,
          )
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt b/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt
-index 5e6e17a8..050d4ff1 100644
+index 5e6e17a8..af7a2b30 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt
 +++ b/app/src/test/kotlin/io/github/mangi/eta/data/db/EtaDatabaseMigrationTest.kt
-@@ -22,7 +22,11 @@ import org.robolectric.annotation.Config
+@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
  @Config(sdk = [36])
  class EtaDatabaseMigrationTest {
      @Test
-+<<<<<<< ours
-     fun migration6To23PreservesDataAndMovesCompleteConversationContext() {
-+=======
+-    fun migration6To23PreservesDataAndMovesCompleteConversationContext() {
 +    fun migration6To24PreservesDataAndMovesCompleteConversationContext() {
-+>>>>>>> theirs
          val context = RuntimeEnvironment.getApplication() as Context
          val databaseName = "migration-${UUID.randomUUID()}.db"
          createVersion6Database(context, databaseName)
-@@ -57,6 +61,10 @@ class EtaDatabaseMigrationTest {
+@@ -57,6 +57,7 @@ class EtaDatabaseMigrationTest {
                  EtaDatabase.MIGRATION_20_21,
                  EtaDatabase.MIGRATION_21_22,
                  EtaDatabase.MIGRATION_22_23,
-+<<<<<<< ours
-+=======
 +                EtaDatabase.MIGRATION_23_24,
-+>>>>>>> theirs
              )
              .build()
          try {
-@@ -118,6 +126,9 @@ class EtaDatabaseMigrationTest {
+@@ -118,6 +119,9 @@ class EtaDatabaseMigrationTest {
              assertEquals(emptyList<CharacterEntity>(), runBlocking(Dispatchers.IO) { database.characterDao().characters() })
              assertEquals("off", conversations.first { it.id == "conv-1" }.reasoningEffort)
              assertEquals(null, conversations.first { it.id == "conv-1" }.modelId)
@@ -1964,9 +1958,18 @@ index 310f6449..0f7a8785 100644
      }
  
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt b/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt
-index 1c5f3f73..f89ff3e7 100644
+index 1c5f3f73..36e30031 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt
 +++ b/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt
+@@ -132,7 +132,7 @@ class EtaBackupRepositoryTest {
+         AgentMemoryRepository.replaceAll("旧记忆")
+         val dao = EtaDatabase.get(context).providerDao()
+         val stored = requireNotNull(dao.providerById(provider.id))
+-        val document = EtaBackupDocument(exportedAt = 0, memoryMd = "导入记忆", providers = listOf(
++        val document = EtaBackupDocument(exportedAt = 0, memoryCoreMd = "导入记忆", providers = listOf(
+             EtaBackupProvider(stored.provider.copy(name = "导入连接")),
+         ))
+         var committed = false
 @@ -223,7 +223,8 @@ class EtaBackupRepositoryTest {
          val exported = EtaBackupRepository.export(context, output)
          assertEquals(1, exported.conversationCount)
