@@ -77,6 +77,8 @@ internal data class ConversationIdentity(
     val title: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "folder_id") val folderId: String = "",
+    @ColumnInfo(name = "is_pinned") val isPinned: Boolean = false,
 )
 
 internal data class ConversationMessageContent(val id: String, val content: String)

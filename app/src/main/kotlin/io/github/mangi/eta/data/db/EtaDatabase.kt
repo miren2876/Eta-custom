@@ -131,7 +131,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
                     "sort_index INTEGER NOT NULL, created_at INTEGER NOT NULL)"
             )
         }
-        }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",

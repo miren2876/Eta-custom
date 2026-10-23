@@ -58,6 +58,7 @@ import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.filterForFolder
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
@@ -412,8 +413,7 @@ internal class AgentAppState(
             val orphanRewrites = if (activeStateKnown && terminalStateKnown) withContext(Dispatchers.Main) {
                 val observed = checkpoints.mapTo(mutableSetOf()) { it.runId }.apply {
                     addAll(completedRuns.map { it.result.runId })
-                    activeRunId?.let(::add)
-                    currentRunId?.let(::add)
+                    addAll(activeRunIds)
                 }
                 conversationsById.flatMap { (id, state) ->
                     state.roleplayMessages.pendingRewrites.keys.filterNot { it in observed }.map { id to it }
@@ -2028,7 +2028,7 @@ internal class AgentAppState(
     private val userStoppedRunIds = mutableSetOf<String>()
 
     fun stopCurrentRun() {
-        val runId = currentRunId ?: return
+        val runId = activeRunIds.firstOrNull { conversationIdForRun(it) == selectedConversationId } ?: return
         userStoppedRunIds.add(runId)
         conversationIdForRun(runId)?.let { id ->
             conversationsById[id]?.let { state ->
@@ -2042,7 +2042,7 @@ internal class AgentAppState(
     }
 
     private fun requestInterruptCurrentRun() {
-        val runId = currentRunId ?: return
+        val runId = activeRunIds.firstOrNull { conversationIdForRun(it) == selectedConversationId } ?: return
         requestCancelRun(runId)
     }
 
@@ -2208,7 +2208,7 @@ internal class AgentAppState(
                 null
             }
         )
-        if (completedConversationId != null && currentRunId == null) {
+        if (completedConversationId != null && activeRunIds.isEmpty()) {
             val finishedState = conversationsById[completedConversationId]
             if (finishedState != null && finishedState.queuedMessages.isNotEmpty()) {
                 val stoppedByUser = explicitlyStoppedByUser ||

@@ -1,3 +1,7 @@
+> **个人定制版（非官方仓库）**：本仓库是 [Mangi-11/Eta](https://github.com/Mangi-11/Eta) 的个人定制副本。
+> 定制改动以补丁形式存放在 `patches` 分支（`patches/*.patch`，配 `README.md` 与 `HANDOFF.md` 说明）；默认分支 `eta-custom` 是「上游基线 + 全部定制」的可构建源码。
+> 原始项目、代码与文档版权归作者 **蛮吉（Mangi-11）** 所有，许可证为 [PolyForm Noncommercial License 1.0.0](LICENSE)（Required Notice: Copyright © 2026 蛮吉 (Mangi-11)）。本副本仅供个人非商业使用，未获得作者额外授权；下载 APK、反馈问题请以官方仓库为准：<https://github.com/Mangi-11/Eta>。
+
 # Eta
 
 **简体中文** | [English](README_EN.md)

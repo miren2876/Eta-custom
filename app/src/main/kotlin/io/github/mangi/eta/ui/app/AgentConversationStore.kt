@@ -410,6 +410,51 @@ internal object AgentConversationStore {
             }
         }
 
+    /**
+     * 只保存侧栏组织信息（文件夹、归属、置顶、归档）。
+     *
+     * 会话正文走增量保存，这里独立写回，避免置顶/移动文件夹触发整份会话重写。
+     */
+    suspend fun saveOrganization(
+        context: Context,
+        folders: List<ConversationFolderUi>,
+        folderIds: Map<String, String>,
+        pinnedIds: Set<String>,
+        archivedIds: Set<String>,
+    ) {
+        val appContext = context.applicationContext
+        saveMutex.withLock {
+            withContext(Dispatchers.IO) {
+                try {
+                    val dao = EtaDatabase.get(appContext).conversationDao()
+                    dao.replaceFolders(folders.mapIndexed { index, folder ->
+                        ConversationFolderEntity(
+                            id = folder.id,
+                            name = folder.name,
+                            sortIndex = folder.sortIndex.takeIf { it > 0 } ?: index,
+                            createdAt = 0L,
+                        )
+                    })
+                    dao.conversationMetadataRows().forEach { row ->
+                        val folderId = folderIds[row.id].orEmpty()
+                        if (row.folderId != folderId) dao.updateConversationFolder(row.id, folderId)
+                        val pinned = row.id in pinnedIds
+                        if (row.isPinned != pinned) dao.updateConversationPinned(row.id, pinned)
+                        val archived = row.id in archivedIds
+                        if (row.isArchived != archived) dao.updateConversationArchived(row.id, archived)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    AndroidAgentLogger.error(
+                        "Agent conversation organization persistence failed: type=${failure.safeLogType()}",
+                    )
+                    throw failure
+                }
+            }
+        }
+    }
+
     private val ConversationMetadata.reasoningEffortValue: ReasoningEffort
         get() = ReasoningEffort.fromWireValue(reasoningEffort) ?: ReasoningEffort.DEFAULT
 
