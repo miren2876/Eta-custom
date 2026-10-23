@@ -1591,30 +1591,6 @@ index 00000000..69f9dc61
 +        )
 +    }
 +}
-diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRunControllerTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRunControllerTest.kt
-index 8a7ffacd..fe107472 100644
---- a/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRunControllerTest.kt
-+++ b/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRunControllerTest.kt
-@@ -50,8 +50,8 @@ class AgentRunControllerTest {
-         assertTrue(controller.steer("second"))
- 
-         assertEquals(0, cancellations.get())
--        assertEquals("first", controller.pollSteeringMessage())
--        assertEquals("second", controller.pollSteeringMessage())
-+        assertEquals("first", controller.pollSteeringMessage()?.text)
-+        assertEquals("second", controller.pollSteeringMessage()?.text)
-         assertNull(controller.pollSteeringMessage())
-     }
- 
-@@ -145,7 +145,7 @@ class AgentRunControllerTest {
-             assertTrue(entered.await(1, TimeUnit.SECONDS))
-             assertTrue(controller.steer("补充条件"))
-             assertFalse(finished.await(100, TimeUnit.MILLISECONDS))
--            assertEquals("补充条件", controller.pollSteeringMessage())
-+            assertEquals("补充条件", controller.pollSteeringMessage()?.text)
-             controller.resume()
-             assertTrue(finished.await(1, TimeUnit.SECONDS))
-         } finally {
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/tool/AgentToolRequirementsTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/tool/AgentToolRequirementsTest.kt
 index 8983b902..fd6dc21b 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/agent/tool/AgentToolRequirementsTest.kt
@@ -1630,26 +1606,24 @@ index 8983b902..fd6dc21b 100644
  
      private fun JSONArray.names(): Set<String> = (0 until length()).mapTo(linkedSetOf()) {
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/config/PrefsDefaultsTest.kt b/app/src/test/kotlin/io/github/mangi/eta/config/PrefsDefaultsTest.kt
-index 1d312627..6a28548d 100644
+index 1d312627..99e2771d 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/config/PrefsDefaultsTest.kt
 +++ b/app/src/test/kotlin/io/github/mangi/eta/config/PrefsDefaultsTest.kt
-@@ -25,6 +25,11 @@ class PrefsDefaultsTest {
+@@ -25,6 +25,10 @@ class PrefsDefaultsTest {
                  Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
                  Prefs.Keys.AGENT_THINKING_ENABLED to true,
                  Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED to true,
-+                // 定制新增的本地开关：中途插话与 Linux 运行通知默认开，提问与记忆自动整理默认关。
-+                Prefs.Keys.AGENT_MID_RUN_INTERJECTION to true,
++                // 定制新增的本地开关：Linux 运行通知默认开，提问与记忆自动整理默认关。
 +                Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION to true,
 +                Prefs.Keys.AGENT_ASK_USER to false,
 +                Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW to false,
              ),
              Prefs.Keys.BOOLEAN_DEFAULTS,
          )
-@@ -44,6 +49,10 @@ class PrefsDefaultsTest {
+@@ -44,6 +48,9 @@ class PrefsDefaultsTest {
                  Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
                  Prefs.Keys.AGENT_THINKING_ENABLED,
                  Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
-+                Prefs.Keys.AGENT_MID_RUN_INTERJECTION,
 +                Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION,
 +                Prefs.Keys.AGENT_ASK_USER,
 +                Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW,
