@@ -1591,6 +1591,85 @@ index 00000000..69f9dc61
 +        )
 +    }
 +}
+diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeScreenOnTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeScreenOnTest.kt
+index c6e99c8b..48c3826f 100644
+--- a/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeScreenOnTest.kt
++++ b/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeScreenOnTest.kt
+@@ -20,7 +20,7 @@ class AgentRuntimeScreenOnTest {
+             val service = serviceController.get()
+             val session = AgentRuntimeSession("active-run")
+             val capsule = ComposeView(service)
+-            service.setField("activeSession", session)
++            service.addActiveSession(session)
+             service.setField("capsuleView", capsule)
+ 
+             service.invoke("updateKeepScreenOn")
+@@ -54,7 +54,7 @@ class AgentRuntimeScreenOnTest {
+         try {
+             val service = serviceController.get()
+             val session = AgentRuntimeSession("completed-run")
+-            service.setField("activeSession", session)
++            service.addActiveSession(session)
+             service.invoke("updateKeepScreenOn")
+             assertTrue(AgentRuntimeService.keepScreenOn.value)
+ 
+@@ -74,7 +74,7 @@ class AgentRuntimeScreenOnTest {
+         val serviceController = Robolectric.buildService(AgentRuntimeService::class.java).create()
+         try {
+             val service = serviceController.get()
+-            service.setField("activeSession", AgentRuntimeSession("destroyed-run"))
++            service.addActiveSession(AgentRuntimeSession("destroyed-run"))
+             service.invoke("updateKeepScreenOn")
+             assertTrue(AgentRuntimeService.keepScreenOn.value)
+         } finally {
+@@ -83,6 +83,15 @@ class AgentRuntimeScreenOnTest {
+         assertFalse(AgentRuntimeService.keepScreenOn.value)
+     }
+ 
++    /** 3.3.3 起 activeSession 是 sessions 集合的计算属性，只能通过集合注入会话。 */
++    private fun AgentRuntimeService.addActiveSession(session: AgentRuntimeSession) {
++        val field = AgentRuntimeService::class.java.getDeclaredField("sessions").apply {
++            isAccessible = true
++        }
++        @Suppress("UNCHECKED_CAST")
++        (field.get(this) as MutableSet<AgentRuntimeSession>).add(session)
++    }
++
+     private fun AgentRuntimeService.setField(name: String, value: Any) {
+         AgentRuntimeService::class.java.getDeclaredField(name).apply {
+             isAccessible = true
+diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeServiceRetentionTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeServiceRetentionTest.kt
+index 0a9de913..b351a305 100644
+--- a/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeServiceRetentionTest.kt
++++ b/app/src/test/kotlin/io/github/mangi/eta/agent/runtime/AgentRuntimeServiceRetentionTest.kt
+@@ -2,7 +2,6 @@ package io.github.mangi.eta.agent.runtime
+ 
+ import android.app.Application
+ import io.github.mangi.eta.agent.model.AgentModelClient
+-import org.junit.Assert.assertNull
+ import org.junit.Assert.assertSame
+ import org.junit.Test
+ import org.junit.runner.RunWith
+@@ -14,7 +13,7 @@ import org.robolectric.annotation.Config
+ @Config(sdk = [36], application = Application::class)
+ class AgentRuntimeServiceRetentionTest {
+     @Test
+-    fun dismissReleasesContinuationHistoryBeforeTheServiceIsDestroyed() {
++    fun dismissKeepsContinuationHistoryUntilNextRunStarts() {
+         val controller = Robolectric.buildService(AgentRuntimeService::class.java).create()
+         try {
+             val service = controller.get()
+@@ -46,7 +45,9 @@ class AgentRuntimeServiceRetentionTest {
+                 isAccessible = true
+             }.invoke(service)
+ 
+-            assertNull(retainedContext.get(service))
++            // 3.3.3 起续跑历史的清空时机挪到下一次运行开始（AgentRuntimeService.startRun），
++            // dismiss 只把常驻胶囊收回空闲态，历史仍留在服务实例里。
++            assertSame(completedContext, retainedContext.get(service))
+         } finally {
+             controller.destroy()
+         }
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/agent/tool/AgentToolRequirementsTest.kt b/app/src/test/kotlin/io/github/mangi/eta/agent/tool/AgentToolRequirementsTest.kt
 index 8983b902..fd6dc21b 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/agent/tool/AgentToolRequirementsTest.kt
@@ -1933,7 +2012,7 @@ index 310f6449..0f7a8785 100644
      }
  
 diff --git a/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt b/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt
-index 1c5f3f73..36e30031 100644
+index 1c5f3f73..6319cdd6 100644
 --- a/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt
 +++ b/app/src/test/kotlin/io/github/mangi/eta/data/repository/EtaBackupRepositoryTest.kt
 @@ -132,7 +132,7 @@ class EtaBackupRepositoryTest {
@@ -1945,7 +2024,18 @@ index 1c5f3f73..36e30031 100644
              EtaBackupProvider(stored.provider.copy(name = "导入连接")),
          ))
          var committed = false
-@@ -223,7 +223,8 @@ class EtaBackupRepositoryTest {
+@@ -153,7 +153,9 @@ class EtaBackupRepositoryTest {
+         assertEquals(ProviderAuthModes.API_KEY, restored.authMode)
+         assertFalse(restored.isEnabled)
+         assertEquals("", restored.apiKey)
+-        assertEquals("导入记忆", AgentMemoryRepository.snapshot().content)
++        // 定制的核心记忆拆成 USER.md / MEMORY.md，无标题的 legacy 文本落在画像里，
++        // 所以用合并后的 coreSnapshot 断言，而不是只读工作记忆的 snapshot。
++        assertTrue(AgentMemoryRepository.coreSnapshot().content.contains("导入记忆"))
+     }
+ 
+     @Test
+@@ -223,7 +225,8 @@ class EtaBackupRepositoryTest {
          val exported = EtaBackupRepository.export(context, output)
          assertEquals(1, exported.conversationCount)
          assertTrue(exported.providerCount > 0)
@@ -1955,7 +2045,7 @@ index 1c5f3f73..36e30031 100644
  
          ProviderRepository.updateProvider(provider.withApiKey("changed"))
          AgentMemoryRepository.replaceAll("changed")
-@@ -239,7 +240,8 @@ class EtaBackupRepositoryTest {
+@@ -239,7 +242,8 @@ class EtaBackupRepositoryTest {
              ByteArrayInputStream(output.toByteArray()),
          )
          assertEquals(1, imported.conversationCount)
@@ -1965,7 +2055,7 @@ index 1c5f3f73..36e30031 100644
          assertEquals(
              "保留这条消息",
              EtaDatabase.get(context).conversationDao().messages().single().content,
-@@ -356,7 +358,7 @@ class EtaBackupRepositoryTest {
+@@ -356,7 +360,7 @@ class EtaBackupRepositoryTest {
          val records = database.characterDao().characters().map { row ->
              if (row.id == first.id) row.copy(cardJson = CharacterCardCodec.encodeJson(first.card.withEdits(name = "备份角色"))) else row
          }
@@ -1974,7 +2064,7 @@ index 1c5f3f73..36e30031 100644
              roleplay = CharacterBackupData(characters = records, assets = listOf(
                  CharacterBackupAsset(first.id, memoryMd = "新的剧情记忆"),
                  CharacterBackupAsset(blocked.id, memoryMd = "写入失败"),
-@@ -383,7 +385,8 @@ class EtaBackupRepositoryTest {
+@@ -383,7 +387,8 @@ class EtaBackupRepositoryTest {
              assertEquals(mapOf("existing-provider" to "fixture-existing-credential"), credentials)
              assertEquals("原角色", CharacterRepository.get(first.id)?.card?.name)
              assertEquals("原剧情记忆", CharacterMemoryRepository.snapshot(context, first.id).content)

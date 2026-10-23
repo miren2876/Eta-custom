@@ -20,7 +20,7 @@ class AgentRuntimeScreenOnTest {
             val service = serviceController.get()
             val session = AgentRuntimeSession("active-run")
             val capsule = ComposeView(service)
-            service.setField("activeSession", session)
+            service.addActiveSession(session)
             service.setField("capsuleView", capsule)
 
             service.invoke("updateKeepScreenOn")
@@ -54,7 +54,7 @@ class AgentRuntimeScreenOnTest {
         try {
             val service = serviceController.get()
             val session = AgentRuntimeSession("completed-run")
-            service.setField("activeSession", session)
+            service.addActiveSession(session)
             service.invoke("updateKeepScreenOn")
             assertTrue(AgentRuntimeService.keepScreenOn.value)
 
@@ -74,13 +74,22 @@ class AgentRuntimeScreenOnTest {
         val serviceController = Robolectric.buildService(AgentRuntimeService::class.java).create()
         try {
             val service = serviceController.get()
-            service.setField("activeSession", AgentRuntimeSession("destroyed-run"))
+            service.addActiveSession(AgentRuntimeSession("destroyed-run"))
             service.invoke("updateKeepScreenOn")
             assertTrue(AgentRuntimeService.keepScreenOn.value)
         } finally {
             serviceController.destroy()
         }
         assertFalse(AgentRuntimeService.keepScreenOn.value)
+    }
+
+    /** 3.3.3 起 activeSession 是 sessions 集合的计算属性，只能通过集合注入会话。 */
+    private fun AgentRuntimeService.addActiveSession(session: AgentRuntimeSession) {
+        val field = AgentRuntimeService::class.java.getDeclaredField("sessions").apply {
+            isAccessible = true
+        }
+        @Suppress("UNCHECKED_CAST")
+        (field.get(this) as MutableSet<AgentRuntimeSession>).add(session)
     }
 
     private fun AgentRuntimeService.setField(name: String, value: Any) {

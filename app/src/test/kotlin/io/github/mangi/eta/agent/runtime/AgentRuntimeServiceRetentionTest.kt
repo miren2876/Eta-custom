@@ -2,7 +2,6 @@ package io.github.mangi.eta.agent.runtime
 
 import android.app.Application
 import io.github.mangi.eta.agent.model.AgentModelClient
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,7 +13,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36], application = Application::class)
 class AgentRuntimeServiceRetentionTest {
     @Test
-    fun dismissReleasesContinuationHistoryBeforeTheServiceIsDestroyed() {
+    fun dismissKeepsContinuationHistoryUntilNextRunStarts() {
         val controller = Robolectric.buildService(AgentRuntimeService::class.java).create()
         try {
             val service = controller.get()
@@ -46,7 +45,9 @@ class AgentRuntimeServiceRetentionTest {
                 isAccessible = true
             }.invoke(service)
 
-            assertNull(retainedContext.get(service))
+            // 3.3.3 起续跑历史的清空时机挪到下一次运行开始（AgentRuntimeService.startRun），
+            // dismiss 只把常驻胶囊收回空闲态，历史仍留在服务实例里。
+            assertSame(completedContext, retainedContext.get(service))
         } finally {
             controller.destroy()
         }

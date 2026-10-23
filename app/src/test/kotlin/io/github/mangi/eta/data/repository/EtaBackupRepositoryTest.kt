@@ -153,7 +153,9 @@ class EtaBackupRepositoryTest {
         assertEquals(ProviderAuthModes.API_KEY, restored.authMode)
         assertFalse(restored.isEnabled)
         assertEquals("", restored.apiKey)
-        assertEquals("导入记忆", AgentMemoryRepository.snapshot().content)
+        // 定制的核心记忆拆成 USER.md / MEMORY.md，无标题的 legacy 文本落在画像里，
+        // 所以用合并后的 coreSnapshot 断言，而不是只读工作记忆的 snapshot。
+        assertTrue(AgentMemoryRepository.coreSnapshot().content.contains("导入记忆"))
     }
 
     @Test
