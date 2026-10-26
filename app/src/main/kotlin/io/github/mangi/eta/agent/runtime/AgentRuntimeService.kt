@@ -447,7 +447,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 beforeTerminalPublish = {
                     runs.finish(request.runId, session)?.releaseIncoming()
                     AgentExecutionService.release("run:${request.runId}")
-                    mainHandler.post {
+                    // 延后一拍再判断：onRunFinished（打分→排整理定时器）也是 post 进来的，
+                    // 同队列里先于它执行会把「待执行的整理」看成没有，服务一停整理 run 就起不来。
+                    mainHandler.postDelayed({
                         if (!destroyed) {
                             publishExecutionState()
                             updateKeepScreenOn()
@@ -455,7 +457,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                                 !guiControl.state.value.userPaused && !memoryIdleReview.hasPendingWork()
                             ) stopSelf()
                         }
-                    }
+                    }, REVIEW_GRACE_MS)
                 },
             )
             RuntimeRunRegistry.Run(request, session, incoming) {
@@ -1021,6 +1023,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     /** 起一个隐藏的记忆整理 run：只给记忆工具，不属于任何会话。 */
+    /** 打分与排整理定时器的宽限窗口；必须大于同队列里 onRunFinished 的执行延迟。 */
+    private val REVIEW_GRACE_MS = 1_000L
+
     private fun startMemoryReviewRun(prompt: String) {
         val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
             .getOrNull()
