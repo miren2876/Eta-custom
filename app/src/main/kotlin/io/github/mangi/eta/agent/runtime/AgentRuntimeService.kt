@@ -185,7 +185,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 // 关掉常驻就是让胶囊马上消失：顺手清掉未读角标，别让它挂着"已完成"不退。
                 unreadFinished = false
                 if (state.value.finishedBadge != 0) state.value = state.value.copy(finishedBadge = 0)
-                if (runningSessionCount() == 0) dismissAndStop()
+                if (runningSessionCount() == 0) {
+                    dismissAndStop()
+                    // 如果这条指令是 startForegroundService 送进来的，必须尽快让服务退出，
+                    // 否则系统会判定「没有调用 startForeground」直接 ANR 杀掉进程。
+                    stopSelf(startId)
+                }
             }
             ACTION_CLEAR_READ -> onCapsuleRead()
             else -> {
