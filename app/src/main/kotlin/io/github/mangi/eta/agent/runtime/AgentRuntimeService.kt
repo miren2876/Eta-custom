@@ -182,7 +182,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
             ACTION_UNPIN_CAPSULE -> {
                 capsulePinned = false
-                if (runningSessionCount() == 0 && !unreadFinished) dismissAndStop()
+                // 关掉常驻就是让胶囊马上消失：顺手清掉未读角标，别让它挂着"已完成"不退。
+                unreadFinished = false
+                if (state.value.finishedBadge != 0) state.value = state.value.copy(finishedBadge = 0)
+                if (runningSessionCount() == 0) dismissAndStop()
             }
             ACTION_CLEAR_READ -> onCapsuleRead()
             else -> {
