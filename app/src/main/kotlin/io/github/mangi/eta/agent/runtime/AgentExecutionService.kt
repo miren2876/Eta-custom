@@ -135,6 +135,7 @@ internal class AgentExecutionService : Service() {
         AgentOverlayStatus.Paused -> getString(R.string.overlay_paused)
         AgentOverlayStatus.Stopping -> getString(R.string.overlay_stopping)
         AgentOverlayStatus.GeneratingAnswer -> getString(R.string.execution_chip_answering)
+        AgentOverlayStatus.MemoryReview -> getString(R.string.execution_chip_memory_review)
         else -> getString(R.string.overlay_reasoning)
     }
 
