@@ -189,8 +189,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         when (intent?.action) {
             ACTION_PIN_CAPSULE -> {
                 capsulePinned = true
-                // 运行中打开常驻时不能进空闲态：那会把正在展示的会话与状态覆盖掉。
-                if (runningSessionCount() == 0) enterIdleState()
+                if (runningSessionCount() == 0) {
+                    // 没有任务：进空闲态，胶囊立刻出现在桌面上。
+                    enterIdleState()
+                } else {
+                    // 对话进行中才打开常驻：直接绑到当前任务的显示上，否则开关看起来「没反应」。
+                    runs.all().lastOrNull { !it.session.isTerminal }?.let { bindDisplayedRun(it) }
+                    ensureOverlayVisible()
+                }
             }
             ACTION_UNPIN_CAPSULE -> {
                 capsulePinned = false
