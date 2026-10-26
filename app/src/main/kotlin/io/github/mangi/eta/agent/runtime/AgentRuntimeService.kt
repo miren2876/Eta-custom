@@ -633,8 +633,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 transcript = run.session.transcript,
                 enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
             )
-            // 整理 run 到此为止：它不该碰胶囊。
-            if (memoryIdleReview.isReviewRun(run.session.runId)) return@post
+            // 整理 run 到此为止：它不该碰胶囊，但结果要落盘，否则失败时无从定位。
+            if (memoryIdleReview.isReviewRun(run.session.runId)) {
+                traceIdleReview(
+                    "整理 run 结束 ok=${result.ok} err=${result.error.orEmpty().take(160)} " +
+                        "content=${result.content.replace("\n", " ").take(120)}",
+                )
+                return@post
+            }
             val guiState = guiControl.state.value
             rememberFinishedSession(run.session.runId)
             syncRunningSessions()

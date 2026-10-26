@@ -55,9 +55,35 @@ internal object LinuxRunMonitor {
         val command: String,
         val cpuPercent: String,
         val rssKb: Long,
+        /** 人类可读的用途，不再是冷冰冰的命令行。 */
+        val usage: String,
     ) {
         val summary: String
-            get() = "PID $pid · CPU $cpuPercent% · ${rssKb / 1024} MB"
+            get() = "$usage · PID $pid · CPU $cpuPercent% · ${rssKb / 1024} MB"
+    }
+
+    /** 按命令行关键字猜用途；命中不到时回退到可执行文件名。 */
+    internal fun describeUsage(command: String): String {
+        val c = command.lowercase()
+        return when {
+            c.isBlank() -> "未知进程"
+            "apt" in c || "dpkg" in c -> "软件包安装 / 更新"
+            "pip" in c || "python" in c -> "Python 脚本或包管理"
+            "npm" in c || "node" in c -> "Node.js 运行时 / 包管理"
+            "yarn" in c || "pnpm" in c -> "前端依赖安装"
+            "git" in c -> "Git 仓库操作"
+            "make" in c || "cmake" in c || "gcc" in c || "clang" in c || "gradle" in c || "javac" in c -> "编译构建"
+            "curl" in c || "wget" in c -> "网络下载"
+            "ssh" in c || "scp" in c -> "远程连接 / 传输"
+            "nginx" in c || "apache" in c || "httpd" in c -> "本地 Web 服务"
+            "mysql" in c || "postgres" in c || "redis" in c || "sqlite" in c -> "数据库服务"
+            "ffmpeg" in c -> "音视频处理"
+            "unzip" in c || "tar" in c || "gzip" in c || "7z" in c -> "解压 / 打包"
+            "find" in c || "grep" in c || "rg" in c || "sed" in c || "awk" in c -> "文件检索 / 文本处理"
+            "sleep" in c -> "等待（定时/占位）"
+            "bash" in c || "sh " in c || c.startsWith("sh") || "zsh" in c -> "Shell 会话"
+            else -> command.substringAfterLast('/').take(24).ifBlank { "未知进程" }
+        }
     }
 
     private val listScript: String
@@ -86,7 +112,8 @@ internal object LinuxRunMonitor {
             val pid = parts[0].trim().toIntOrNull() ?: return@mapNotNull null
             val ticks = parts[1].trim().toLongOrNull() ?: 0L
             val rss = parts[2].trim().toLongOrNull() ?: 0L
-            LinuxProcess(pid, parts[3].trim(), "%.1f".format(ticks / 100.0), rss)
+            val command = parts[3].trim()
+            LinuxProcess(pid, command, "%.1f".format(ticks / 100.0), rss, describeUsage(command))
         }.sortedByDescending { it.cpuPercent.toDoubleOrNull() ?: 0.0 }.toList()
     }.getOrDefault(emptyList())
 
