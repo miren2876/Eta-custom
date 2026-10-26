@@ -25,6 +25,7 @@ import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
 import io.github.mangi.eta.agent.tool.AgentLocalTools
+import io.github.mangi.eta.agent.tool.AgentMemoryWritePolicy
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.PendingSkillConflictCapabilityParser
