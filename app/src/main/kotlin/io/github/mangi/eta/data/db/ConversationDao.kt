@@ -17,13 +17,14 @@ internal interface ConversationDao : ChunkedTextDao {
             "COALESCE((SELECT substr(content, 1, 256) FROM agent_text_chunks " +
             "WHERE owner_table = 'conversation_messages' AND owner_id = m.id AND field = 'content' " +
             "AND chunk_index = 0), substr(m.content, 1, 256)) AS message_preview " +
+            ", c.folder_id, c.is_pinned, c.is_archived " +
             "FROM conversations c LEFT JOIN conversation_messages m ON m.conversation_id = c.id " +
             "AND m.sort_index = (SELECT MAX(sort_index) FROM conversation_messages WHERE conversation_id = c.id) " +
             "ORDER BY c.updated_at DESC, c.id ASC"
     )
     suspend fun conversationIndex(): List<ConversationIndexRow>
 
-    @Query("SELECT id, title, created_at, updated_at FROM conversations")
+    @Query("SELECT id, title, created_at, updated_at, folder_id, is_pinned FROM conversations")
     suspend fun conversationIdentities(): List<ConversationIdentity>
 
     @Query("UPDATE conversations SET title = :title, updated_at = :updatedAt WHERE id = :conversationId")
@@ -31,7 +32,8 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, " +
+            "folder_id, is_pinned, is_archived " +
             "FROM conversations WHERE id = :conversationId"
     )
     suspend fun conversationMetadataRow(conversationId: String): ConversationMetadata?
@@ -42,7 +44,8 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, " +
+            "folder_id, is_pinned, is_archived " +
             "FROM conversations ORDER BY updated_at DESC"
     )
     suspend fun conversationMetadataRows(): List<ConversationMetadata>
@@ -52,10 +55,35 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, " +
+            "folder_id, is_pinned, is_archived " +
             "FROM conversations ORDER BY updated_at DESC LIMIT :limit OFFSET :offset"
     )
     suspend fun conversationMetadataPage(limit: Int, offset: Int): List<ConversationMetadata>
+
+    @Query("SELECT * FROM conversation_folders ORDER BY sort_index ASC, created_at ASC")
+    suspend fun folders(): List<ConversationFolderEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFolders(folders: List<ConversationFolderEntity>)
+
+    @Query("DELETE FROM conversation_folders")
+    suspend fun deleteFolders()
+
+    @Transaction
+    suspend fun replaceFolders(folders: List<ConversationFolderEntity>) {
+        deleteFolders()
+        if (folders.isNotEmpty()) insertFolders(folders)
+    }
+
+    @Query("UPDATE conversations SET folder_id = :folderId WHERE id = :conversationId")
+    suspend fun updateConversationFolder(conversationId: String, folderId: String)
+
+    @Query("UPDATE conversations SET is_pinned = :pinned WHERE id = :conversationId")
+    suspend fun updateConversationPinned(conversationId: String, pinned: Boolean)
+
+    @Query("UPDATE conversations SET is_archived = :archived WHERE id = :conversationId")
+    suspend fun updateConversationArchived(conversationId: String, archived: Boolean)
 
     @Transaction
     suspend fun conversationsPage(limit: Int, offset: Int): List<ConversationMetadata> =

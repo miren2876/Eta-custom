@@ -16,6 +16,8 @@ internal sealed interface AgentOverlayStatus {
     data object RunFailed : AgentOverlayStatus
     data object GeneratingAnswer : AgentOverlayStatus
     data object Stopping : AgentOverlayStatus
+    /** 胶囊常驻但当前没有任务在跑时显示。 */
+    data object Idle : AgentOverlayStatus
     data object Paused : AgentOverlayStatus
     data object Continuing : AgentOverlayStatus
     data object Finishing : AgentOverlayStatus
@@ -42,6 +44,7 @@ internal fun AgentOverlayStatus.localizedText(resources: Resources): String = wh
     AgentOverlayStatus.Finishing -> resources.getString(R.string.overlay_finishing)
     AgentOverlayStatus.ContinuationUnavailable -> resources.getString(R.string.overlay_continuation_unavailable)
     AgentOverlayStatus.Stopped -> resources.getString(R.string.overlay_stopped)
+    AgentOverlayStatus.Idle -> resources.getString(R.string.overlay_idle)
 }
 
 @Composable
@@ -55,6 +58,8 @@ internal fun toolDisplayName(resources: Resources, name: String): String {
 
 @StringRes
 internal fun toolDisplayNameResource(name: String): Int? = when (name) {
+    "virtual_screen" -> R.string.tool_virtual_screen
+    "ask_user" -> R.string.tool_ask_user
     "observe_screen" -> R.string.tool_observe_screen
     "release_gui" -> R.string.tool_release_gui
     "tap" -> R.string.tool_tap
