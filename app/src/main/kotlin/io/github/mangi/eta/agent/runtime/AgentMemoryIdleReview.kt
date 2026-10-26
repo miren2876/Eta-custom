@@ -50,6 +50,7 @@ internal class AgentMemoryIdleReview(
     private var pendingAction: Runnable? = null
     private var activeReviewSessionKey: String? = null
     private var reviewSnapshot: Map<String, Int>? = null
+    private val reviewToolCalls = mutableListOf<String>()
 
     fun isReviewRun(runId: String): Boolean = runId.startsWith(REVIEW_RUN_PREFIX)
 
@@ -77,7 +78,11 @@ internal class AgentMemoryIdleReview(
     fun hasPendingWork(): Boolean = pendingAction != null || activeReviewSessionKey != null
 
     fun recordToolFinished(runId: String, toolName: String) {
-        if (isReviewRun(runId)) return
+        if (isReviewRun(runId)) {
+            // 整理 run 的工具调用是「到底写没写」的唯一直接证据，别丢。
+            if (toolName.isNotBlank()) reviewToolCalls += toolName
+            return
+        }
         val key = bindings[runId]?.sessionKey ?: return
         val signal = signals.getOrPut(key) { Signal() }
         signal.toolResults += 1
@@ -172,10 +177,8 @@ internal class AgentMemoryIdleReview(
         lastAttemptAtMillis = System.currentTimeMillis()
         activeReviewSessionKey = sessionKey
         // 记下整理前的档案快照，跑完对比出「新建了谁 / 追加到谁」。
-        reviewSnapshot = runCatching {
-            io.github.mangi.eta.data.repository.AgentMemoryRepository.files()
-                .associate { file -> file.name to file.byteSize }
-        }.getOrNull()
+        reviewToolCalls.clear()
+        reviewSnapshot = runCatching { archiveSizes() }.getOrNull()
         val prompt = buildPrompt(score, added)
         trace("启动整理 run（score=%.1f）".format(score))
         runCatching { launchReview(sessionKey, prompt) }.onFailure { failure ->
@@ -189,11 +192,11 @@ internal class AgentMemoryIdleReview(
     private fun reportOutcome(sessionKey: String?) {
         val before = reviewSnapshot
         reviewSnapshot = null
+        val toolCalls = reviewToolCalls.toList()
+        val writes = toolCalls.count { it == "memory_write" }
+        reviewToolCalls.clear()
         if (before == null) return
-        val after = runCatching {
-            io.github.mangi.eta.data.repository.AgentMemoryRepository.files()
-                .associate { file -> file.name to file.byteSize }
-        }.getOrNull() ?: return
+        val after = runCatching { archiveSizes() }.getOrNull() ?: return
         val created = after.keys - before.keys
         val appended = after.filter { (name, size) -> before[name]?.let { it < size } == true }.keys - created
         when {
@@ -205,12 +208,22 @@ internal class AgentMemoryIdleReview(
                 trace("整理完成：追加到《${appended.first()}》")
                 notifyOutcome(SystemNoticeCode.MemoryReviewAppended, appended.first(), sessionKey)
             }
+            writes > 0 -> {
+                // 等长替换（mode=edit）不会改变字节数，不能因为比对不到就报「没有内容」。
+                trace("整理完成：执行了 $writes 次 memory_write，档案未变大但不是没写")
+                notifyOutcome(SystemNoticeCode.MemoryReviewNone, null, sessionKey)
+            }
             else -> {
-                trace("整理完成：没有需要整理的内容")
+                trace("整理完成：没有需要整理的内容（工具调用=${toolCalls.size}）")
                 notifyOutcome(SystemNoticeCode.MemoryReviewNone, null, sessionKey)
             }
         }
     }
+
+    /** 档案指纹：字节数与行数一起比，等长替换也能发现变化。 */
+    private fun archiveSizes(): Map<String, Int> =
+        io.github.mangi.eta.data.repository.AgentMemoryRepository.files()
+            .associate { file -> file.name to file.byteSize * 100_000 + file.lineCount }
 
     /** 整理 run 的提示词：写入规则 + 现有记忆索引 + 有界检查点。 */
     private fun buildPrompt(
