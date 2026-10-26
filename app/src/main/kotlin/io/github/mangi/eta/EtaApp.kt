@@ -56,9 +56,6 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener, Application
         }
         TerminalRuntime.initialize(this)
         LinuxRunMonitor.start(this)
-        // 新进程里不存在虚拟屏会话；清掉上次异常退出可能残留的保留通知。
-        io.github.mangi.eta.agent.display.VirtualScreenNotification.cancel(this)
-        io.github.mangi.eta.agent.display.VirtualScreenFloatWindow.init(this)
         RootAccess.initialize(this)
         applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)

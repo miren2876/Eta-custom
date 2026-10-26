@@ -69,7 +69,7 @@ import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.MiuixBackButton
 import io.github.mangi.eta.ui.components.RoleplayChatUi
 import io.github.mangi.eta.ui.components.TopBarBackdrop
-import io.github.mangi.eta.ui.components.rememberVirtualScreenMenuAction
+import io.github.mangi.eta.ui.components.rememberOpenVirtualScreenAction
 import io.github.mangi.eta.ui.components.captureForTopBar
 import io.github.mangi.eta.ui.components.rememberTopBarBackdrop
 import io.github.mangi.eta.ui.components.topBarContainerColor
@@ -271,8 +271,8 @@ private fun AgentTopBar(
             MiuixBackButton(onClick = onBack)
         }
     }
-    // 虚拟屏入口放进「···」菜单；虚拟屏未启用时返回 null，菜单项不显示。
-    val onOpenVirtualScreen = rememberVirtualScreenMenuAction()
+    // 虚拟屏入口放进「···」菜单；点了直接打开独立虚拟屏应用。
+    val onOpenVirtualScreen = rememberOpenVirtualScreenAction()
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
             TopBarOverflowMenu(

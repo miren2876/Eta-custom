@@ -75,8 +75,6 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data class MemoryArchive(val name: String) : AppRoute
-    @Serializable
-    data object VirtualScreen : AppRoute
 
     @Serializable
     data object LinuxEnvironment : AppRoute

@@ -73,6 +73,7 @@ import io.github.mangi.eta.systemizer.SystemizerInstallResult
 import io.github.mangi.eta.ui.app.EnhancementSettingsHistory
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.components.EtaArrowPreference
+import io.github.mangi.eta.ui.components.openVirtualScreenApp
 import io.github.mangi.eta.ui.components.EtaDropdownPreference
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceColors
@@ -315,7 +316,7 @@ private fun SettingsPageContent(
                     EtaArrowPreference(
                         title = stringResource(R.string.virtual_screen_title),
                         startAction = { EtaPreferenceIcon(icon = Icons.Rounded.Smartphone, tint = EtaPreferenceColors.Blue) },
-                        onClick = { onNavigate(AppRoute.VirtualScreen) },
+                        onClick = { openVirtualScreenApp(context) },
                     )
 
                     EtaPreferenceDivider()

@@ -10,7 +10,6 @@ import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.device.AgentNotificationHistoryService
 import io.github.mangi.eta.agent.device.RootAccessState
 import io.github.mangi.eta.agent.device.RootAccess
-import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
 import java.util.Locale
 import org.json.JSONArray
 
@@ -38,14 +37,6 @@ internal data class AgentToolCapabilities(
     val askUser: Boolean = false,
 ) {
     fun unavailableCode(name: String): String? {
-        if (virtualScreenEnabled && name in VirtualScreenRoutingPolicy.uiTools) {
-            if (!virtualUiTreeAvailable && name in VirtualScreenRoutingPolicy.nodeTools) return "VIRTUAL_UI_TREE_UNAVAILABLE"
-            if (!virtualScreenFallbackEnabled) {
-                if (!rootAvailable) return "ROOT_REQUIRED"
-                if (!virtualDisplayAvailable) return "DEVICE_UNSUPPORTED"
-                if (name in VirtualScreenRoutingPolicy.unavailableTools) return "VIRTUAL_ACTION_UNSUPPORTED"
-            }
-        }
         if (name == "virtual_screen" && !virtualDisplayAvailable) return "DEVICE_UNSUPPORTED"
         if (name == "ask_user" && !askUser) return "ASK_USER_DISABLED"
         if (name in setOf(
@@ -62,9 +53,7 @@ internal data class AgentToolCapabilities(
         if (requirement.rootRequirement == RootRequirement.REQUIRED && !rootAvailable) return "ROOT_REQUIRED"
         if (requirement.lsposedRequirement == LsposedRequirement.REQUIRED && !lsposedAvailable) return "LSPOSED_REQUIRED"
         if (requirement.colorOs && !colorOs) return "DEVICE_UNSUPPORTED"
-        if (requirement.accessibility && !accessibilityAvailable && !accessibilityRecoveryAvailable &&
-            !(virtualScreenEnabled && name in VirtualScreenRoutingPolicy.coordinateTools)
-        ) {
+        if (requirement.accessibility && !accessibilityAvailable && !accessibilityRecoveryAvailable) {
             return "ACCESSIBILITY_UNAVAILABLE"
         }
         return when (requirement.systemAccess) {
@@ -88,26 +77,6 @@ internal data class AgentToolCapabilities(
                 val tool = rootProjected.getJSONObject(index)
                 val name = tool.getJSONObject("function").getString("name")
                 if (unavailableCode(name) == null) {
-                    if (virtualScreenEnabled && name in VirtualScreenRoutingPolicy.uiTools) {
-                        val function = tool.getJSONObject("function")
-                        function.put(
-                            "description",
-                            function.getString("description") + if (virtualScreenFallbackEnabled)
-                                " 当前优先使用虚拟屏；不兼容时暂停并等待通知授权。仅用户点击允许后，本次任务才能改用主屏；切换后必须重新观察。"
-                            else " 当前已启用虚拟屏：此工具只作用于独立 display，自动创建会话；不会操作主屏。"
-                        )
-                        if (name == "press_key" && !virtualScreenFallbackEnabled) function.getJSONObject(
-                            "parameters"
-                        ).getJSONObject("properties")
-                            .getJSONObject("button")
-                            .put("enum", JSONArray().put("BACK").put("ENTER").put("PASTE"))
-                        if (name in setOf("set_clipboard", "get_clipboard")) {
-                            function.put(
-                                "description",
-                                "仅访问本次虚拟屏运行的临时剪贴板，不读取或修改用户系统剪贴板。"
-                            )
-                        }
-                    }
                     if (name in setOf(
                             "get_device_state",
                             "set_device_state"

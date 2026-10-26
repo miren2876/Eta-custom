@@ -50,8 +50,6 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
-
-    <!-- 虚拟屏直通出帧：只对 root helper 开放的取面通道，普通应用调不到。 -->
     <permission
         android:name="io.github.mangi.eta.permission.VIRTUAL_SCREEN_SURFACE"
         android:protectionLevel="signature" />
@@ -100,20 +98,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <receiver android:name=".agent.display.MainScreenFallbackReceiver" android:exported="false" />
-        <activity android:name=".agent.display.VirtualScreenViewerActivity" android:exported="false"
-            android:label="@string/virtual_screen_title" android:theme="@style/Theme.Eta"
-            android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".agent.display.VirtualScreenHomeActivity" android:exported="false"
-            android:excludeFromRecents="true" android:resizeableActivity="true"
-            android:taskAffinity="io.github.mangi.eta.virtualscreen"
-            android:theme="@style/Theme.Eta" />
-        <!-- 虚拟屏直通出帧：root helper 经 ActivityManager.getContentProviderExternal 取当前活动 Surface。 -->
-        <provider
-            android:name=".agent.display.VirtualScreenSurfaceProvider"
-            android:authorities="io.github.mangi.xiaoaiwindow.hostsurface"
-            android:exported="true"
-            android:permission="io.github.mangi.eta.permission.VIRTUAL_SCREEN_SURFACE" />
 
         <service
             android:name=".agent.voice.EtaVoiceInteractionService"
