@@ -1090,6 +1090,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onStop = { requestStop(controlRunId) },
                 onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = { requestSupplement(controlRunId, it) },
+                onOpenConversation = ::openConversation,
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -1184,6 +1185,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 回到 Eta 本体并定位到本次任务的会话。卡片窗口可见时属于前台可见的用户操作，
      * 允许从服务启动 Activity；启动失败时保留卡片，不让用户丢失结果。
      */
+    /** 点胶囊里的会话 → 回到对应会话，并清掉完成提示。 */
+    private fun openConversation(conversationId: String) {
+        if (conversationId.isBlank()) return
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .setAction(MainActivity.ACTION_OPEN_CONVERSATION_ID)
+                    .putExtra(MainActivity.EXTRA_CONVERSATION_ID, conversationId)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+            capsuleExpanded.value = false
+            onCapsuleRead()
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("overlay_open_conversation_failed") {
+                "Overlay open conversation failed: type=" + throwable.safeLogType()
+            }
+        }
+    }
+
     private fun openEtaFromResult(run: RuntimeRunRegistry.Run?) {
         val handoff = run?.request?.handoff
         val conversationId = handoff
