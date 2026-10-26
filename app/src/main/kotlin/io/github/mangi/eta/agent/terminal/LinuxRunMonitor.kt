@@ -109,14 +109,19 @@ internal object LinuxRunMonitor {
 
     /** 依次尝试常见 su 路径执行脚本；全部失败时返回 null 并记录日志。 */
     private fun runSu(script: String): String? {
-        for (su in listOf("/data/adb/ksu/bin/su", "/system/bin/su", "/system/xbin/su", "su")) {
+        // /system/bin/su 最先：应用无权访问 /data/adb/ksu/，走那条会拿到 "inaccessible or not found"
+        // 的错误文本，被当成正常输出后解析成全空。
+        for (su in listOf("/system/bin/su", "su", "/system/xbin/su", "/data/adb/ksu/bin/su")) {
             val output = runCatching {
                 val process = ProcessBuilder(su, "-c", script).redirectErrorStream(true).start()
                 val text = process.inputStream.bufferedReader().readText()
                 process.waitFor()
                 text
             }.getOrNull()
-            if (!output.isNullOrBlank()) return output
+            if (output.isNullOrBlank()) continue
+            // su 本体不可执行时会把错误打到合并后的 stdout，这里按特征拒绝。
+            if (output.contains("inaccessible or not found") || output.contains("Permission denied")) continue
+            return output
         }
         AndroidAgentLogger.warn("linux_process_su_failed: no usable su (rootGranted=${RootAccess.isGranted})")
         return null
