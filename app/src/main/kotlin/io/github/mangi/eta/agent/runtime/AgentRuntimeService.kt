@@ -483,9 +483,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
-        // 胶囊是任务状态窗口，不是 GUI 专属：任务一开始就要显示，否则不用 GUI 工具的任务完全看不到进度。
-        // 后台记忆整理 run 例外：它不该在用户面前弹出一个胶囊。
-        if (!memoryIdleReview.isReviewRun(request.runId)) {
+        // 默认不主动弹胶囊：纯聊天/终端/记忆任务不该在桌面上留一个悬浮窗。
+        // 想常驻就打开「常驻胶囊」开关；真正操作手机的任务由 applyGuiControlState 自动显示。
+        if (!memoryIdleReview.isReviewRun(request.runId) && capsulePinnedSetting()) {
             bindDisplayedRun(run)
             ensureOverlayVisible()
         }
@@ -1447,6 +1447,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             // 用左上角绝对坐标：只有这样才能把小球自由拖到任意位置并贴边；
             // CENTER_HORIZONTAL 时 x 是相对居中的偏移，拖动范围会被限制在中间一小段。
             gravity = Gravity.TOP or Gravity.START
+            val saved = runCatching { runBlocking { SettingsDataStore.settings() } }.getOrNull()
+            val savedX = saved?.overlayCapsulePosX ?: -1
+            val savedY = saved?.overlayCapsulePosY ?: -1
+            if (savedX >= 0) capsuleCollapsedX = savedX
+            if (savedY >= 0) capsuleCollapsedY = savedY
             x = if (capsuleCollapsedX != Int.MIN_VALUE) {
                 capsuleCollapsedX
             } else {
