@@ -101,6 +101,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     @Volatile private var lastGuiOwnerRunId: String? = null
     private var displayedRun: RuntimeRunRegistry.Run? = null
 
+    /** 收起态小球的屏幕位置（像素）：拖动时更新，供面板定位与持久化使用。 */
+    private val capsuleOffsetX = mutableStateOf(0)
+    private val capsuleOffsetY = mutableStateOf(0)
+    private var capsuleCollapsedX = Int.MIN_VALUE
+    private var capsuleCollapsedY = Int.MIN_VALUE
+
     /** 常驻开关：打开 Eta 后胶囊一直在，不随任务结束消失。 */
     private var capsulePinned = false
 
@@ -1091,6 +1097,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = { requestSupplement(controlRunId, it) },
                 onOpenConversation = ::openConversation,
+                onDragBy = ::moveCapsuleBy,
+                onDragFinished = ::snapCapsuleToEdge,
+                collapsedX = capsuleOffsetX.value,
+                collapsedY = capsuleOffsetY.value,
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -1138,6 +1148,54 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun onCapsuleCollapsedSettled() {
         if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+    }
+
+    /** 收起态拖动小球：跟着手指走，超出屏幕会被夹住。 */
+    private fun moveCapsuleBy(dx: Float, dy: Float) {
+        if (capsuleExpanded.value) return
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        lp.x = (lp.x + dx.toInt()).coerceIn(0, maxOf(0, screenWidth - lp.width))
+        lp.y = (lp.y + dy.toInt()).coerceIn(0, maxOf(0, screenHeight - lp.height))
+        capsuleCollapsedX = lp.x
+        capsuleCollapsedY = lp.y
+        capsuleOffsetX.value = lp.x
+        capsuleOffsetY.value = lp.y
+        runCatching { wm.updateViewLayout(capsule, lp) }
+    }
+
+    /** 松手自动吸附：小球中心在屏幕左半边就贴左边缘，否则贴右。 */
+    private fun snapCapsuleToEdge() {
+        if (capsuleExpanded.value) return
+        val lp = capsuleParams ?: return
+        val capsule = capsuleView ?: return
+        val wm = windowManager ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val maxX = maxOf(0, screenWidth - lp.width)
+        val targetX = if (lp.x + lp.width / 2 < screenWidth / 2) 0 else maxX
+        if (lp.x != targetX) {
+            lp.x = targetX
+            runCatching { wm.updateViewLayout(capsule, lp) }
+        }
+        capsuleCollapsedX = lp.x
+        capsuleCollapsedY = lp.y
+        capsuleOffsetX.value = lp.x
+        capsuleOffsetY.value = lp.y
+        persistCapsulePosition(lp.x, lp.y)
+    }
+
+    /** 记住位置：重启 App 后小球还停在上次的地方。 */
+    private fun persistCapsulePosition(x: Int, y: Int) {
+        runCatching {
+            runBlocking {
+                SettingsDataStore.updateSettings { settings ->
+                    settings.copy(overlayCapsulePosX = x, overlayCapsulePosY = y)
+                }
+            }
+        }
     }
 
     private fun setCapsuleWindowHeight(heightDp: Int) {
