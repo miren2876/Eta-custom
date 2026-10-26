@@ -67,11 +67,26 @@ internal class AgentMemoryIdleReview(
         bindings[runId] = Binding(stable, historySize)
     }
 
-    /** 用户又发起了新任务：取消还没到点的整理（累计信号保留）。 */
+    /**
+     * 用户又发起了新任务：把还没到点的整理**立刻跑掉**，不再取消。
+     *
+     * 整理 run 本来就与用户任务并行（不打断、不抢 GUI）；而继续等空闲是等不到的——
+     * 对话节奏只要短于空闲阈值，每来一条消息就会把定时器重置一次，整理永远停在启动前。
+     */
     fun onUserRunStarted() {
-        if (pendingAction != null) trace("用户发起新任务：取消待执行的整理")
-        pendingAction?.let(cancelDelayed)
+        val pending = pendingAction ?: return
         pendingAction = null
+        cancelDelayed(pending)
+        // 最小间隔仍然要守：刚整理过就别连着再来一次，按剩余时间重新排队。
+        val wait = lastAttemptAtMillis + MIN_INTERVAL_MS - System.currentTimeMillis()
+        if (wait > 0) {
+            pendingAction = pending
+            trace("用户发起新任务：距上次整理不足最小间隔，重新排队")
+            postDelayed(wait, pending)
+            return
+        }
+        trace("用户发起新任务：待执行的整理改为立即启动（并行）")
+        postDelayed(0, pending)
     }
 
     /** 还有待执行/正在跑的整理：服务此时不能停，否则整理 run 因服务已销毁被静默丢弃。 */
