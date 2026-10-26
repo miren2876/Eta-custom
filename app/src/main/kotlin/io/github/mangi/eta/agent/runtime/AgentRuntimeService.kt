@@ -1102,7 +1102,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun publishExecutionState() {
         val guiState = guiControl.state.value
+        // 没有 GUI 归属的任务（纯聊天/终端/记忆）也要有状态，否则执行通知拿不到 status，
+        // 流体云（Live Update）就不会出现。
         val owner = guiState.ownerRunId?.let(runs::get)
+            ?: runs.all().lastOrNull { !it.session.isTerminal }
         AgentExecutionService.updateRunStatus(
             this,
             if (guiState.userPaused) AgentOverlayStatus.Paused else owner?.overlayState?.status,
