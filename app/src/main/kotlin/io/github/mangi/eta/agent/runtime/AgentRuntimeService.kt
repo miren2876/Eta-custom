@@ -50,6 +50,7 @@ import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
+import io.github.mangi.eta.agent.overlay.AgentOverlayRunningSession
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
