@@ -16,6 +16,8 @@ internal sealed interface AgentOverlayStatus {
     data object RunFailed : AgentOverlayStatus
     data object GeneratingAnswer : AgentOverlayStatus
     data object Stopping : AgentOverlayStatus
+    /** 后台记忆整理在跑：和用户任务区分开，不让流体云显示成普通执行任务。 */
+    data object MemoryReview : AgentOverlayStatus
     /** 胶囊常驻但当前没有任务在跑时显示。 */
     data object Idle : AgentOverlayStatus
     data object Paused : AgentOverlayStatus
@@ -44,6 +46,7 @@ internal fun AgentOverlayStatus.localizedText(resources: Resources): String = wh
     AgentOverlayStatus.Finishing -> resources.getString(R.string.overlay_finishing)
     AgentOverlayStatus.ContinuationUnavailable -> resources.getString(R.string.overlay_continuation_unavailable)
     AgentOverlayStatus.Stopped -> resources.getString(R.string.overlay_stopped)
+    AgentOverlayStatus.MemoryReview -> resources.getString(R.string.overlay_memory_review)
     AgentOverlayStatus.Idle -> resources.getString(R.string.overlay_idle)
 }
 

@@ -1122,18 +1122,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val guiState = guiControl.state.value
         // 没有 GUI 归属的任务（纯聊天/终端/记忆）也要有状态，否则执行通知拿不到 status，
         // 流体云（Live Update）就不会出现。
-        // 整理 run 是后台静默任务：它不该出现在执行状态里，否则流体云会显示成「Eta 正在运行」。
-        val active = runs.all().filterNot {
-            it.session.isTerminal || memoryIdleReview.isReviewRun(it.runId)
-        }
+        // 整理 run 是后台任务：不能顶替用户任务的状态，但也不该静默——给它自己的文案。
+        val active = runs.all().filterNot { it.session.isTerminal }
+        val userRuns = active.filterNot { memoryIdleReview.isReviewRun(it.runId) }
         val owner = guiState.ownerRunId?.let(runs::get)
             ?.takeIf { !memoryIdleReview.isReviewRun(it.runId) }
-            ?: active.lastOrNull()
-        AgentExecutionService.updateRunStatus(
-            this,
-            if (guiState.userPaused) AgentOverlayStatus.Paused else owner?.overlayState?.status,
-            activeRunCount = active.size,
-        )
+            ?: userRuns.lastOrNull()
+        val status = when {
+            guiState.userPaused -> AgentOverlayStatus.Paused
+            owner != null -> owner.overlayState.status
+            active.isNotEmpty() -> AgentOverlayStatus.MemoryReview
+            else -> null
+        }
+        AgentExecutionService.updateRunStatus(this, status, activeRunCount = userRuns.size)
     }
 
     private fun setKeepScreenOn(enabled: Boolean) {

@@ -250,6 +250,7 @@
   <string name="overlay_finishing">Finishing up. Add input after the result appears</string>
   <string name="overlay_continuation_unavailable">Additional input not supported here</string>
   <string name="overlay_stopped">Stopped</string>
+  <string name="overlay_memory_review">Reviewing memory</string>
   <string name="overlay_idle">Idle · waiting for a task</string>
   <string name="overlay_finished_notice">Finished — tap to see the result</string>
   <string name="overlay_failed_notice">Task failed — tap to see why</string>

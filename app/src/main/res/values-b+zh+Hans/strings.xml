@@ -300,6 +300,7 @@
   <string name="overlay_finishing">收尾中，结果出来后再补充</string>
   <string name="overlay_continuation_unavailable">当前入口不支持补充</string>
   <string name="overlay_stopped">已停止</string>
+  <string name="overlay_memory_review">正在整理记忆</string>
   <string name="overlay_idle">空闲 · 等待任务</string>
   <string name="overlay_finished_notice">已完成，点开查看结果</string>
   <string name="overlay_failed_notice">任务失败，点开查看</string>
