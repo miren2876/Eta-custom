@@ -6,13 +6,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.stringResource
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.LinuxRunMonitor
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 
 /**
@@ -23,9 +27,11 @@ import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 internal fun BackgroundProcessesScreen(onBack: () -> Unit) {
     var processes by remember { mutableStateOf<List<LinuxRunMonitor.LinuxProcess>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // su 读 /proc 会阻塞，必须放 IO 线程，主线程跑会 ANR。
     LaunchedEffect(Unit) {
         while (isActive) {
-            processes = LinuxRunMonitor.listProcesses()
+            processes = withContext(Dispatchers.IO) { LinuxRunMonitor.listProcesses() }
             loaded = true
             delay(2_000)
         }
@@ -47,7 +53,12 @@ internal fun BackgroundProcessesScreen(onBack: () -> Unit) {
                     EtaPreference(
                         title = process.command.take(48),
                         summary = process.summary + " · " + stringResource(R.string.background_processes_stop_hint),
-                        onClick = { LinuxRunMonitor.killProcess(process.pid) },
+                        onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                LinuxRunMonitor.killProcess(process.pid)
+                                processes = LinuxRunMonitor.listProcesses()
+                            }
+                        },
                     )
                 }
             }

@@ -211,17 +211,16 @@ internal object LinuxRunMonitor {
             Intent(context, AgentExecutionService::class.java).setAction(ACTION_EXIT_LINUX),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // 一次 su 取全量，通知正文与展开态共用。
+        val processSnapshot = runCatching { listProcesses() }.getOrDefault(emptyList())
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.linux_run_title))
-            .setContentText(
-                runCatching {
-                    listProcesses().take(3).joinToString("、") { it.command.take(24) }
-                }.getOrDefault("").ifBlank { context.getString(R.string.linux_run_summary, count) },
-            )
+            .setContentText(processSnapshot.take(3).joinToString("、") { it.command.take(24) }
+                .ifBlank { context.getString(R.string.linux_run_summary, count) })
             .setStyle(Notification.BigTextStyle().bigText(
-                runCatching { listProcesses().joinToString("\n") { "${it.command} (${it.summary})" } }
-                    .getOrDefault(context.getString(R.string.linux_run_summary, count)),
+                processSnapshot.joinToString("\n") { "${it.command} (${it.summary})" }
+                    .ifBlank { context.getString(R.string.linux_run_summary, count) },
             ))
             .setContentIntent(open)
             .setOngoing(true)
