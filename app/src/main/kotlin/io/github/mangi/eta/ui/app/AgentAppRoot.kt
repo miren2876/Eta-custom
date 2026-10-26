@@ -512,6 +512,8 @@ fun AgentAppRoot(
                     context.startActivity(AgentBrowserActivity.createIntent(context, route.sessionKey))
                     backStack.remove(route)
                     if (backStack.isEmpty()) backStack.add(AppRoute.Home)
+                }
+            }
             entry<AppRoute.ManageChats>(swipeDismiss = null) {
                 ManageChatsScreen(
                     conversations = agentState.conversationPaneState.historyConversations,
@@ -532,11 +534,6 @@ fun AgentAppRoot(
                     onMoveSelected = { ids, folderId -> agentState.moveConversationsToFolder(ids, folderId) },
                     onDeleteSelected = { ids -> agentState.deleteConversations(ids) },
                 )
-            }
-            entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {
-                RoutedShell(route = AppRoute.Browser) {
-                    AgentBrowserScreen()
-                }
             }
             entry<AppRoute.Terminal>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) { requestExecutionNotifications() }

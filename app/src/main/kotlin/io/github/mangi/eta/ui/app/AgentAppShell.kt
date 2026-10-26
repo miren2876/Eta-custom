@@ -290,10 +290,6 @@ private fun AgentTopBar(
         }
     }
 
-    // 首页聊天舞台与终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
-    // 白占一屏顶部；它们使用紧凑标题，其余二级内容页统一使用可折叠大标题。
-    val compactTitle = isHome || route is AppRoute.Terminal
-    if (compactTitle) {
     // 双击回调每次重组都是新实例，若直接拿它当 key，手势识别器会不断重启，
     // 两次点击之间状态被清掉就识别不出双击；这里用 rememberUpdatedState 固定。
     val currentOnTitleDoubleTap by rememberUpdatedState(onConversationTitleDoubleTap)
@@ -644,7 +640,6 @@ private fun TopBarOverflowMenu(
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Home, is AppRoute.Browser -> ""
-    is AppRoute.Home -> ""
     is AppRoute.ManageChats -> stringResource(R.string.drawer_manage_chats)
     is AppRoute.Browser -> stringResource(R.string.route_browser)
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
