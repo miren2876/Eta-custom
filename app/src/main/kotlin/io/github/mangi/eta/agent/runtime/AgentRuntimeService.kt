@@ -621,22 +621,24 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (destroyed) return@post
             run.completedContext = completedContext
-            val guiState = guiControl.state.value
+            // 记忆侧收尾必须无条件执行：整理 run 的活跃标记、普通 run 的累计信号都靠它清理。
+            memoryIdleReview.onRunFinished(
+                runId = run.session.runId,
+                transcript = run.session.transcript,
+                enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
+            )
+            // 整理 run 到此为止：它不该碰胶囊。
             if (memoryIdleReview.isReviewRun(run.session.runId)) return@post
+            val guiState = guiControl.state.value
             rememberFinishedSession(run.session.runId)
             syncRunningSessions()
-            // 只有「别的 run 正持有 GUI」或用户暂停时才跳过；没有 GUI 归属的普通任务同样要收尾。
+            // 只有「别的 run 正持有 GUI」或用户暂停时才跳过胶囊收尾。
             val hasOtherGuiOwner = guiState.ownerRunId != null && guiState.ownerRunId != run.runId
             if (guiState.userPaused || hasOtherGuiOwner ||
                 (lastGuiOwnerRunId != null && lastGuiOwnerRunId != run.runId)
             ) {
                 return@post
             }
-            memoryIdleReview.onRunFinished(
-                runId = run.session.runId,
-                transcript = run.session.transcript,
-                enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
-            )
             bindDisplayedRun(run)
             updateKeepScreenOn()
             runCatching {
