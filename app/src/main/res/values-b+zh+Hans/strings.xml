@@ -1770,4 +1770,7 @@
   <string name="top_bar_status_idle">%1$d 条消息 · %2$s</string>
   <string name="speech_auto_read_on">自动朗读已开启，点按关闭</string>
   <string name="speech_auto_read_off">自动朗读已关闭，点按开启</string>
+  <string name="background_processes_title">后台进程</string>
+  <string name="background_processes_empty">当前没有后台进程在运行</string>
+  <string name="background_processes_stop_hint">点一下结束</string>
 </resources>

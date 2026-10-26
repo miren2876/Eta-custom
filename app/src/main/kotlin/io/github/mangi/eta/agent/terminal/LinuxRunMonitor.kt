@@ -49,6 +49,53 @@ internal object LinuxRunMonitor {
     /** 只统计 Linux rootfs 内的进程；进程若属于其他 Linux 发行版目录同样命中。 */
     private val rootfsPattern = "*terminal/*rootfs*"
 
+    /** 后台任务页展示用的一条进程记录。 */
+    internal data class LinuxProcess(
+        val pid: Int,
+        val command: String,
+        val cpuPercent: String,
+        val rssKb: Long,
+    ) {
+        val summary: String
+            get() = "PID $pid · CPU $cpuPercent% · ${rssKb / 1024} MB"
+    }
+
+    private val listScript: String
+        get() = """
+            for p in /proc/[0-9]*; do
+              pid=${'$'}{p##*/}
+              t=${'$'}(readlink "${'$'}p/exe" 2>/dev/null) || continue
+              case "${'$'}t" in $rootfsPattern) ;; *) continue;; esac
+              cmd=${'$'}(tr '\0' ' ' < "${'$'}p/cmdline" 2>/dev/null | cut -c1-120)
+              [ -z "${'$'}cmd" ] && cmd="[${'$'}t]"
+              rss=${'$'}(awk '/^VmRSS/{print ${'$'}2}' "${'$'}p/status" 2>/dev/null)
+              st=${'$'}(cat "${'$'}p/stat" 2>/dev/null)
+              cpu=${'$'}(echo "${'$'}st" | awk '{print ${'$'}14+${'$'}15}')
+              echo "${'$'}pid|${'$'}cpu|${'$'}{rss:-0}|${'$'}cmd"
+            done
+        """
+
+    /** 列出 rootfs 内的进程；无 root 或读取失败时返回空表。 */
+    fun listProcesses(): List<LinuxProcess> = runCatching {
+        if (!RootAccess.isGranted) return emptyList()
+        val text = ProcessBuilder("su", "-c", listScript).redirectErrorStream(true)
+            .start().inputStream.bufferedReader().readText()
+        text.lineSequence().mapNotNull { line ->
+            val parts = line.split('|', limit = 4)
+            if (parts.size < 4) return@mapNotNull null
+            val pid = parts[0].trim().toIntOrNull() ?: return@mapNotNull null
+            val ticks = parts[1].trim().toLongOrNull() ?: 0L
+            val rss = parts[2].trim().toLongOrNull() ?: 0L
+            LinuxProcess(pid, parts[3].trim(), "%.1f".format(ticks / 100.0), rss)
+        }.sortedByDescending { it.cpuPercent.toDoubleOrNull() ?: 0.0 }.toList()
+    }.getOrDefault(emptyList())
+
+    /** 结束单个后台进程。 */
+    fun killProcess(pid: Int): Boolean = runCatching {
+        if (!RootAccess.isGranted || pid <= 1) return false
+        ProcessBuilder("su", "-c", "kill -9 $pid").redirectErrorStream(true).start().waitFor() >= 0
+    }.getOrDefault(false)
+
     private val watchScript: String
         get() = """
             while true; do
@@ -167,7 +214,15 @@ internal object LinuxRunMonitor {
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.linux_run_title))
-            .setContentText(context.getString(R.string.linux_run_summary, count))
+            .setContentText(
+                runCatching {
+                    listProcesses().take(3).joinToString("、") { it.command.take(24) }
+                }.getOrDefault("").ifBlank { context.getString(R.string.linux_run_summary, count) },
+            )
+            .setStyle(Notification.BigTextStyle().bigText(
+                runCatching { listProcesses().joinToString("\n") { "${it.command} (${it.summary})" } }
+                    .getOrDefault(context.getString(R.string.linux_run_summary, count)),
+            ))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

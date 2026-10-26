@@ -563,7 +563,14 @@ fun AgentAppRoot(
                 WebToolsSettingsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.Scripts>(swipeDismiss = swipeDismiss) {
-                ScriptManagerScreen(store = appViewModel.scriptStore, onBack = ::popRoute)
+                ScriptManagerScreen(
+                    store = appViewModel.scriptStore,
+                    onBack = ::popRoute,
+                    onOpenProcesses = { pushRoute(AppRoute.BackgroundProcesses) },
+                )
+            }
+            entry<AppRoute.BackgroundProcesses>(swipeDismiss = swipeDismiss) {
+                io.github.mangi.eta.ui.screens.terminal.BackgroundProcessesScreen(onBack = ::popRoute)
             }
             entry<AppRoute.Skills>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) {

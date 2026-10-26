@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ import androidx.compose.runtime.collectAsState
 internal fun ScriptManagerScreen(
     store: ScriptLibraryStore,
     onBack: () -> Unit,
+    onOpenProcesses: () -> Unit = {},
 ) {
     val state by store.uiState.collectAsState()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -80,6 +82,11 @@ internal fun ScriptManagerScreen(
         title = stringResource(R.string.route_scripts),
         onBack = onBack,
         actions = {
+            RowIconAction(
+                icon = Icons.Rounded.Memory,
+                contentDescription = stringResource(R.string.background_processes_title),
+                onClick = onOpenProcesses,
+            )
             RowIconAction(
                 icon = Icons.Rounded.Add,
                 contentDescription = stringResource(R.string.scripts_new),

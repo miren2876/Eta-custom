@@ -1688,4 +1688,7 @@
   <string name="top_bar_status_idle">%1$d 則訊息 · %2$s</string>
   <string name="speech_auto_read_on">自動朗讀已開啟，點按關閉</string>
   <string name="speech_auto_read_off">自動朗讀已關閉，點按開啟</string>
+  <string name="background_processes_title">後台進程</string>
+  <string name="background_processes_empty">目前沒有後台進程在執行</string>
+  <string name="background_processes_stop_hint">點一下結束</string>
 </resources>
