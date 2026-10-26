@@ -107,6 +107,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var capsuleCollapsedX = Int.MIN_VALUE
     private var capsuleCollapsedY = Int.MIN_VALUE
 
+    /** 已经跑完但仍要在胶囊里可点的会话（按完成顺序，最多 SESSION_LIST_LIMIT 条）。 */
+    private val recentSessionInfo = linkedMapOf<String, RunningSessionInfo>()
+
+    /** 运行中的会话信息，用于胶囊里的会话清单。 */
+    private val runningSessionInfo = linkedMapOf<String, RunningSessionInfo>()
+
+    private data class RunningSessionInfo(
+        val runId: String,
+        val conversationId: String,
+        val title: String,
+    )
+
     /** 常驻开关：打开 Eta 后胶囊一直在，不随任务结束消失。 */
     private var capsulePinned = false
 
@@ -178,7 +190,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         when (intent?.action) {
             ACTION_PIN_CAPSULE -> {
                 capsulePinned = true
-                enterIdleState()
+                // 运行中打开常驻时不能进空闲态：那会把正在展示的会话与状态覆盖掉。
+                if (runningSessionCount() == 0) enterIdleState()
             }
             ACTION_UNPIN_CAPSULE -> {
                 capsulePinned = false
@@ -407,6 +420,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             memoryIdleReview.onUserRunStarted()
             cancelActiveReviewRuns()
         }
+        val handoffPayload = request.handoff?.payload?.let { raw -> AgentUiHandoffPayload.from(raw) }
+        runningSessionInfo[request.runId] = RunningSessionInfo(
+            runId = request.runId,
+            conversationId = handoffPayload?.conversationId.orEmpty(),
+            title = handoffPayload?.title.orEmpty(),
+        )
+        syncRunningSessions()
         val admission = runs.admit(request) {
             lateinit var session: AgentRuntimeSession
             session = AgentRuntimeSession(
@@ -607,6 +627,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             val guiState = guiControl.state.value
             if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
                 (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
+            rememberFinishedSession(run.session.runId)
+            syncRunningSessions()
             memoryIdleReview.onRunFinished(
                 runId = run.session.runId,
                 transcript = run.session.transcript,
@@ -931,6 +953,37 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun ensureOverlayVisible() {
         showOverlay()
+    }
+
+    /** 按当前 runs 同步胶囊用的会话清单（运行中的在前，其后是最近完成的）。 */
+    private fun syncRunningSessions() {
+        val activeRunIds = runs.all().map { it.runId }
+        runningSessionInfo.keys.retainAll(activeRunIds.toSet())
+        val list = mutableListOf<AgentOverlayRunningSession>()
+        activeRunIds.forEach { runId ->
+            runningSessionInfo[runId]?.let { info ->
+                list += AgentOverlayRunningSession(info.runId, info.conversationId, info.title, running = true)
+            }
+        }
+        recentSessionInfo.values.toList().asReversed().forEach { info ->
+            if (list.size >= SESSION_LIST_LIMIT) return@forEach
+            if (list.any { it.runId == info.runId }) return@forEach
+            list += AgentOverlayRunningSession(info.runId, info.conversationId, info.title, running = false)
+        }
+        val trimmed = list.take(SESSION_LIST_LIMIT)
+        if (state.value.runningSessions == trimmed) return
+        state.value = state.value.copy(runningSessions = trimmed)
+    }
+
+    /** 会话结束后把它记进「最近会话」，胶囊展开后仍可点回去。 */
+    private fun rememberFinishedSession(runId: String) {
+        val info = runningSessionInfo[runId] ?: return
+        recentSessionInfo.remove(runId)
+        recentSessionInfo[runId] = info
+        while (recentSessionInfo.size > SESSION_LIST_LIMIT) {
+            val oldest = recentSessionInfo.keys.firstOrNull() ?: break
+            recentSessionInfo.remove(oldest)
+        }
     }
 
     /** 仍在运行的会话数（含正在收尾的）。 */
@@ -1524,10 +1577,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
     }
 
+    /** 常驻开关的权威值：设置页写的是 Settings，指令可能因后台限制没送到服务。 */
+    private fun capsulePinnedSetting(): Boolean = runCatching {
+        runBlocking { SettingsDataStore.settings() }.overlayCapsulePinned
+    }.getOrDefault(capsulePinned)
+
     private fun dismissAndStop() {
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         unreadFinished = false
+        capsulePinned = capsulePinnedSetting()
         if (capsulePinned && runningSessionCount() == 0) {
             // 常驻模式下不撤胶囊，只收回到空闲态。
             enterIdleState()
@@ -1621,6 +1680,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     },
                 ).also { instance -> idleReviewInstance = instance }
             }
+
+        /** 胶囊展开列表里最多保留几条会话（运行中 + 最近完成）。 */
+        const val SESSION_LIST_LIMIT = 3
 
         const val ACTION_PIN_CAPSULE = "io.github.mangi.eta.agent.runtime.PIN_CAPSULE"
         const val ACTION_UNPIN_CAPSULE = "io.github.mangi.eta.agent.runtime.UNPIN_CAPSULE"
