@@ -90,8 +90,14 @@ internal object LinuxRunMonitor {
         get() = """
             for p in /proc/[0-9]*; do
               pid=${'$'}{p##*/}
-              t=${'$'}(readlink "${'$'}p/exe" 2>/dev/null) || continue
-              case "${'$'}t" in $rootfsPattern) ;; *) continue;; esac
+              hit=0
+              r=${'$'}(readlink "${'$'}p/root" 2>/dev/null)
+              case "${'$'}r" in $rootfsPattern) hit=1;; esac
+              t=${'$'}(readlink "${'$'}p/exe" 2>/dev/null)
+              if [ "${'$'}hit" = 0 ]; then
+                case "${'$'}t" in $rootfsPattern) hit=1;; esac
+              fi
+              [ "${'$'}hit" = 1 ] || continue
               cmd=${'$'}(tr '\0' ' ' < "${'$'}p/cmdline" 2>/dev/null | cut -c1-120)
               [ -z "${'$'}cmd" ] && cmd="[${'$'}t]"
               rss=${'$'}(awk '/^VmRSS/{print ${'$'}2}' "${'$'}p/status" 2>/dev/null)
@@ -128,8 +134,14 @@ internal object LinuxRunMonitor {
             while true; do
               n=0
               for p in /proc/[0-9]*; do
-                t=${'$'}(readlink "${'$'}p/exe" 2>/dev/null) || continue
-                case "${'$'}t" in $rootfsPattern) n=${'$'}((n+1));; esac
+                hit=0
+                r=${'$'}(readlink "${'$'}p/root" 2>/dev/null)
+                case "${'$'}r" in $rootfsPattern) hit=1;; esac
+                if [ "${'$'}hit" = 0 ]; then
+                  t=${'$'}(readlink "${'$'}p/exe" 2>/dev/null)
+                  case "${'$'}t" in $rootfsPattern) hit=1;; esac
+                fi
+                [ "${'$'}hit" = 1 ] && n=${'$'}((n+1))
               done
               echo "${'$'}n"
               sleep $POLL_INTERVAL_SECONDS
