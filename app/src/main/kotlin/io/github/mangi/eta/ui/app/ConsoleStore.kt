@@ -6,6 +6,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.ConsoleSessionController
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.SharedFolderMounts
+import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.agent.terminal.TerminalKey
 import io.github.mangi.eta.agent.terminal.TerminalKeyEncoder
@@ -130,7 +131,7 @@ internal class ConsoleStore(
     /** 探测 PTY 前提；结果缓存进状态，不支持时入口回退到块式终端。 */
     fun probePtySupport() {
         scope.launch {
-            val supported = withContext(Dispatchers.IO) { ptySupported() }
+            val supported = withContext(Dispatchers.IO) { ptySupported(ShellProcessSupervisor()) }
             _uiState.update { it.copy(ptySupported = supported) }
         }
     }

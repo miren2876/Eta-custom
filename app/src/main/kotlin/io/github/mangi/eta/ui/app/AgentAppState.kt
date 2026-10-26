@@ -37,6 +37,8 @@ import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
+import io.github.mangi.eta.agent.runtime.AgentMemoryIdleReview
+import io.github.mangi.eta.agent.runtime.AgentMemoryReviewOutcome
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
@@ -56,9 +58,11 @@ import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerProjector
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.filterForFolder
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
@@ -155,9 +159,25 @@ internal class AgentAppState(
     )
         private set
 
+    /** 侧栏文件夹定义与组织状态；写回 conversations.folder_id / is_pinned 与 conversation_folders。 */
+    private var conversationFolders: List<ConversationFolderUi> = initialConversations.folders
+    private var conversationFolderIds: Map<String, String> = initialConversations.folderIds
+    private var conversationPinned: Set<String> = initialConversations.pinnedIds
+    private var conversationArchived: Set<String> = initialConversations.archivedIds
+    /**
+     * 侧栏当前选中的文件夹：启动时跟随选中会话所属的文件夹，
+     * 未归类会话（或没有会话）时回到「聊天」。
+     */
+    private var selectedFolderId: String? =
+        initialConversations.selectedConversationId?.let { initialConversations.folderIds[it] }
+
+    /** 在文件夹里点「新建对话」时，会话 id 直到首条消息才产生，先记住要落进哪个文件夹。 */
+    private var pendingNewConversationFolderId: String? = null
+
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
+        observeMemoryReviewOutcomes()
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -318,6 +338,12 @@ internal class AgentAppState(
             conversationsById = snapshot.conversationsById
             conversationTitles = snapshot.titles
             conversationUpdatedAt = snapshot.updatedAt
+            conversationFolders = snapshot.folders
+            conversationFolderIds = snapshot.folderIds
+            conversationPinned = snapshot.pinnedIds
+            conversationArchived = snapshot.archivedIds
+            selectedFolderId = snapshot.selectedConversationId?.let { snapshot.folderIds[it] }
+            pendingNewConversationFolderId = null
             conversationPersistence = AgentConversationPersistence(snapshot)
             fileAttachmentOwnerVersion += 1
             homeState = selectedConversationId
@@ -762,6 +788,145 @@ internal class AgentAppState(
         }
     }
 
+    fun selectFolder(folderId: String?) {
+        // 选文件夹即离开「已归档」视图。
+        val wasArchived = conversationPaneState.showingArchived
+        if (selectedFolderId == folderId && !wasArchived) return
+        selectedFolderId = folderId
+        if (wasArchived) conversationPaneState = conversationPaneState.copy(showingArchived = false)
+        refreshConversationSummaries()
+    }
+
+    fun createFolder(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val folder = ConversationFolderUi(
+            id = "folder-${UUID.randomUUID()}",
+            name = trimmed,
+            sortIndex = (conversationFolders.maxOfOrNull { it.sortIndex } ?: -1) + 1,
+        )
+        conversationFolders = conversationFolders + folder
+        selectedFolderId = folder.id
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun renameFolder(folderId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        conversationFolders = conversationFolders.map { folder ->
+            if (folder.id == folderId) folder.copy(name = trimmed) else folder
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun deleteFolder(folderId: String) {
+        if (conversationFolders.none { it.id == folderId }) return
+        conversationFolders = conversationFolders.filterNot { it.id == folderId }
+        conversationFolderIds = conversationFolderIds.filterValues { it != folderId }
+        if (selectedFolderId == folderId) selectedFolderId = null
+        if (pendingNewConversationFolderId == folderId) pendingNewConversationFolderId = null
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun moveConversationToFolder(conversationId: String, folderId: String?) {
+        if (conversationId !in conversationsById) return
+        conversationFolderIds = if (folderId.isNullOrBlank()) {
+            conversationFolderIds - conversationId
+        } else {
+            conversationFolderIds + (conversationId to folderId)
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    fun toggleConversationPinned(conversationId: String) {
+        if (conversationId !in conversationsById) return
+        conversationPinned = if (conversationId in conversationPinned) {
+            conversationPinned - conversationId
+        } else {
+            conversationPinned + conversationId
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    /** 切到「已归档」入口：只看归档会话，忽略文件夹分组。 */
+    fun selectArchiveView(showing: Boolean) {
+        if (conversationPaneState.showingArchived == showing) return
+        conversationPaneState = conversationPaneState.copy(showingArchived = showing)
+        refreshConversationSummaries()
+    }
+
+    /** 单个归档 / 取消归档。 */
+    fun setConversationArchived(conversationId: String, archived: Boolean) {
+        archiveConversations(listOf(conversationId), archived)
+    }
+
+    /** 批量归档 / 取消归档。 */
+    fun archiveConversations(conversationIds: Collection<String>, archived: Boolean) {
+        val ids = conversationIds.filter { it in conversationsById }.toSet()
+        if (ids.isEmpty()) return
+        conversationArchived = if (archived) conversationArchived + ids else conversationArchived - ids
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    /** 批量置顶 / 取消置顶。 */
+    fun pinConversations(conversationIds: Collection<String>, pinned: Boolean) {
+        val ids = conversationIds.filter { it in conversationsById }.toSet()
+        if (ids.isEmpty()) return
+        conversationPinned = if (pinned) conversationPinned + ids else conversationPinned - ids
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    /** 批量移动到文件夹；folderId 为空表示移出文件夹。 */
+    fun moveConversationsToFolder(conversationIds: Collection<String>, folderId: String?) {
+        val ids = conversationIds.filter { it in conversationsById }
+        if (ids.isEmpty()) return
+        conversationFolderIds = if (folderId.isNullOrBlank()) {
+            conversationFolderIds - ids.toSet()
+        } else {
+            conversationFolderIds + ids.associateWith { folderId }
+        }
+        refreshConversationSummaries()
+        persistOrganization()
+    }
+
+    /** 批量删除：逐个走单条逻辑（含选中态切换）；会话量很大时再改成一次性重写。 */
+    fun deleteConversations(conversationIds: Collection<String>) {
+        conversationIds.toList().forEach(::deleteConversation)
+    }
+
+    /** 组织信息独立落库，避免置顶/移动文件夹触发整份会话重写。 */
+    private fun persistOrganization() {
+        val folders = conversationFolders
+        val folderIds = conversationFolderIds
+        val pinned = conversationPinned
+        val archived = conversationArchived
+        scope.launch(Dispatchers.IO) {
+            try {
+                AgentConversationStore.saveOrganization(appContext, folders, folderIds, pinned, archived)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (throwable: Throwable) {
+                AndroidAgentLogger.error("Agent sidebar organization save failed: type=${throwable.safeLogType()}")
+            }
+        }
+    }
+
+    /** 新建对话在文件夹里创建时，会话 id 诞生后才落归属。 */
+    private fun assignPendingFolder(conversationId: String) {
+        val folderId = pendingNewConversationFolderId ?: return
+        pendingNewConversationFolderId = null
+        if (conversationFolders.none { it.id == folderId }) return
+        conversationFolderIds = conversationFolderIds + (conversationId to folderId)
+        persistOrganization()
+    }
+
     fun updateSearchQuery(query: String) {
         conversationPaneState = conversationPaneState.copy(searchQuery = query)
         conversationSearchJob?.cancel()
@@ -989,6 +1154,7 @@ internal class AgentAppState(
         if (homeState.messageEdit != null) cancelMessageEdit()
         fileAttachmentOwnerVersion += 1
         selectedConversationId = null
+        pendingNewConversationFolderId = selectedFolderId
         homeState = emptyChatState(defaultThinkingEnabled)
         refreshConversationModel()
         conversationPaneState = conversationPaneState.copy(
@@ -1022,6 +1188,7 @@ internal class AgentAppState(
         )
         conversationTitles = conversationTitles + (id to binding.characterName)
         updateConversation(id, homeState)
+        assignPendingFolder(id)
         conversationPaneState = conversationPaneState.copy(selectedConversationId = id, searchQuery = "")
         refreshConversationSummaries()
         persistConversations()
@@ -1116,6 +1283,7 @@ internal class AgentAppState(
                 noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
                 noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
                 noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
+                noticeMemoryReview = noticeText(SystemNoticeCode.MemoryReviewNew),
             ),
         ) }
     }
@@ -1128,6 +1296,10 @@ internal class AgentAppState(
             SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
             SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
             SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+            SystemNoticeCode.MemoryReviewNew,
+            SystemNoticeCode.MemoryReviewAppended,
+            SystemNoticeCode.MemoryReviewNone,
+                -> R.string.memory_review_done_title
         },
     )
 
@@ -1243,6 +1415,7 @@ internal class AgentAppState(
 
         val conversationId = selectedConversationId ?: newConversationId().also {
             selectedConversationId = it
+            assignPendingFolder(it)
         }
         dispatchMessageToConversation(
             conversationId = conversationId,
@@ -1678,7 +1851,11 @@ internal class AgentAppState(
                         handoff = AgentRuntimeWire.EntryHandoff(
                             id = runId,
                             source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
-                            payload = conversationId,
+                            // 带上会话标题：悬浮胶囊里用它区分多个会话。
+                            payload = AgentUiHandoffPayload(
+                                conversationId = conversationId,
+                                title = conversationTitles[conversationId].orEmpty(),
+                            ).toJson(),
                         ),
                     ),
                     onEvent = { event -> enqueueRunEvent(runId, event) },
@@ -2207,6 +2384,34 @@ internal class AgentAppState(
         }
     }
 
+    /**
+     * 记忆整理跑完后的结论由运行时广播：向发起整理的会话注入一条节点。
+     * 会话不在内存里（已删除，或 run 本来就没有会话归属）时丢弃，绝不写到别的会话。
+     */
+    private fun observeMemoryReviewOutcomes() {
+        scope.launch(Dispatchers.Main) {
+            AgentMemoryIdleReview.outcomes.collect { pending ->
+                pending.forEach { outcome -> appendMemoryReviewOutcome(outcome) }
+            }
+        }
+    }
+
+    private fun appendMemoryReviewOutcome(outcome: AgentMemoryReviewOutcome) {
+        val state = conversationsById[outcome.conversationId]
+        AgentMemoryIdleReview.acknowledgeOutcome(outcome)
+        if (state == null) return
+        // 消息 id 由结论自带：即使广播被重放，同一结论也只注入一次。
+        val message = SystemNoticeMessageUi(
+            id = "memory-review-${outcome.token}",
+            code = outcome.code,
+            detail = outcome.detail,
+        )
+        if (state.messages.any { it.id == message.id }) return
+        updateConversation(outcome.conversationId, state.copy(messages = state.messages + message))
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
     private fun setConversationStreaming(runId: String, isStreaming: Boolean) {
         val conversationId = conversationIdForRun(runId) ?: return
         val state = conversationsById[conversationId] ?: return
@@ -2222,9 +2427,10 @@ internal class AgentAppState(
 
     private fun refreshConversationSummaries() {
         val summaries = conversationsById.entries
-            .sortedByDescending { (id, _) ->
-                conversationUpdatedAt[id] ?: 0L
-            }
+            .sortedWith(
+                compareByDescending<Map.Entry<String, AgentChatHomeUiState>> { (id, _) -> id in conversationPinned }
+                    .thenByDescending { (id, _) -> conversationUpdatedAt[id] ?: 0L },
+            )
             .map { (id, state) ->
                 val lastMessage = state.messages.lastOrNull()
                 ConversationSummaryUi(
@@ -2275,21 +2481,30 @@ internal class AgentAppState(
                         GuiControlStatus.UserPaused -> appContext.getString(R.string.run_gui_user_paused)
                         else -> null
                     },
+                    isPinned = id in conversationPinned,
+                    folderId = conversationFolderIds[id].orEmpty(),
+                    isArchived = id in conversationArchived,
                 )
             }
         val query = conversationPaneState.searchQuery.trim()
+        // 文件夹过滤先于搜索：搜索只在当前分组内生效，「聊天」分组只看未归类会话。
+        val visible = summaries.filterForFolder(selectedFolderId, conversationPaneState.showingArchived)
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = selectedConversationId,
             conversations = if (query.isBlank()) {
-                summaries
+                visible
             } else {
                 contentMatchCache.keys.retainAll(conversationsById.keys)
-                summaries.filter { summary ->
+                visible.filter { summary ->
                     summary.title.contains(query, ignoreCase = true) ||
                         summary.preview.contains(query, ignoreCase = true) ||
                         summary.id in persistedSearchMatches || conversationContentMatches(summary.id, query)
                 }
             },
+            folders = conversationFolders,
+            selectedFolderId = selectedFolderId,
+            showingArchived = conversationPaneState.showingArchived,
+            historyConversations = summaries,
         )
     }
 

@@ -24,18 +24,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.runtime.Composable
@@ -45,9 +54,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -58,40 +68,48 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
-import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import top.yukonga.miuix.kmp.window.WindowDialog
 import top.yukonga.miuix.kmp.window.WindowListPopup
+import androidx.compose.material.icons.rounded.Inventory
 
 private object ConversationPanelMetrics {
-    val PaneHorizontalPadding = 16.dp
+    val PaneHorizontalPadding = 22.dp
     val TopInset = 6.dp
-    val AfterActionBar = 8.dp
+    val AfterActionBar = 10.dp
     val BottomInset = 2.dp
     val ActionIconSize = 20.dp
+    val ActionLeadIconSize = 18.dp
+    val PinIconSize = 14.dp
+    val AfterChips = 10.dp
+    val ChipMinHeight = 36.dp
+    val ChipHorizontalPadding = 12.dp
     val SectionTopPadding = 8.dp
     val SectionBottomPadding = 10.dp
     val SectionIconSize = 14.dp
     val SectionIconGap = 8.dp
     val SectionCountGap = 12.dp
-    val RowMinHeight = 48.dp
+    val RowMinHeight = 44.dp
     val RowGap = 4.dp
-    val RowCornerRadius = 12.dp
+    val RowCornerRadius = 18.dp
     val RowHorizontalPadding = 12.dp
-    val RowVerticalPadding = 12.dp
+    val RowVerticalPadding = 10.dp
     val ActiveDotSize = 6.dp
     val ActiveDotGap = 10.dp
     val EmptyVerticalPadding = 28.dp
@@ -122,6 +140,16 @@ internal fun ConversationPanePanel(
     onConversationRename: (ConversationSummaryUi) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
+    onConversationTogglePin: (ConversationSummaryUi) -> Unit,
+    onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
+    onSelectArchive: (Boolean) -> Unit,
+    onNewConversation: () -> Unit,
+    onOpenManageChats: () -> Unit,
+    onSelectFolder: (String?) -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
     onOpenTools: () -> Unit,
@@ -152,8 +180,22 @@ internal fun ConversationPanePanel(
                         .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
                 ) {
                     Spacer(Modifier.height(ConversationPanelMetrics.TopInset))
-                    PaneActionBar(query = state.searchQuery, onSearchChange = onSearchChange)
+                    PaneSearchRow(query = state.searchQuery, onSearchChange = onSearchChange)
                     Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
+                    PaneDrawerActions(
+                        onNewConversation = onNewConversation,
+                        onOpenManageChats = onOpenManageChats,
+                    )
+                    Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
+                    PaneFolderBar(
+                        folders = state.folders,
+                        selectedFolderId = state.selectedFolderId,
+                        onSelectFolder = onSelectFolder,
+                        onCreateFolder = onCreateFolder,
+                        onRenameFolder = onRenameFolder,
+                        onDeleteFolder = onDeleteFolder,
+                    )
+                    Spacer(Modifier.height(ConversationPanelMetrics.AfterChips))
                 }
             }
             LazyColumn(
@@ -192,10 +234,37 @@ internal fun ConversationPanePanel(
                                 onRename = { onConversationRename(conversation) },
                                 onExport = { onConversationExport(conversation) },
                                 onDelete = { onConversationDelete(conversation) },
+                                onMoveToFolder = { onConversationMoveToFolder(conversation) },
+                                onTogglePin = { onConversationTogglePin(conversation) },
+                                onToggleArchive = { onConversationToggleArchive(conversation) },
                             )
                         }
                     }
                 }
+                        if (query.isBlank()) {
+                            val inFolder: (ConversationSummaryUi) -> Boolean = { conversation ->
+                                if (state.selectedFolderId == null) conversation.folderId.isBlank()
+                                else conversation.folderId == state.selectedFolderId
+                            }
+                            val archivedCount = state.historyConversations.count { it.isArchived && inFolder(it) }
+                            val activeCount = state.historyConversations.count { !it.isArchived && inFolder(it) }
+                            if (state.showingArchived || archivedCount > 0) {
+                                item(key = "archive-entry") {
+                                    DrawerActionRow(
+                                        label = stringResource(
+                                            if (state.showingArchived) {
+                                                R.string.drawer_active_entry
+                                            } else {
+                                                R.string.drawer_archived_entry
+                                            },
+                                            if (state.showingArchived) activeCount else archivedCount,
+                                        ),
+                                        icon = Icons.Rounded.Inventory,
+                                        onClick = { onSelectArchive(!state.showingArchived) },
+                                    )
+                                }
+                            }
+                        }
             }
             PaneFixedRegion {
                 Column(
@@ -231,35 +300,50 @@ private fun PaneFixedRegion(content: @Composable () -> Unit) {
     }
 }
 
+/** 搜索框与下面两行入口共用同一套圆角、内边距，视觉上连成一组。 */
 @Composable
-private fun PaneActionBar(
+private fun PaneSearchRow(
     query: String,
     onSearchChange: (String) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ConversationPanelMetrics.RowMinHeight)
+            .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+            .background(MiuixTheme.colorScheme.surfaceContainerHighest)
+            .padding(
+                horizontal = ConversationPanelMetrics.RowHorizontalPadding,
+                vertical = ConversationPanelMetrics.RowVerticalPadding,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SearchBar(
-            modifier = Modifier.weight(1f),
-            insideMargin = DpSize.Zero,
-            expanded = false,
-            onExpandedChange = {},
-            inputField = {
-                InputField(
-                    query = query,
-                    onQueryChange = onSearchChange,
-                    onSearch = onSearchChange,
-                    expanded = false,
-                    onExpandedChange = {},
-                    label = stringResource(R.string.conversation_search_hint),
-                    // 深色下侧栏已抬高到 surfaceContainer，搜索框需再高一档才能显出轮廓；
-                    // 浅色的 surfaceContainerHigh 与 surfaceContainerHighest 相同，观感不变。
-                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                )
-            },
-            content = {},
+        Icon(
+            imageVector = Icons.Rounded.Search,
+            contentDescription = null,
+            modifier = Modifier.size(ConversationPanelMetrics.ActionLeadIconSize),
+            tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
         )
+        Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.conversation_search_hint),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    style = MiuixTheme.textStyles.body2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onSearchChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle = MiuixTheme.textStyles.body2.copy(color = MiuixTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+            )
+        }
     }
 }
 
@@ -308,6 +392,9 @@ private fun ConversationTextRow(
     onRename: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
+    onMoveToFolder: () -> Unit,
+    onTogglePin: () -> Unit,
+    onToggleArchive: () -> Unit,
 ) {
     var showActionMenu by remember { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
@@ -385,6 +472,16 @@ private fun ConversationTextRow(
                         .background(MiuixTheme.colorScheme.primary),
                 )
             }
+            if (conversation.isPinned) {
+                Icon(
+                    imageVector = Icons.Rounded.PushPin,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(start = ConversationPanelMetrics.ActiveDotGap)
+                        .size(ConversationPanelMetrics.PinIconSize),
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                )
+            }
         }
 
         WindowListPopup(
@@ -396,6 +493,14 @@ private fun ConversationTextRow(
             val renameText = stringResource(R.string.action_rename)
             val exportText = stringResource(R.string.action_export)
             val deleteText = stringResource(R.string.action_delete)
+            val pinText = stringResource(
+                if (conversation.isPinned) {
+                    R.string.action_unpin_conversation
+                } else {
+                    R.string.action_pin_conversation
+                },
+            )
+            val moveText = stringResource(R.string.action_move_to_folder)
             val renameItem = remember(renameText) {
                 DropdownItem(
                     text = renameText,
@@ -433,6 +538,49 @@ private fun ConversationTextRow(
                     },
                 )
             }
+            val pinItem = remember(pinText) {
+                DropdownItem(
+                    text = pinText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.PushPin,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
+            val moveItem = remember(moveText) {
+                DropdownItem(
+                    text = moveText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.DriveFileMove,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
+            val archiveText = stringResource(
+                if (conversation.isArchived) {
+                    R.string.action_unarchive_conversation
+                } else {
+                    R.string.action_archive_conversation
+                },
+            )
+            val archiveItem = remember(archiveText) {
+                DropdownItem(
+                    text = archiveText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.Inventory,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
             val deleteColors = DropdownDefaults.dropdownColors(
                 contentColor = MiuixTheme.colorScheme.error,
                 selectedContentColor = MiuixTheme.colorScheme.error,
@@ -440,10 +588,30 @@ private fun ConversationTextRow(
             )
             ListPopupColumn {
                 DropdownImpl(
-                    item = renameItem,
-                    optionSize = 3,
+                    item = pinItem,
+                    optionSize = 6,
                     isSelected = false,
                     index = 0,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onTogglePin()
+                    },
+                )
+                DropdownImpl(
+                    item = moveItem,
+                    optionSize = 6,
+                    isSelected = false,
+                    index = 1,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onMoveToFolder()
+                    },
+                )
+                DropdownImpl(
+                    item = renameItem,
+                    optionSize = 6,
+                    isSelected = false,
+                    index = 2,
                     onSelectedIndexChange = {
                         showActionMenu = false
                         onRename()
@@ -451,19 +619,29 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = exportItem,
-                    optionSize = 3,
+                    optionSize = 6,
                     isSelected = false,
-                    index = 1,
+                    index = 3,
                     onSelectedIndexChange = {
                         showActionMenu = false
                         onExport()
                     },
                 )
                 DropdownImpl(
-                    item = deleteItem,
-                    optionSize = 3,
+                    item = archiveItem,
+                    optionSize = 6,
                     isSelected = false,
-                    index = 2,
+                    index = 4,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onToggleArchive()
+                    },
+                )
+                DropdownImpl(
+                    item = deleteItem,
+                    optionSize = 6,
+                    isSelected = false,
+                    index = 5,
                     dropdownColors = deleteColors,
                     onSelectedIndexChange = {
                         showActionMenu = false
@@ -472,6 +650,307 @@ private fun ConversationTextRow(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PaneDrawerActions(
+    onNewConversation: () -> Unit,
+    onOpenManageChats: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.AfterActionBar),
+    ) {
+        DrawerActionRow(
+            label = stringResource(R.string.drawer_new_conversation),
+            icon = Icons.AutoMirrored.Rounded.Chat,
+            onClick = onNewConversation,
+        )
+        DrawerActionRow(
+            label = stringResource(R.string.drawer_manage_chats),
+            icon = Icons.Rounded.History,
+            onClick = onOpenManageChats,
+        )
+    }
+}
+
+/** 侧栏置顶的两个入口行：新建对话、管理聊天。 */
+@Composable
+private fun DrawerActionRow(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ConversationPanelMetrics.RowMinHeight)
+            .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+            .background(MiuixTheme.colorScheme.surfaceContainerHighest)
+            .clickable(onClickLabel = label, onClick = onClick)
+            .padding(
+                horizontal = ConversationPanelMetrics.RowHorizontalPadding,
+                vertical = ConversationPanelMetrics.RowVerticalPadding,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(ConversationPanelMetrics.ActionLeadIconSize),
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
+        Text(
+            text = label,
+            color = MiuixTheme.colorScheme.onSurface,
+            style = MiuixTheme.textStyles.body2,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * 文件夹切换条：第一个 chip 是「聊天」（未归类会话），后面是各文件夹，最后是「新建文件夹」。
+ * 文件夹 chip 长按可重命名或删除。
+ */
+@Composable
+private fun PaneFolderBar(
+    folders: List<ConversationFolderUi>,
+    selectedFolderId: String?,
+    onSelectFolder: (String?) -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
+) {
+    var createFolder by remember { mutableStateOf(false) }
+    var folderToRename by remember { mutableStateOf<ConversationFolderUi?>(null) }
+    var folderToDelete by remember { mutableStateOf<ConversationFolderUi?>(null) }
+
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.RowGap),
+    ) {
+        item(key = "folder-unfiled") {
+            DrawerChip(
+                label = stringResource(R.string.drawer_chats_chip),
+                selected = selectedFolderId == null,
+                icon = null,
+                onClick = { onSelectFolder(null) },
+            )
+        }
+        items(folders, key = { it.id }) { folder ->
+            var showFolderMenu by remember(folder.id) { mutableStateOf(false) }
+            Box {
+                DrawerChip(
+                    label = folder.name,
+                    selected = selectedFolderId == folder.id,
+                    icon = Icons.Rounded.Folder,
+                    onClick = { onSelectFolder(folder.id) },
+                    onLongClick = { showFolderMenu = true },
+                )
+                WindowListPopup(
+                    show = showFolderMenu,
+                    popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
+                    alignment = PopupPositionProvider.Align.BottomStart,
+                    onDismissRequest = { showFolderMenu = false },
+                ) {
+                    val renameText = stringResource(R.string.action_rename)
+                    val deleteText = stringResource(R.string.action_delete)
+                    val renameItem = remember(renameText) {
+                        DropdownItem(
+                            text = renameText,
+                            icon = { modifier ->
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = null,
+                                    modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                                )
+                            },
+                        )
+                    }
+                    val deleteItem = remember(deleteText) {
+                        DropdownItem(
+                            text = deleteText,
+                            icon = { modifier ->
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = null,
+                                    modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                                    tint = MiuixTheme.colorScheme.error,
+                                )
+                            },
+                        )
+                    }
+                    val deleteColors = DropdownDefaults.dropdownColors(
+                        contentColor = MiuixTheme.colorScheme.error,
+                        selectedContentColor = MiuixTheme.colorScheme.error,
+                        selectedIndicatorColor = MiuixTheme.colorScheme.error,
+                    )
+                    ListPopupColumn {
+                        DropdownImpl(
+                            item = renameItem,
+                            optionSize = 2,
+                            isSelected = false,
+                            index = 0,
+                            onSelectedIndexChange = {
+                                showFolderMenu = false
+                                folderToRename = folder
+                            },
+                        )
+                        DropdownImpl(
+                            item = deleteItem,
+                            optionSize = 2,
+                            isSelected = false,
+                            index = 1,
+                            dropdownColors = deleteColors,
+                            onSelectedIndexChange = {
+                                showFolderMenu = false
+                                folderToDelete = folder
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        item(key = "folder-new") {
+            DrawerChip(
+                label = stringResource(R.string.drawer_new_folder),
+                selected = false,
+                icon = Icons.Rounded.CreateNewFolder,
+                onClick = { createFolder = true },
+            )
+        }
+    }
+
+    if (createFolder) {
+        FolderNameDialog(
+            title = stringResource(R.string.drawer_create_folder_title),
+            initialName = "",
+            onDismiss = { createFolder = false },
+            onConfirm = { name ->
+                onCreateFolder(name)
+                createFolder = false
+            },
+        )
+    }
+    folderToRename?.let { folder ->
+        FolderNameDialog(
+            title = stringResource(R.string.drawer_rename_folder_title),
+            initialName = folder.name,
+            onDismiss = { folderToRename = null },
+            onConfirm = { name ->
+                onRenameFolder(folder.id, name)
+                folderToRename = null
+            },
+        )
+    }
+    folderToDelete?.let { folder ->
+        WindowDialog(
+            show = true,
+            cornerRadius = DialogDefaults.CornerRadius,
+            title = stringResource(R.string.drawer_delete_folder_title),
+            summary = stringResource(R.string.drawer_delete_folder_message),
+            onDismissRequest = { folderToDelete = null },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.action_delete),
+                destructive = true,
+                onCancel = { folderToDelete = null },
+                onConfirm = {
+                    onDeleteFolder(folder.id)
+                    folderToDelete = null
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderNameDialog(
+    title: String,
+    initialName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    WindowDialog(
+        show = true,
+        cornerRadius = DialogDefaults.CornerRadius,
+        title = title,
+        onDismissRequest = onDismiss,
+    ) {
+        Column {
+            TextField(
+                value = name,
+                onValueChange = { name = it },
+                label = stringResource(R.string.drawer_folder_name),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.action_save),
+                confirmEnabled = name.isNotBlank(),
+                onCancel = onDismiss,
+                onConfirm = { onConfirm(name) },
+                modifier = Modifier.padding(top = 16.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DrawerChip(
+    label: String,
+    selected: Boolean,
+    icon: ImageVector?,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val background = if (selected) {
+        MiuixTheme.colorScheme.primary
+    } else {
+        MiuixTheme.colorScheme.surfaceContainerHighest
+    }
+    val contentColor = if (selected) {
+        MiuixTheme.colorScheme.onPrimary
+    } else {
+        MiuixTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier
+            .heightIn(min = ConversationPanelMetrics.ChipMinHeight)
+            .clip(CircleShape)
+            .background(background)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(
+                horizontal = ConversationPanelMetrics.ChipHorizontalPadding,
+                vertical = 6.dp,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
+                tint = contentColor,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Text(
+            text = label,
+            color = contentColor,
+            style = MiuixTheme.textStyles.footnote1,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

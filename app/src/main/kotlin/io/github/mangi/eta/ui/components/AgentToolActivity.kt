@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +75,14 @@ internal fun ToolActivityInline(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
+    if (message.isSkillRead()) {
+        SkillNodeRow(
+            step = AgentWorkStep.Skill(title = message.skillTitle(), calls = listOf(message)),
+            connectTop = false,
+            modifier = modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+        )
+        return
+    }
     if (compact) {
         ToolActivityRow(message, onOpenBrowser, showBrowserShortcut, modifier)
         return
@@ -87,6 +96,39 @@ internal fun ToolActivityInline(
         ) {
             ToolActivityRow(message, onOpenBrowser, showBrowserShortcut)
         }
+    }
+}
+
+/** 技能读取节点：同一轮同一技能只留一条，副标题说明读到的是正文还是资源。 */
+@Composable
+internal fun SkillNodeRow(
+    step: AgentWorkStep.Skill,
+    isLast: Boolean = true,
+    connectTop: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val failure = step.failure
+    WorkTimelineNode(
+        icon = Icons.Rounded.Extension,
+        tone = when {
+            step.running -> WorkNodeTone.Running
+            failure != null -> WorkNodeTone.Failed
+            else -> WorkNodeTone.Done
+        },
+        isLast = isLast,
+        connectTop = connectTop,
+        modifier = modifier,
+    ) {
+        WorkNodeLabel(
+            title = step.title.ifBlank { toolDisplayName(step.calls.first().toolName) },
+            subtitle = when {
+                step.running -> null
+                failure != null -> failure.outcomeLine()
+                step.resourceCount > 0 -> stringResource(R.string.work_skill_resources, step.resourceCount)
+                else -> stringResource(R.string.work_skill_body)
+            },
+            running = step.running,
+        )
     }
 }
 
@@ -122,7 +164,7 @@ internal fun ToolActivityRow(
             else -> null
         }
     }
-    val subtitle = browserLine ?: outcome
+    val subtitle = browserLine ?: outcome ?: pendingAskUserLine(message)
     // 结果只有一行且已作为结论显示时，展开不会带来新信息，不提供展开入口。
     val resultDetail = message.resultSummary?.trim()?.takeIf { it.isNotEmpty() && it != outcome }
     val hasDetail = !message.command.isNullOrBlank() ||
@@ -214,7 +256,13 @@ internal fun ToolGroupRow(
     var expanded by rememberSaveable(group.key) { mutableStateOf(false) }
     val running = group.running
     val latest = group.calls.last()
-    val title = toolDisplayName(group.toolName) + " · " +
+    // MCP 工具名形如 mcp_<服务器>_<工具>_<哈希>，显示名取第一条调用的摘要（「MCP · 服务器 · 工具」）。
+    val label = if (group.toolName.startsWith("mcp_")) {
+        group.calls.first().argumentsSummary.ifBlank { group.toolName }
+    } else {
+        toolDisplayName(group.toolName)
+    }
+    val title = label + " · " +
         pluralStringResource(R.plurals.tool_group_calls, group.calls.size, group.calls.size)
     val subtitle = when {
         running -> latest.argumentsSummary.takeIf(String::isNotBlank)
@@ -370,6 +418,15 @@ private fun rememberRunningSeconds(id: String, running: Boolean): Int? {
 
 private fun ToolActivityMessageUi.isTerminalTool(): Boolean =
     toolName in setOf("terminal", "terminal_job", "terminal_daemon", "run_command")
+
+/** 提问还未作答时没有工具结果可显示，这里补一行状态；作答后的文案由结果摘要给出。 */
+@Composable
+private fun pendingAskUserLine(message: ToolActivityMessageUi): String? =
+    if (message.toolName == "ask_user" && message.status == ToolActivityStatusUi.Running) {
+        stringResource(R.string.tool_ask_user_waiting)
+    } else {
+        null
+    }
 
 @Composable
 private fun ToolActivityStatusUi.dotColor() = when (this) {

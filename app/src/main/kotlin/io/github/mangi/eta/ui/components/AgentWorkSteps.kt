@@ -23,7 +23,35 @@ internal sealed interface AgentWorkStep {
         val running: Boolean get() = calls.any { it.status == ToolActivityStatusUi.Running }
         val failedCount: Int get() = calls.count { it.status == ToolActivityStatusUi.Failed }
     }
+
+    /** 技能读取：同一轮同一技能的正文与资源读取合成一条，后来的调用只更新这条节点。 */
+    data class Skill(
+        val title: String,
+        val calls: List<ToolActivityMessageUi>,
+    ) : AgentWorkStep {
+        override val key: String = "skill-${calls.first().id}"
+        val running: Boolean get() = calls.any { it.status == ToolActivityStatusUi.Running }
+        val failure: ToolActivityMessageUi? get() = calls.firstOrNull { it.status == ToolActivityStatusUi.Failed }
+        val resourceCount: Int get() = calls.count { it.toolName == SKILL_RESOURCE_TOOL }
+    }
 }
+
+/** 这条节点是不是正在进行的步骤：流式思考，或正在跑的工具调用。 */
+internal val AgentWorkStep.running: Boolean
+    get() = when (this) {
+        is AgentWorkStep.Single -> when (val message = message) {
+            is ThinkingMessageUi -> message.isStreaming
+            is ToolActivityMessageUi -> message.status == ToolActivityStatusUi.Running
+            else -> false
+        }
+        is AgentWorkStep.ToolGroup -> running
+        is AgentWorkStep.Skill -> running
+    }
+
+internal fun ToolActivityMessageUi.isSkillRead(): Boolean = toolName in SKILL_READ_TOOLS
+
+/** 技能读取的标题：formatter 写成「技能 · <id>」；摘要为空时由节点侧退回工具名。 */
+internal fun ToolActivityMessageUi.skillTitle(): String = argumentsSummary
 
 /**
  * Agent 常连续读取多个文件或多次观察屏幕；同名工具连续出现时合并为一个节点，
@@ -31,6 +59,8 @@ internal sealed interface AgentWorkStep {
  */
 internal fun List<AgentChatMessageUi>.toWorkSteps(): List<AgentWorkStep> = buildList {
     val run = mutableListOf<ToolActivityMessageUi>()
+    // 同一轮同一技能只占一条：记下它在列表里的位置，后续调用就地更新。
+    val skills = mutableMapOf<String, Int>()
 
     fun flushRun() {
         when (run.size) {
@@ -42,6 +72,19 @@ internal fun List<AgentChatMessageUi>.toWorkSteps(): List<AgentWorkStep> = build
     }
 
     this@toWorkSteps.forEach { message ->
+        if (message is ToolActivityMessageUi && message.isSkillRead()) {
+            flushRun()
+            val title = message.skillTitle()
+            val existing = skills[title]
+            if (existing == null) {
+                skills[title] = size
+                add(AgentWorkStep.Skill(title = title, calls = listOf(message)))
+            } else {
+                val step = get(existing) as AgentWorkStep.Skill
+                set(existing, step.copy(calls = step.calls + message))
+            }
+            return@forEach
+        }
         val groupable = message is ToolActivityMessageUi && message.toolName !in UNGROUPED_TOOLS
         if (groupable && run.isNotEmpty() && run.first().toolName != (message as ToolActivityMessageUi).toolName) {
             flushRun()
@@ -57,6 +100,8 @@ internal fun List<AgentChatMessageUi>.toWorkSteps(): List<AgentWorkStep> = build
 }
 
 private val UNGROUPED_TOOLS = setOf("browser_use")
+private val SKILL_READ_TOOLS = setOf("skills_read", SKILL_RESOURCE_TOOL)
+private const val SKILL_RESOURCE_TOOL = "skills_read_resource"
 
 /** 折叠后的工作过程摘要所需计数。 */
 internal data class AgentWorkSummary(

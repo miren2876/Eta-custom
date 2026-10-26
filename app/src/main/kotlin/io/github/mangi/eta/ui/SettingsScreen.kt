@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.ImportContacts
@@ -31,7 +32,6 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsVoice
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.SportsBar
@@ -92,6 +92,10 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.runtime.LaunchedEffect
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import androidx.compose.material.icons.rounded.ChatBubble
 
 /**
  * 模块配置界面。
@@ -121,6 +125,10 @@ private fun SettingsPageContent(
     var hasUsedSystemizer by remember { mutableStateOf(enhancementHistory.hasUsedSystemizer) }
     var showSystemizerDialog by remember { mutableStateOf(false) }
     var installingSystemizer by remember { mutableStateOf(false) }
+    var capsulePinned by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        capsulePinned = runCatching { SettingsDataStore.settings().overlayCapsulePinned }.getOrDefault(false)
+    }
 
     // 悬浮窗权限状态：授权后从系统设置返回时（ON_RESUME）刷新。
     var overlayGranted by remember {
@@ -247,6 +255,22 @@ private fun SettingsPageContent(
     val powerAssistantItems = powerAssistantTargets.map { target ->
         DropdownItem(text = target.displayName(context))
     }
+    val multiRunModes = Prefs.MultiRunMode.entries
+    var multiRunModeIndex by remember(agentPrefs) {
+        mutableStateOf(
+            multiRunModes.indexOfFirst {
+                it.key == agentPrefs?.getString(
+                    Prefs.Keys.AGENT_MULTI_RUN_MODE,
+                    Prefs.MultiRunMode.REPLACE.key,
+                )
+            }.coerceAtLeast(0),
+        )
+    }
+    val multiRunItems = listOf(
+        DropdownItem(text = stringResource(R.string.settings_multi_run_replace)),
+        DropdownItem(text = stringResource(R.string.settings_multi_run_queue)),
+        DropdownItem(text = stringResource(R.string.settings_multi_run_concurrent)),
+    )
 
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_set_up_7debf9),
@@ -304,6 +328,12 @@ private fun SettingsPageContent(
                         },
                         onClick = { onNavigate(AppRoute.Memory) },
                     )
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.virtual_screen_title),
+                        startAction = { EtaPreferenceIcon(icon = Icons.Rounded.Smartphone, tint = EtaPreferenceColors.Blue) },
+                        onClick = { onNavigate(AppRoute.VirtualScreen) },
+                    )
 
                     EtaPreferenceDivider()
                     EtaArrowPreference(
@@ -339,6 +369,112 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.Characters) },
+                    )
+                }
+            }
+
+            // ── 对话 ───────────────────────────────────────────────────
+            item(key = "section_conversation") {
+                EtaPreferenceGroupTitle(stringResource(R.string.settings_conversation))
+                EtaPreferenceGroup {
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_ask_user_title),
+                        summary = stringResource(R.string.settings_ask_user_summary),
+                        key = Prefs.Keys.AGENT_ASK_USER,
+                        icon = Icons.Rounded.Forum,
+                        iconTint = EtaPreferenceColors.Blue,
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaSwitchPreference(
+                        title = stringResource(R.string.overlay_capsule_pinned_title),
+                        summary = stringResource(R.string.overlay_capsule_pinned_summary),
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.ChatBubble,
+                                tint = EtaPreferenceColors.Blue,
+                            )
+                        },
+                        checked = capsulePinned,
+                        onCheckedChange = { value ->
+                            capsulePinned = value
+                            // 胶囊走系统悬浮窗（无障碍可用时免授权）：没授权先跳去授权，用户回来再拨一次。
+                            if (value && !Settings.canDrawOverlays(context)) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${'$'}{context.packageName}"),
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                            }
+                            coroutineScope.launch(Dispatchers.IO) {
+                                SettingsDataStore.updateSettings { it.copy(overlayCapsulePinned = value) }
+                                runCatching {
+                                    context.startService(
+                                        Intent(
+                                            context,
+                                            io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java,
+                                        ).setAction(
+                                            if (value) {
+                                                io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_PIN_CAPSULE
+                                            } else {
+                                                io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_UNPIN_CAPSULE
+                                            },
+                                        ),
+                                    )
+                                }
+                            }
+                        },
+                    )
+
+                    EtaPreferenceDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_memory_idle_review_title),
+                        summary = stringResource(R.string.settings_memory_idle_review_summary),
+                        key = Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW,
+                        icon = Icons.Rounded.Psychology,
+                        iconTint = EtaPreferenceColors.Green,
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_multi_run_mode),
+                        summary = stringResource(R.string.settings_multi_run_mode_summary),
+                        items = multiRunItems,
+                        selectedIndex = multiRunModeIndex,
+                        onSelectedIndexChange = { index ->
+                            val mode = multiRunModes.getOrNull(index)
+                                ?: return@EtaDropdownPreference
+                            val targetPrefs = agentPrefs
+                            if (
+                                targetPrefs == null ||
+                                putStringSync(
+                                    prefs = targetPrefs,
+                                    key = Prefs.Keys.AGENT_MULTI_RUN_MODE,
+                                    value = mode.key,
+                                )
+                            ) {
+                                multiRunModeIndex = index
+                            } else {
+                                Toast.makeText(
+                                    context.applicationContext,
+                                    context.getString(R.string.settings_write_failed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.Layers,
+                                tint = EtaPreferenceColors.Green,
+                            )
+                        },
                     )
                 }
             }
@@ -426,6 +562,24 @@ private fun SettingsPageContent(
                         },
                         onClick = { onNavigate(AppRoute.LinuxEnvironment) },
                     )
+
+                    EtaPreferenceDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_linux_run_notification),
+                        summary = stringResource(R.string.settings_linux_run_notification_summary),
+                        key = Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION,
+                        icon = Icons.Rounded.Terminal,
+                        iconTint = EtaPreferenceColors.Blue,
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.route_scripts),
+                        startAction = { EtaPreferenceIcon(Icons.Rounded.Code, tint = EtaPreferenceColors.Yellow) },
+                        onClick = { onNavigate(AppRoute.Scripts) },
+                    )
                 }
             }
 
@@ -511,7 +665,7 @@ private fun SettingsPageContent(
                             context = context,
                             prefs = prefs,
                             title = stringResource(R.string.ui_enable_vendor_assistant_custom_models_c8e465),
-                            key = Prefs.Keys.AGENT_CUSTOM_MODEL,
+                                key = Prefs.Keys.AGENT_CUSTOM_MODEL,
                             icon = Icons.Rounded.Cloud,
                             iconTint = EtaPreferenceColors.Blue,
                         )
@@ -521,7 +675,7 @@ private fun SettingsPageContent(
                             context = context,
                             prefs = prefs,
                             title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
-                            key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
+                                key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
                             icon = Icons.Rounded.FilterAlt,
                             iconTint = EtaPreferenceColors.Blue,
                         )
