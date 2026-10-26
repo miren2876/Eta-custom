@@ -204,6 +204,11 @@ internal class AgentExecutionService : Service() {
             }
         }
 
+        /** 提问挂起或作答后刷新执行通知（流体云文案与选项按钮）。 */
+        fun refreshRunNotification() {
+            mainHandler.post { instance?.refreshNotification() }
+        }
+
         /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
         fun isRunActive(): Boolean =
             runStatus != null || leases.hasPrefix("run:") || instance?.foregroundActive == true
