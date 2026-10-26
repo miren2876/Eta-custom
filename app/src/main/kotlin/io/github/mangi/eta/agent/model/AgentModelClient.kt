@@ -98,7 +98,8 @@ internal object AgentModelClient {
         skillContext: SkillContext = SkillContext.EMPTY,
         memoryContext: AgentMemoryContext = AgentMemoryContext.DISABLED,
         additionalTools: JSONArray = JSONArray(),
-        executionContext: TerminalExecutionContext? = null,
+        /** MCP 工具名 → 聊天里显示的名字「服务器 · 工具」；由运行时按冻结目录给出。 */
+        mcpToolLabels: Map<String, String> = emptyMap(),
         capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
         sessionId: String = java.util.UUID.randomUUID().toString(),
         compactOnly: Boolean = false,
@@ -106,6 +107,7 @@ internal object AgentModelClient {
         initialUserMessageId: String = "user-$operationId",
         initialSupplementIndex: Int = 0,
         roleplayContext: RoleplayRunContext? = null,
+        executionContext: TerminalExecutionContext? = null,
         rewriteReply: Boolean = false,
         assistantScreenContext: String = "",
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
@@ -124,6 +126,9 @@ internal object AgentModelClient {
             rootAvailable = initialCapabilities.rootAvailable,
             roleplayContext = roleplayContext,
             executionContext = executionContext,
+            virtualScreenEnabled = initialCapabilities.virtualScreenEnabled,
+            virtualScreenFallbackEnabled = initialCapabilities.virtualScreenFallbackEnabled,
+            askUser = initialCapabilities.askUser,
         )
         if (rewriteReply) {
             messages.put(messages.length() - 1, AgentConversationCodec.userTextMessage(
@@ -142,7 +147,7 @@ internal object AgentModelClient {
         val transcript = JSONArray()
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
         val systemCount = AgentPromptBuilder.buildSystemMessages(
-            config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext, executionContext,
+            config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext, executionContext, initialCapabilities.virtualScreenEnabled, initialCapabilities.virtualScreenFallbackEnabled, initialCapabilities.askUser,
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities): JSONArray {
             if (rewriteReply) return JSONArray()
@@ -176,17 +181,29 @@ internal object AgentModelClient {
         // 工具目录与系统提示都是请求前缀，按轮重算会让一次瞬时状态抖动废掉整段缓存。
         // Root 授权真正变化时整体重建；其余能力只增不减：短暂不可用的工具仍保留，执行时自行报告错误码。
         var promptRootAvailable = initialCapabilities.rootAvailable
+        var promptVirtualScreenEnabled = initialCapabilities.virtualScreenEnabled
+        var promptVirtualScreenFallbackEnabled = initialCapabilities.virtualScreenFallbackEnabled
+        var promptAskUser = initialCapabilities.askUser
         var publishedTools = tools
         fun toolsForRound(): JSONArray {
             val capabilities = capabilitiesProvider()
-            if (capabilities.rootAvailable != promptRootAvailable) {
+            // 只有会影响系统提示正文的能力变化才重建前缀：Root、虚拟屏、虚拟屏回退、提问开关。
+            if (capabilities.rootAvailable != promptRootAvailable ||
+                capabilities.virtualScreenEnabled != promptVirtualScreenEnabled ||
+                capabilities.virtualScreenFallbackEnabled != promptVirtualScreenFallbackEnabled ||
+                capabilities.askUser != promptAskUser
+            ) {
                 val systemMessages = AgentPromptBuilder.buildSystemMessages(
                     config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext, executionContext,
+                    capabilities.virtualScreenEnabled, capabilities.virtualScreenFallbackEnabled, capabilities.askUser,
                 )
                 for (index in 0 until systemMessages.length()) {
                     messages.put(index, systemMessages.getJSONObject(index))
                 }
                 promptRootAvailable = capabilities.rootAvailable
+                promptVirtualScreenEnabled = capabilities.virtualScreenEnabled
+                promptVirtualScreenFallbackEnabled = capabilities.virtualScreenFallbackEnabled
+                promptAskUser = capabilities.askUser
                 publishedTools = toolsFor(capabilities)
                 return publishedTools
             }
@@ -226,6 +243,7 @@ internal object AgentModelClient {
             },
             runController = runController,
             traceFormatter = traceFormatter,
+            mcpToolLabels = mcpToolLabels,
             onEvent = onEvent,
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,
@@ -330,6 +348,8 @@ internal object AgentModelClient {
         val customBody: List<CustomBody> = emptyList(),
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
         val authMode: String = ProviderAuthModes.API_KEY,
+        /** 记忆整理 run 专用：只给记忆工具，档案仅追加，一轮只写一层。 */
+        val memoryReviewMode: Boolean = false,
     ) {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && when (providerType) {

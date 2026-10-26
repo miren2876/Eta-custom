@@ -25,6 +25,10 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
                 Prefs.Keys.AGENT_THINKING_ENABLED to true,
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED to true,
+                // 定制新增的本地开关：Linux 运行通知默认开，提问与记忆自动整理默认关。
+                Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION to true,
+                Prefs.Keys.AGENT_ASK_USER to false,
+                Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW to false,
             ),
             Prefs.Keys.BOOLEAN_DEFAULTS,
         )
@@ -44,6 +48,9 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
                 Prefs.Keys.AGENT_THINKING_ENABLED,
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
+                Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION,
+                Prefs.Keys.AGENT_ASK_USER,
+                Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW,
             ),
             Prefs.Keys.LOCAL_AGENT_KEYS,
         )

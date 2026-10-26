@@ -39,7 +39,7 @@ internal object AgentToolRequirements {
             "wait", "wait_for_text", "wait_for_package", "open_system_panel",
             "set_alarm", "set_timer", "device_status", "inspect_app", "media_control", "set_volume",
             "search_notification_history", "recent_app_activity", "app_usage_summary",
-            "get_current_location", "get_device_environment", "memory_get", "memory_write",
+            "get_current_location", "get_device_environment", "memory_get", "memory_write", "ask_user",
             "character_memory_get", "character_memory_write",
             "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
             "skills_inspect_github", "skills_install_from_github",
@@ -52,6 +52,7 @@ internal object AgentToolRequirements {
         )
         register(
             RootRequirement.REQUIRED,
+            "virtual_screen",
             "top_memory_apps", "top_storage_apps", "wifi_credentials", "read_sms_code",
             "get_logcat", "set_setting", "set_device_state", "app_state_control",
             "list_alarms", "list_active_timers", "get_health_summary", "search_clipboard_history",
