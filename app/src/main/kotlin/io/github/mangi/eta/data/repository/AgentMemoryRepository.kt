@@ -1074,7 +1074,8 @@ internal class AgentMemoryStore(
         val profile = readText(userFile).trimEnd('\n')
         val working = readText(workingFile).trimEnd('\n')
         return buildString {
-            append(PROFILE_HEADING).append('\n')
+            // USER.md 自身通常已带这个标题；无条件再拼一次会让注入和记忆页出现两个「## 用户画像」。
+            if (!profile.startsWith(PROFILE_HEADING)) append(PROFILE_HEADING).append('\n')
             if (profile.isNotEmpty()) append(profile).append('\n')
             append('\n').append(WORKING_HEADING).append('\n')
             if (working.isNotEmpty()) append(working)
