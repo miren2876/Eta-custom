@@ -37,8 +37,6 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.mangi.eta.EtaApp
-import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
-import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import java.io.File
@@ -437,14 +435,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     if (event is AgentEvent.ToolFinished) {
                         memoryIdleReview.recordToolFinished(request.runId, event.name)
                     }
-                    val current = runs.get(request.runId)?.session
-                    if (current != null && event is AgentEvent.ToolStarted &&
-                        (event.name in VirtualScreenRoutingPolicy.uiTools || event.name == "virtual_screen") &&
-                        runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
-                    ) {
-                        current.virtualUiRouted.set(true)
-                    }
-                    sendEventTo(replyTo, event, current?.let { usesVirtualUi(it) } == true)
+                    sendEventTo(replyTo, event)
                 },
                 resultSink = { result -> sendResultTo(replyTo, result) },
                 beforeTerminalPublish = {
@@ -459,7 +450,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     }
                 },
             )
-            session.virtualUiRouted.set(VirtualScreenSession.isOwnedBy(request.virtualScreenOwner))
             RuntimeRunRegistry.Run(request, session, incoming) {
                 sendRequestIngestedTo(replyTo, request.runId)
             }
@@ -643,13 +633,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 transcript = run.session.transcript,
                 enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
             )
-            if (runningSessionCount() == 0 && (run.session.virtualUiRouted.get() || !EtaApp.isInForeground())) {
-                io.github.mangi.eta.agent.display.VirtualScreenNotification.showCompletion(
-                    this,
-                    result.ok,
-                    if (result.ok) result.content.trim() else result.error.orEmpty(),
-                )
-            }
             bindDisplayedRun(run)
             updateKeepScreenOn()
             runCatching {
@@ -1013,10 +996,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
         ensureOverlayVisible()
     }
-
-    /** 虚拟屏路由下的事件走虚拟屏 UI；主屏回退授权后回到主屏。 */
-    private fun usesVirtualUi(session: AgentRuntimeSession, virtualScreenEnabled: Boolean = false): Boolean =
-        (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
 
     /** 中止正在跑的整理 run；用户的新任务不该排在后台整理后面。 */
     private fun cancelActiveReviewRuns() {
