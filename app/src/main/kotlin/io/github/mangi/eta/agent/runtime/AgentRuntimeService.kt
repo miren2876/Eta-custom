@@ -493,6 +493,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
+        // 胶囊是任务状态窗口，不是 GUI 专属：任务一开始就要显示，否则不用 GUI 工具的任务完全看不到进度。
+        bindDisplayedRun(run)
+        ensureOverlayVisible()
         val allowBoundFallback = RootAccess.isGranted
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
@@ -589,7 +592,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
             runCatching {
                 run.overlayState = run.overlayState.applyEvent(event)
-                if (displayedRun === run && ownsGui && !run.session.isTerminal) {
+                if (displayedRun === run && !run.session.isTerminal) {
                     state.value = run.overlayState
                     ensureOverlayVisible()
                 }
@@ -626,10 +629,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (destroyed) return@post
             run.completedContext = completedContext
             val guiState = guiControl.state.value
-            if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
-                (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
             rememberFinishedSession(run.session.runId)
             syncRunningSessions()
+            // 只有「别的 run 正持有 GUI」或用户暂停时才跳过；没有 GUI 归属的普通任务同样要收尾。
+            val hasOtherGuiOwner = guiState.ownerRunId != null && guiState.ownerRunId != run.runId
+            if (guiState.userPaused || hasOtherGuiOwner ||
+                (lastGuiOwnerRunId != null && lastGuiOwnerRunId != run.runId)
+            ) {
+                return@post
+            }
             memoryIdleReview.onRunFinished(
                 runId = run.session.runId,
                 transcript = run.session.transcript,
