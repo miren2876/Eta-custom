@@ -105,7 +105,7 @@ class AgentContextRecoveryTest {
     }
 
     @Test
-    fun summaryFailureDoesNotSplitOrRetryAndKeepsOriginalHistory() {
+    fun summaryFailureKeepsOriginalHistoryAndOnlyOverflowDegradesToChunks() {
         for (code in listOf("CONTEXT_OVERFLOW", "MODEL_TIMEOUT")) {
             val messages = messages()
             val original = messages.toString()
@@ -116,7 +116,9 @@ class AgentContextRecoveryTest {
             }, AgentRunController(), { emptySet() }, {}, { fail("失败摘要不能提交") })
             val failure = assertThrows(AgentModelFailure::class.java) { session.compact(force = true) }
             assertEquals(code, failure.code)
-            assertEquals(1, requests)
+            // 整段摘不下（CONTEXT_OVERFLOW）时允许退化为分块：整段 1 次 + 第一块 1 次后照样上抛；
+            // 其它失败（超时等）只准一次请求，不能靠重试刷额度。
+            if (code == "CONTEXT_OVERFLOW") assertEquals(2, requests) else assertEquals(1, requests)
             assertEquals(original, messages.toString())
             assertNull(session.snapshot())
         }
@@ -134,7 +136,8 @@ class AgentContextRecoveryTest {
             }, AgentRunController(), { emptySet() }, {}, { fail("不应提交无效摘要") })
             val failure = assertThrows(AgentModelFailure::class.java) { session.compact(force = true) }
             assertEquals("CONTEXT_SUMMARY_INVALID", failure.code)
-            assertEquals(1, requests)
+            // 整段摘要不合规 → 降级分块，第一块同样不合规就上抛：整段 1 次 + 分块 1 次，不再继续重试。
+            assertEquals(2, requests)
             assertEquals(original, messages.toString())
         }
     }
