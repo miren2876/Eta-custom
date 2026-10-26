@@ -451,7 +451,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         if (!destroyed) {
                             publishExecutionState()
                             updateKeepScreenOn()
-                            if (runs.all().isEmpty() && displayedRun == null && !guiControl.state.value.userPaused) stopSelf()
+                            if (runs.all().isEmpty() && displayedRun == null &&
+                                !guiControl.state.value.userPaused && !memoryIdleReview.hasPendingWork()
+                            ) stopSelf()
                         }
                     }
                 },
@@ -640,6 +642,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     "整理 run 结束 ok=${result.ok} err=${result.error.orEmpty().take(160)} " +
                         "content=${result.content.replace("\n", " ").take(120)}",
                 )
+                // 整理是最后一件事：收尾后按空闲规则退出，别让服务因等它而常驻。
+                if (runs.all().isEmpty() && displayedRun == null && !guiControl.state.value.userPaused) stopSelf()
                 return@post
             }
             val guiState = guiControl.state.value
@@ -1635,7 +1639,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         displayedRun?.completedContext = null
         displayedRun = null
         removeOverlayWindows()
-        if (runs.all().isEmpty() && !guiControl.state.value.userPaused) stopSelf()
+        if (runs.all().isEmpty() && !guiControl.state.value.userPaused && !memoryIdleReview.hasPendingWork()) {
+            stopSelf()
+        }
     }
 
     private fun removeOverlayWindows() {

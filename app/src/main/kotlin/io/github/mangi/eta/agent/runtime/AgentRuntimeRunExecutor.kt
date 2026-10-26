@@ -131,10 +131,15 @@ internal class AgentRuntimeRunExecutor(
             }
             val memoryContext = if (memoryEnabled) {
                 runCatching {
+                    val core = AgentMemoryRepository.coreSnapshot()
+                    val coreBudget = AgentMemoryContextBuilder.coreBudgetChars(request.config.contextWindow)
                     ConversationMemoryPins.contextFor(
                         conversationId = conversationId,
-                        snapshot = AgentMemoryRepository.snapshot(),
+                        // revision/bytes 以核心记忆（USER.md + MEMORY.md）为准，档案写入不会改变它。
+                        snapshot = core,
                         contextWindow = request.config.contextWindow,
+                        // 注入投影：画像 + 按 EI 排序的活跃条目 + 一行档案统计（档案清单按需用 memory_get 取）。
+                        core = AgentMemoryRepository.coreProjection(coreBudget),
                     )
                 }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_context_failed") {

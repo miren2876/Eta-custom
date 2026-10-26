@@ -73,6 +73,9 @@ internal class AgentMemoryIdleReview(
         pendingAction = null
     }
 
+    /** 还有待执行/正在跑的整理：服务此时不能停，否则整理 run 因服务已销毁被静默丢弃。 */
+    fun hasPendingWork(): Boolean = pendingAction != null || activeReviewSessionKey != null
+
     fun recordToolFinished(runId: String, toolName: String) {
         if (isReviewRun(runId)) return
         val key = bindings[runId]?.sessionKey ?: return

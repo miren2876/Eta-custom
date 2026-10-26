@@ -85,6 +85,8 @@ internal class AgentLoop(
     fun run(): Result {
         var round = 1
         var precedingTools: JSONArray? = null
+        // 服务商报「上下文超容量」时按报错兜底压缩一次：配置的窗口可能高于真实容量，自动压缩阈值不会触发。
+        var overflowCompacted = false
 
         while (true) {
             runController.throwIfCancelled()
@@ -110,35 +112,45 @@ internal class AgentLoop(
             var roundInputTokens: Int? = null
             val reasoningLengthBeforeRound = accumulatedReasoning.length
             val completedRound = try {
-                modelRetry.complete(
-                    initialRound = round,
-                    request = ProviderRequest(config, requestMessages, roundTools, sessionId, purpose),
-                    provider = provider,
-                    controller = runController,
-                    onEvent = { event ->
-                        if (event is AgentEvent.RoundStarted) roundInputTokens = null
-                        onEvent(event)
-                    },
-                    onProviderEvent = { attemptRound, providerEvent ->
-                        if (!purpose.allowsTools && (providerEvent is ProviderEvent.HostedToolStarted ||
-                                providerEvent is ProviderEvent.SearchSuggestions ||
-                                providerEvent is ProviderEvent.BlockStart && providerEvent.kind == AssistantBlockKind.TOOL_CALL)) {
-                            throw AgentModelFailure("REPLY_REWRITE_TOOL_CALL", false, "改写回复时模型请求了工具，已停止；原回复未改变。")
-                        }
-                        if (providerEvent is ProviderEvent.Usage) {
-                            roundInputTokens = providerEvent.contextInputTokens ?: roundInputTokens
-                        }
-                        if (providerEvent is ProviderEvent.BlockDelta &&
-                            providerEvent.kind == AssistantBlockKind.THINKING
-                        ) {
-                            accumulatedReasoning.append(providerEvent.delta)
-                        }
-                        providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
-                    },
-                    discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
-                ).also { response ->
-                    rejectContentFilter(response.response)
-                    if (purpose == ProviderRequestPurpose.CHAT) validateChatResponse(response.response)
+                try {
+                    modelRetry.complete(
+                        initialRound = round,
+                        request = ProviderRequest(config, requestMessages, roundTools, sessionId, purpose),
+                        provider = provider,
+                        controller = runController,
+                        onEvent = { event ->
+                            if (event is AgentEvent.RoundStarted) roundInputTokens = null
+                            onEvent(event)
+                        },
+                        onProviderEvent = { attemptRound, providerEvent ->
+                            if (!purpose.allowsTools && (providerEvent is ProviderEvent.HostedToolStarted ||
+                                    providerEvent is ProviderEvent.SearchSuggestions ||
+                                    providerEvent is ProviderEvent.BlockStart && providerEvent.kind == AssistantBlockKind.TOOL_CALL)) {
+                                throw AgentModelFailure("REPLY_REWRITE_TOOL_CALL", false, "改写回复时模型请求了工具，已停止；原回复未改变。")
+                            }
+                            if (providerEvent is ProviderEvent.Usage) {
+                                roundInputTokens = providerEvent.contextInputTokens ?: roundInputTokens
+                            }
+                            if (providerEvent is ProviderEvent.BlockDelta &&
+                                providerEvent.kind == AssistantBlockKind.THINKING
+                            ) {
+                                accumulatedReasoning.append(providerEvent.delta)
+                            }
+                            providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
+                        },
+                        discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
+                    ).also { response ->
+                        rejectContentFilter(response.response)
+                        if (purpose == ProviderRequestPurpose.CHAT) validateChatResponse(response.response)
+                    }
+                } catch (failure: Exception) {
+                    val modelFailure = failure as? AgentModelFailure ?: throw failure
+                    if (modelFailure.code != "CONTEXT_OVERFLOW" || overflowCompacted) throw failure
+                    overflowCompacted = true
+                    // 摘要本身也可能失败：保留原始溢出错误，别把用户引到另一个错误上。
+                    if (runCatching { context.compact(force = true) }.isFailure) throw failure
+                    roundInputTokens = null
+                    continue
                 }
             } finally {
                 // 同一回合的重试仍需原始观察；整个回合结束后才移除截图。
