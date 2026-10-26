@@ -107,11 +107,29 @@ internal object LinuxRunMonitor {
             done
         """
 
+    /** 依次尝试常见 su 路径执行脚本；全部失败时返回 null 并记录日志。 */
+    private fun runSu(script: String): String? {
+        for (su in listOf("/data/adb/ksu/bin/su", "/system/bin/su", "/system/xbin/su", "su")) {
+            val output = runCatching {
+                val process = ProcessBuilder(su, "-c", script).redirectErrorStream(true).start()
+                val text = process.inputStream.bufferedReader().readText()
+                process.waitFor()
+                text
+            }.getOrNull()
+            if (!output.isNullOrBlank()) return output
+        }
+        AndroidAgentLogger.warn("linux_process_su_failed: no usable su (rootGranted=${RootAccess.isGranted})")
+        return null
+    }
+
     /** 列出 rootfs 内的进程；无 root 或读取失败时返回空表。 */
     fun listProcesses(): List<LinuxProcess> = runCatching {
-        if (!RootAccess.isGranted) return emptyList()
-        val text = ProcessBuilder("su", "-c", listScript).redirectErrorStream(true)
-            .start().inputStream.bufferedReader().readText()
+        if (!RootAccess.isGranted) {
+            AndroidAgentLogger.warn("linux_process_list_skipped: root not granted")
+            return emptyList()
+        }
+        val text = runSu(listScript) ?: return emptyList()
+        if (text.isBlank()) AndroidAgentLogger.warn("linux_process_list_blank")
         text.lineSequence().mapNotNull { line ->
             val parts = line.split('|', limit = 4)
             if (parts.size < 4) return@mapNotNull null
@@ -126,7 +144,7 @@ internal object LinuxRunMonitor {
     /** 结束单个后台进程。 */
     fun killProcess(pid: Int): Boolean = runCatching {
         if (!RootAccess.isGranted || pid <= 1) return false
-        ProcessBuilder("su", "-c", "kill -9 $pid").redirectErrorStream(true).start().waitFor() >= 0
+        runSu("kill -9 $pid") != null
     }.getOrDefault(false)
 
     private val watchScript: String
