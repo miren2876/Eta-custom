@@ -172,6 +172,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -213,7 +214,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             ACTION_CLEAR_READ -> onCapsuleRead()
             else -> {
                 val keepAlive = intent?.action == ACTION_KEEP_ALIVE && runs.all().isNotEmpty()
-                if (!keepAlive && !capsulePinned && !unreadFinished) stopSelf(startId)
+                // 有待执行/在跑的整理时不停服务，否则整理 run 会撞 destroyed 被丢弃。
+                if (!keepAlive && !capsulePinned && !unreadFinished && !memoryIdleReview.hasPendingWork()) {
+                    stopSelf(startId)
+                }
             }
         }
         return START_NOT_STICKY
@@ -230,6 +234,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onDestroy() {
         destroyed = true
+        if (activeService === this) activeService = null
         setKeepScreenOn(false)
         runs.all().forEach { run ->
             run.releaseIncoming()
@@ -1700,13 +1705,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         @Volatile
         private var idleReviewInstance: AgentMemoryIdleReview? = null
 
+        /** 当前活着的实例：idle review 单例跨服务重建，回调必须落到这里而不是首次的实例。 */
+        @Volatile
+        private var activeService: AgentRuntimeService? = null
+
         /** 进程内唯一的空闲审查协调器；首次调用时用当时存活的 service 绑好回调。 */
         private fun sharedIdleReview(service: AgentRuntimeService): AgentMemoryIdleReview =
             idleReviewInstance ?: synchronized(this) {
                 idleReviewInstance ?: AgentMemoryIdleReview(
                     postDelayed = { delay, action -> service.mainHandler.postDelayed(action, delay) },
                     cancelDelayed = { action -> service.mainHandler.removeCallbacks(action) },
-                    launchReview = { _, prompt -> service.startMemoryReviewRun(prompt) },
+                    launchReview = { _, prompt ->
+                        // 服务被回收后，旧实例的 destroyed 会让 startRun 静默丢弃整理 run。
+                        val current = activeService
+                        if (current == null) {
+                            service.traceIdleReview("整理跳过：Agent 服务已停止，待执行期间被回收")
+                        } else {
+                            current.startMemoryReviewRun(prompt)
+                        }
+                    },
                     trace = { line -> service.traceIdleReview(line) },
                     notifyOutcome = { code, name, sessionKey ->
                         AgentExecutionService.postMemoryReviewResult(
