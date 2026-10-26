@@ -484,8 +484,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
         // 胶囊是任务状态窗口，不是 GUI 专属：任务一开始就要显示，否则不用 GUI 工具的任务完全看不到进度。
-        bindDisplayedRun(run)
-        ensureOverlayVisible()
+        // 后台记忆整理 run 例外：它不该在用户面前弹出一个胶囊。
+        if (!memoryIdleReview.isReviewRun(request.runId)) {
+            bindDisplayedRun(run)
+            ensureOverlayVisible()
+        }
         val allowBoundFallback = RootAccess.isGranted
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
@@ -619,6 +622,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (destroyed) return@post
             run.completedContext = completedContext
             val guiState = guiControl.state.value
+            if (memoryIdleReview.isReviewRun(run.session.runId)) return@post
             rememberFinishedSession(run.session.runId)
             syncRunningSessions()
             // 只有「别的 run 正持有 GUI」或用户暂停时才跳过；没有 GUI 归属的普通任务同样要收尾。
@@ -1207,8 +1211,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val wm = windowManager ?: return
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
+        val topInset = statusBarHeightPx()
         lp.x = (lp.x + dx.toInt()).coerceIn(0, maxOf(0, screenWidth - lp.width))
-        lp.y = (lp.y + dy.toInt()).coerceIn(0, maxOf(0, screenHeight - lp.height))
+        lp.y = (lp.y + dy.toInt()).coerceIn(topInset, maxOf(topInset, screenHeight - lp.height))
         capsuleCollapsedX = lp.x
         capsuleCollapsedY = lp.y
         capsuleOffsetX.value = lp.x
@@ -1413,9 +1418,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // 贴在状态栏下方居中：远离多数应用的主要点击区，也和系统胶囊、流体云的位置习惯一致。
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = statusBarHeightPx()
+            // 用左上角绝对坐标：只有这样才能把小球自由拖到任意位置并贴边；
+            // CENTER_HORIZONTAL 时 x 是相对居中的偏移，拖动范围会被限制在中间一小段。
+            gravity = Gravity.TOP or Gravity.START
+            x = if (capsuleCollapsedX != Int.MIN_VALUE) {
+                capsuleCollapsedX
+            } else {
+                ((resources.displayMetrics.widthPixels - dpToPx(CAPSULE_WINDOW_WIDTH_DP)) / 2)
+            }
+            y = if (capsuleCollapsedY != Int.MIN_VALUE) capsuleCollapsedY else statusBarHeightPx()
             windowAnimations = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
