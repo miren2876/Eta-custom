@@ -335,9 +335,7 @@ internal class AgentMemoryIdleReview(
 
         private const val IDLE_DELAY_MS = 30_000L
         private const val MIN_INTERVAL_MS = 5 * 60 * 1000L
-        // TODO(临时)：验证整理链路期间降到 1.0，让每次有内容就整理、能立刻看到流体云与对话提示；
-        // 整理确认生效后调回 5.0。
-        private const val SCORE_THRESHOLD = 1.0
+        private const val SCORE_THRESHOLD = 5.0
         private const val MIN_USER_CHARS = 320
         private const val MIN_ASSISTANT_CHARS = 600
         private const val MAX_CONTEXT_CHARS = 8_000
