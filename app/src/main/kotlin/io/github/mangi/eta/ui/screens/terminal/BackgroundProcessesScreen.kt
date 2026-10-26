@@ -13,7 +13,7 @@ import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import top.yukonga.miuix.kmp.basic.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 
 /**
  * 后台进程：列出 Linux rootfs 里正在跑的进程，点一行结束它。
