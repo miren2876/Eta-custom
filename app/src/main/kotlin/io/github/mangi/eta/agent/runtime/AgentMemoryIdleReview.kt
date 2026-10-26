@@ -86,6 +86,8 @@ internal class AgentMemoryIdleReview(
         runId: String,
         transcript: List<AgentModelClient.ConversationMessage>,
         enabled: Boolean,
+        /** 本轮用户输入字符数：3.3.4 的 transcript 不含用户消息，必须由调用方传入。 */
+        userChars: Int = 0,
     ) {
         if (isReviewRun(runId)) {
             val key = activeReviewSessionKey
@@ -116,6 +118,7 @@ internal class AgentMemoryIdleReview(
         if (added.none { it.role == ROLE_USER }) {
             transcript.lastOrNull { it.role == ROLE_USER }?.let { signal.userChars += it.content.length }
         }
+        if (userChars > 0) signal.userChars += userChars
         signal.turns += 1
         val score = score(signal)
         if (score < SCORE_THRESHOLD) {

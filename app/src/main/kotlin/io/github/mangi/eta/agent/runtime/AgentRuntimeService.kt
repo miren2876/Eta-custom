@@ -632,6 +632,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 runId = run.session.runId,
                 transcript = run.session.transcript,
                 enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
+                userChars = run.request.prompt.length,
             )
             // 整理 run 到此为止：它不该碰胶囊，但结果要落盘，否则失败时无从定位。
             if (memoryIdleReview.isReviewRun(run.session.runId)) {
