@@ -12,14 +12,23 @@ internal class AgentContextSummarizer(
     private val roleplay: Boolean,
 ) {
     /**
-     * 长历史必须分块摘要：整段历史一次性发给模型时，摘要请求本身就会超过模型容量而失败
-     * （历史越大越必失败）。逐块摘要后再折叠合并，单次请求始终远小于窗口。
+     * 先整段摘要一次；整段历史超过模型容量（摘要请求自己就失败）时，退回分块摘要再折叠合并。
+     * 不这么做的话，历史一长压缩就永远失败，原文只能一直保留到撞上窗口上限。
      */
     fun summarize(history: List<AgentModelClient.ConversationMessage>): String {
         controller.throwIfCancelled()
         val blocks = history.map { AgentConversationCodec.toJsonObject(it).toString() }
+        val joined = blocks.joinToString("\n")
+        // 先按整段摘要一次（保持单次请求的既有契约）；只有真机长历史整段摘不下时才分块。
+        if (joined.length <= MAX_INPUT_CHARS) return summarizeText(joined, MAX_SUMMARY_CHARS)
+        try {
+            return summarizeText(joined, MAX_SUMMARY_CHARS)
+        } catch (failure: AgentModelFailure) {
+            controller.throwIfCancelled()
+            // 只有「装不下/摘要不合规」值得换更小的块重来；网络、认证、额度问题直接上抛。
+            if (failure.code !in SPLIT_RETRY_CODES) throw failure
+        }
         val chunks = split(blocks, MAX_INPUT_CHARS)
-        if (chunks.size == 1) return summarizeText(chunks.first(), MAX_SUMMARY_CHARS)
         var partials = chunks.map { summarizeText(it, MAX_PARTIAL_CHARS) }
         var round = 0
         while (partials.joinToString("\n\n").length > MAX_SUMMARY_CHARS && round < MAX_MERGE_ROUNDS) {
@@ -27,9 +36,9 @@ internal class AgentContextSummarizer(
             partials = split(partials, MAX_INPUT_CHARS).map { summarizeText(it, MAX_PARTIAL_CHARS) }
             round++
         }
-        val joined = partials.joinToString("\n\n").trim()
-        if (joined.isBlank() || joined.length > MAX_SUMMARY_CHARS) throw invalidSummary()
-        return joined
+        val merged = partials.joinToString("\n\n").trim()
+        if (merged.isBlank() || merged.length > MAX_SUMMARY_CHARS) throw invalidSummary()
+        return merged
     }
 
     private fun summarizeText(historyText: String, limitChars: Int): String {
@@ -88,9 +97,10 @@ internal class AgentContextSummarizer(
     private companion object {
         const val MAX_SUMMARY_CHARS = 12_000
         /** 单次摘要请求的输入预算：留出系统提示与输出空间，远低于常见模型窗口。 */
-        const val MAX_INPUT_CHARS = 24_000
+        const val MAX_INPUT_CHARS = 40_000
         /** 分块阶段每块摘要的上限，避免合并轮次发散。 */
         const val MAX_PARTIAL_CHARS = 3_000
         const val MAX_MERGE_ROUNDS = 3
+        val SPLIT_RETRY_CODES = setOf("CONTEXT_OVERFLOW", "CONTEXT_SUMMARY_INVALID")
     }
 }
