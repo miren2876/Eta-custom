@@ -255,23 +255,6 @@ private fun SettingsPageContent(
     val powerAssistantItems = powerAssistantTargets.map { target ->
         DropdownItem(text = target.displayName(context))
     }
-    val multiRunModes = Prefs.MultiRunMode.entries
-    var multiRunModeIndex by remember(agentPrefs) {
-        mutableStateOf(
-            multiRunModes.indexOfFirst {
-                it.key == agentPrefs?.getString(
-                    Prefs.Keys.AGENT_MULTI_RUN_MODE,
-                    Prefs.MultiRunMode.REPLACE.key,
-                )
-            }.coerceAtLeast(0),
-        )
-    }
-    val multiRunItems = listOf(
-        DropdownItem(text = stringResource(R.string.settings_multi_run_replace)),
-        DropdownItem(text = stringResource(R.string.settings_multi_run_queue)),
-        DropdownItem(text = stringResource(R.string.settings_multi_run_concurrent)),
-    )
-
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_set_up_7debf9),
         onBack = onBack,
@@ -442,40 +425,6 @@ private fun SettingsPageContent(
                         iconTint = EtaPreferenceColors.Green,
                     )
 
-                    EtaPreferenceDivider()
-                    EtaDropdownPreference(
-                        title = stringResource(R.string.settings_multi_run_mode),
-                        summary = stringResource(R.string.settings_multi_run_mode_summary),
-                        items = multiRunItems,
-                        selectedIndex = multiRunModeIndex,
-                        onSelectedIndexChange = { index ->
-                            val mode = multiRunModes.getOrNull(index)
-                                ?: return@EtaDropdownPreference
-                            val targetPrefs = agentPrefs
-                            if (
-                                targetPrefs == null ||
-                                putStringSync(
-                                    prefs = targetPrefs,
-                                    key = Prefs.Keys.AGENT_MULTI_RUN_MODE,
-                                    value = mode.key,
-                                )
-                            ) {
-                                multiRunModeIndex = index
-                            } else {
-                                Toast.makeText(
-                                    context.applicationContext,
-                                    context.getString(R.string.settings_write_failed),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        startAction = {
-                            EtaPreferenceIcon(
-                                icon = Icons.Rounded.Layers,
-                                tint = EtaPreferenceColors.Green,
-                            )
-                        },
-                    )
                 }
             }
 

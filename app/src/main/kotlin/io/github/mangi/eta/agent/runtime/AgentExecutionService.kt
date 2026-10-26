@@ -204,6 +204,10 @@ internal class AgentExecutionService : Service() {
             }
         }
 
+        /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
+        fun isRunActive(): Boolean =
+            runStatus != null || leases.hasPrefix("run:") || instance?.foregroundActive == true
+
         /** 必须从有效的用户入口取得引用，再创建会话或子进程；失败时调用方不启动任务。 */
         fun acquire(
             context: Context,
