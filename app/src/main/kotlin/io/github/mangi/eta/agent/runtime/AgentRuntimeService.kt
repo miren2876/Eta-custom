@@ -1198,12 +1198,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun toggleCapsule() {
         val expand = !capsuleExpanded.value
         // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) setCapsuleWindowHeight(CAPSULE_CONTROLS_HEIGHT_DP)
+        if (expand) {
+            setCapsuleWindowSize(CAPSULE_WINDOW_WIDTH_DP, CAPSULE_CONTROLS_HEIGHT_DP)
+        } else {
+            setCapsuleWindowSize(CAPSULE_COLLAPSED_SIZE_DP, CAPSULE_COLLAPSED_SIZE_DP)
+        }
         capsuleExpanded.value = expand
     }
 
     private fun onCapsuleCollapsedSettled() {
-        if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+        if (!capsuleExpanded.value) {
+            setCapsuleWindowSize(CAPSULE_COLLAPSED_SIZE_DP, CAPSULE_COLLAPSED_SIZE_DP)
+        }
     }
 
     /** 收起态拖动小球：跟着手指走，超出屏幕会被夹住。 */
@@ -1251,6 +1257,23 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 SettingsDataStore.updateSettings { settings ->
                     settings.copy(overlayCapsulePosX = x, overlayCapsulePosY = y)
                 }
+            }
+        }
+    }
+
+    /** 收起/展开切换窗口尺寸：收起是 88dp 正方形，展开才加宽到 272dp。 */
+    private fun setCapsuleWindowSize(widthDp: Int, heightDp: Int) {
+        val wm = windowManager ?: return
+        val capsule = capsuleView ?: return
+        val lp = capsuleParams ?: return
+        val width = dpToPx(widthDp)
+        val height = dpToPx(heightDp)
+        if (lp.width == width && lp.height == height) return
+        lp.width = width
+        lp.height = height
+        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_resize_failed") {
+                "Agent runtime capsule resize failed: type=${throwable.safeLogType()}"
             }
         }
     }
@@ -1412,8 +1435,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      */
     private fun capsuleLayoutParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
-            dpToPx(CAPSULE_WINDOW_WIDTH_DP),
-            dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP),
+            dpToPx(CAPSULE_COLLAPSED_SIZE_DP),
+            dpToPx(CAPSULE_COLLAPSED_SIZE_DP),
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -1427,7 +1450,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             x = if (capsuleCollapsedX != Int.MIN_VALUE) {
                 capsuleCollapsedX
             } else {
-                ((resources.displayMetrics.widthPixels - dpToPx(CAPSULE_WINDOW_WIDTH_DP)) / 2)
+                ((resources.displayMetrics.widthPixels - dpToPx(CAPSULE_COLLAPSED_SIZE_DP)) / 2)
             }
             y = if (capsuleCollapsedY != Int.MIN_VALUE) capsuleCollapsedY else statusBarHeightPx()
             windowAnimations = 0
@@ -1696,6 +1719,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val RESULT_CARD_HEIGHT_RATIO = 0.5f
         private const val RESULT_OPEN_REQUEST_CODE = 1108
         private const val CAPSULE_WINDOW_WIDTH_DP = 272
+        /** 收起态窗口是正方形：圆球才不会被拉成长条，窗口小才能拖到屏幕任意位置。 */
+        private const val CAPSULE_COLLAPSED_SIZE_DP = 88
         private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
