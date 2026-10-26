@@ -416,8 +416,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         memoryIdleReview.bindRun(request.runId, request.effectiveModelSessionId, request.history.size)
         if (!reviewRun) {
             // 用户新任务优先：撤掉待执行的整理，并中止正在跑的整理。
+            // 用户任务优先撤掉「待执行」的整理；已经在跑的整理不打断，和用户任务并行。
             memoryIdleReview.onUserRunStarted()
-            cancelActiveReviewRuns()
         }
         val handoffPayload = request.handoff?.payload?.let { raw -> AgentUiHandoffPayload.from(raw) }
         runningSessionInfo[request.runId] = RunningSessionInfo(
@@ -1001,12 +1001,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         capsuleExpanded.value = false
         setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
         ensureOverlayVisible()
-    }
-
-    /** 中止正在跑的整理 run；用户的新任务不该排在后台整理后面。 */
-    private fun cancelActiveReviewRuns() {
-        runs.all().filter { memoryIdleReview.isReviewRun(it.runId) }
-            .forEach { it.session.controller.cancel() }
     }
 
     /** 起一个隐藏的记忆整理 run：只给记忆工具，不属于任何会话。 */
