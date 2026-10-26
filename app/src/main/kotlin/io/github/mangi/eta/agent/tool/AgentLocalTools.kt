@@ -71,6 +71,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.runBlocking
 
+/** 记忆写入策略：整理 run 只允许写一层，且档案只能追加。 */
+internal enum class AgentMemoryWritePolicy { FULL, REVIEW }
+
 internal class AgentLocalTools(
     private val context: Context,
     private val logger: AgentLogger,
@@ -110,6 +113,10 @@ internal class AgentLocalTools(
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
     private val virtualScreenSettings: () -> Settings = { runBlocking { SettingsDataStore.settings() } },
+    private val askUserPrompt: ((JSONObject) -> String)? = null,
+    /** 本次 run 所属会话；提问卡片只在对应会话里显示。 */
+    private val askUserConversationId: String? = null,
+    private val memoryWritePolicy: AgentMemoryWritePolicy = AgentMemoryWritePolicy.FULL,
     private val virtualUiExecutor: ((String, JSONObject) -> AgentModelClient.ToolResult)? = null,
     private val fallbackApproval: ((String, String) -> MainScreenFallbackDecision)? = null,
     private val onMainScreenFallback: () -> Unit = {},
@@ -370,6 +377,7 @@ internal class AgentLocalTools(
                         if (args.optString("action") == "close") result else handleVirtualResult(toolCall.name, result)
                     }
                 }
+                "ask_user" -> askUser(args)
                 "get_current_context" -> textResult(DeviceContextTool.current(context))
                 "search_apps" -> textResult(searchApps(args))
                 "launch_app" -> {
@@ -509,6 +517,24 @@ internal class AgentLocalTools(
         return block()
     }
 
+    private fun askUser(args: JSONObject): AgentModelClient.ToolResult {
+        if (memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+            return textResult(errorResult("ASK_USER_UNAVAILABLE", "整理 run 不能向用户提问"))
+        }
+        if (!Prefs.isEnabled(Prefs.Keys.AGENT_ASK_USER)) {
+            return textResult(errorResult("ASK_USER_DISABLED", "请先在 设置 → 对话 里开启「不确定时向我提问」"))
+        }
+        val executor = askUserPrompt
+        val result = executor?.invoke(args) ?: io.github.mangi.eta.agent.prompt.AgentUserPrompt.request(
+            context = context,
+            owner = browserRunId,
+            args = args,
+            conversationId = askUserConversationId,
+            isCancelled = { closed.get() || isRunCancelled() },
+        )
+        return textResult(result)
+    }
+
     private fun memoryToolPermissionError(toolName: String): AgentModelClient.ToolResult? {
         if (toolName == "memory_write" && !memoryWritable) {
             return AgentModelClient.ToolResult(
@@ -523,69 +549,287 @@ internal class AgentLocalTools(
         )
     }
 
-    private fun memoryGet(args: JSONObject): String = try {
-        val result = AgentMemoryRepository.read(
-            query = args.optString("query").takeIf(String::isNotBlank),
-            startLine = args.optInt("start_line", 1),
-            maxChars = args.optInt("max_chars", 12_000),
-        )
+    private fun memoryGet(args: JSONObject): String {
+        val archiveName = args.optString("archive").takeIf(String::isNotBlank)
+        return if (archiveName != null) memoryGetArchive(archiveName, args) else memoryGetContent(args)
+    }
+
+    /** 读取一个独立记忆档案（memory/files/<name>.md；已归档的在 memory/archive/）。 */
+    private fun memoryGetArchive(name: String, args: JSONObject): String = try {
+        val full = AgentMemoryRepository.fileText(name)
+        AgentMemoryRepository.recordFileHit(name)
+        val outline = args.optBoolean("outline", false)
+        val section = args.optString("section").takeIf(String::isNotBlank)
+        val text = when {
+            outline -> memoryOutline(full)
+            section != null -> memorySection(full, section)
+            else -> full
+        }
         JSONObject()
             .put("ok", true)
-            .put("revision", result.snapshot.revision)
-            .put("bytes", result.snapshot.byteSize)
-            .put("line_count", result.snapshot.lineCount)
-            .put("start_line", result.startLine ?: JSONObject.NULL)
-            .put("end_line", result.endLine ?: JSONObject.NULL)
-            .put("matched_lines", result.matchedLines)
-            .put("has_more", result.hasMore)
-            .put("content", result.content)
+            .put("archive", name)
+            .put("mode", if (outline) "outline" else if (section != null) "section" else "full")
+            .put("bytes", text.toByteArray(Charsets.UTF_8).size)
+            .put("line_count", if (text.isEmpty()) 0 else text.split('\n').size)
+            .put("content", text)
             .toString()
+    } catch (failure: AgentMemoryException) {
+        errorResult(failure.code, failure.message ?: "档案读取失败")
+    }
+
+    /** 小节目录：标题 + 该节行数，先看目录再决定读哪一节。 */
+    private fun memoryOutline(text: String): String {
+        val lines = text.split('\n')
+        val heads = lines.withIndex().filter { (_, line) -> line.trimStart().startsWith("#") }
+        return heads.mapIndexed { index, (at, title) ->
+            val end = heads.getOrNull(index + 1)?.index ?: lines.size
+            "$title（${end - at} 行）"
+        }.joinToString("\n")
+    }
+
+    /** 取某一节正文：先按标题精确匹配，再退化为包含匹配，都没有就报错。 */
+    private fun memorySection(text: String, section: String): String {
+        val lines = text.split('\n')
+        val heads = lines.withIndex().filter { (_, line) -> line.trimStart().startsWith("#") }
+        val match = heads.firstOrNull { (_, line) -> line.trimStart().trimStart('#').trim() == section.trim() }
+            ?: heads.firstOrNull { (_, line) -> line.contains(section) }
+            ?: throw AgentMemoryException("MEMORY_SECTION_MISSING", "档案里没有这一节：$section")
+        val end = heads.getOrNull(heads.indexOf(match) + 1)?.index ?: lines.size
+        return lines.subList(match.index, end).joinToString("\n").trimEnd()
+    }
+
+    private fun memoryGetContent(args: JSONObject): String = try {
+        val query = args.optString("query").takeIf(String::isNotBlank)
+        if (query == null) memoryOverviewJson() else memorySearchJson(query)
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆读取失败")
     }
 
-    private fun memoryWrite(args: JSONObject): String = try {
-        val revision = args.getString("revision")
-        val mutation = when (args.getString("mode")) {
-            "replace_range" -> AgentMemoryMutation.ReplaceRange(
-                revision = revision,
-                startLine = args.getInt("start_line"),
-                endLine = args.getInt("end_line"),
-                content = args.requiredText("content"),
+    /** 不带 query：返回用户画像 + 活跃条目（含 EI / 引用次数）+ 档案清单。 */
+    private fun memoryOverviewJson(): String {
+        val core = AgentMemoryRepository.coreSnapshot().content
+        val index = AgentMemoryRepository.fileIndexText()
+        val entries = JSONArray()
+        AgentMemoryRepository.entries().forEach { entry ->
+            entries.put(
+                JSONObject()
+                    .put("text", entry.text)
+                    .put("importance", entry.importance)
+                    .put("hit_count", entry.hitCount)
+                    .put("ei", entry.effectiveImportance)
+                    .put("idle_days", idleDays(entry.lastHitAtMillis, entry.writtenAtMillis)),
             )
-            "append" -> AgentMemoryMutation.Append(
-                revision = revision,
-                content = args.requiredText("content"),
-            )
-            "clear" -> AgentMemoryMutation.Clear(revision)
-            else -> error("不支持的记忆写入模式")
         }
-        when (val result = AgentMemoryRepository.mutate(mutation)) {
-            is AgentMemoryWriteResult.Success -> JSONObject()
+        return JSONObject()
+            .put("ok", true)
+            .put("mode", "overview")
+            .put("core", core)
+            .put("line_count", entries.length())
+            .put("bytes", core.toByteArray(Charsets.UTF_8).size)
+            .put("entries", entries)
+            .put("files", index)
+            .put("content", buildString {
+                if (core.isNotBlank()) append(core).append("\n\n")
+                append(index)
+            }.trim())
+            .toString()
+    }
+
+    /** 条目距最近一次使用（命中或写入）多少天；没有记录返回 null。 */
+    private fun idleDays(lastHitAtMillis: Long, writtenAtMillis: Long): Int? {
+        val lastTouched = maxOf(lastHitAtMillis, writtenAtMillis)
+        if (lastTouched <= 0L) return null
+        return ((System.currentTimeMillis() - lastTouched) / (24L * 60 * 60 * 1000)).toInt()
+    }
+
+    /** 带 query：在档案与活跃条目里按相关度检索（命中累加引用次数）。 */
+    private fun memorySearchJson(query: String): String {
+        val hits = AgentMemoryRepository.searchFiles(query)
+        hits.forEach { hit -> AgentMemoryRepository.recordFileHit(hit.name) }
+        val entryHits = AgentMemoryRepository.searchEntries(query)
+        entryHits.forEach { hit -> AgentMemoryRepository.recordEntryHit(hit.entry.text) }
+        val entryHitsJson = JSONArray()
+        entryHits.forEach { hit ->
+            entryHitsJson.put(
+                JSONObject()
+                    .put("text", hit.entry.text)
+                    .put("importance", hit.entry.importance)
+                    .put("ei", hit.entry.effectiveImportance)
+                    .put("score", hit.score),
+            )
+        }
+        val hitsJson = JSONArray()
+        hits.forEach { hit ->
+            val lines = JSONArray()
+            hit.hits.forEach { line ->
+                lines.put(
+                    JSONObject()
+                        .put("line", line.lineNumber)
+                        .put("text", line.line)
+                        .put("score", line.score),
+                )
+            }
+            hitsJson.put(
+                JSONObject()
+                    .put("name", hit.name)
+                    .put("archived", hit.archived)
+                    .put("lines", hit.lineCount)
+                    .put("score", hit.totalScore)
+                    .put("hits", lines),
+            )
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("mode", "search")
+            .put("query", query)
+            .put("files", AgentMemoryRepository.fileIndexText())
+            .put("hit_count", hits.size)
+            .put("hits", hitsJson)
+            .put("entry_count", entryHits.size)
+            .put("entry_hits", entryHitsJson)
+            .toString()
+    }
+
+    /** 整理 run 的层锁：第一次写档案或写条目就决定本轮所写的层。 */
+    private val memoryReviewLayer = java.util.concurrent.atomic.AtomicReference<String?>(null)
+
+    private fun memoryWrite(args: JSONObject): String {
+        val archiveName = args.optString("archive").takeIf(String::isNotBlank)
+        if (memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+            val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
+            if (archiveName == null && target != null && target != "entry") {
+                return errorResult(
+                    "MEMORY_REVIEW_TARGET_DENIED",
+                    "整理 run 只能追加档案或写条目，不能改画像或整份工作记忆",
+                )
+            }
+            val layer = if (archiveName != null) "档案" else "条目"
+            val declared = memoryReviewLayer.get()
+            if (declared == null) {
+                memoryReviewLayer.compareAndSet(null, layer)
+            } else if (declared != layer) {
+                return errorResult(
+                    "MEMORY_REVIEW_LAYER_LOCKED",
+                    "这轮已经写过$declared，整理 run 一轮只写一层",
+                )
+            }
+        }
+        return if (archiveName != null) memoryWriteArchive(args, archiveName) else memoryWriteMemory(args)
+    }
+
+    /** 写独立档案：mode=append 追加，mode=replace 整体替换（不存在则创建）。 */
+    private fun memoryWriteArchive(args: JSONObject, name: String): String = try {
+        val content = memoryContent(args)
+        val mode = args.optString("mode", "append")
+        if (mode == "edit") {
+            val oldText = args.optString("old_text")
+            if (oldText.isBlank()) {
+                return errorResult("MEMORY_ARGUMENT_INVALID", "mode=edit 需要 old_text（要替换的原文片段，必须唯一）")
+            }
+            val edited = AgentMemoryRepository.editFile(name, oldText, content)
+            return JSONObject()
                 .put("ok", true)
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
+                .put("archive", edited.name)
+                .put("mode", "edit")
+                .put("bytes", edited.byteSize)
+                .put("line_count", edited.lineCount)
                 .toString()
-            is AgentMemoryWriteResult.Rejected -> JSONObject()
-                .put("ok", false)
-                .put("code", "MEMORY_DUPLICATE")
-                .put("message", result.notice)
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .toString()
-            is AgentMemoryWriteResult.Conflict -> JSONObject()
-                .put("ok", false)
-                .put("code", "MEMORY_CONFLICT")
-                .put("message", "记忆已发生变化，请先调用 memory_get 获取最新内容")
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .toString()
+        }
+        val append = mode != "replace"
+        if (!append && memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+            return errorResult(
+                "MEMORY_REVIEW_APPEND_ONLY",
+                "整理 run 不能整体覆盖档案；要修正既有内容请用 mode=edit + old_text",
+            )
+        }
+        val info = AgentMemoryRepository.writeFile(name, content, append)
+        JSONObject()
+            .put("ok", true)
+            .put("archive", info.name)
+            .put("bytes", info.byteSize)
+            .put("line_count", info.lineCount)
+            .toString()
+    } catch (failure: AgentMemoryException) {
+        errorResult(failure.code, failure.message ?: "档案写入失败")
+    }
+
+    private fun memoryWriteMemory(args: JSONObject): String = try {
+        val content = memoryContent(args)
+        when (args.optString("target").takeIf(String::isNotBlank)?.lowercase()) {
+            "profile" -> {
+                AgentMemoryRepository.replaceCoreProfile(content)
+                coreWriteResult("profile")
+            }
+
+            "working" -> {
+                AgentMemoryRepository.replaceCoreWorking(content)
+                coreWriteResult("working")
+            }
+
+            "entry" -> {
+                val importance = args.optInt("importance", 0).takeIf { it in 1..5 }
+                val match = args.optString("match").takeIf(String::isNotBlank)
+                AgentMemoryRepository.writeEntry(content, importance, match)
+                entryWriteResult(replaced = match != null, content = content)
+            }
+
+            else -> errorResult(
+                "MEMORY_TARGET_REQUIRED",
+                "请用 target=entry 写工作记忆条目、target=profile|working 覆盖整份文件，" +
+                    "或用 archive=<名字> 写档案",
+            )
         }
     } catch (failure: AgentMemoryException) {
         errorResult(failure.code, failure.message ?: "记忆写入失败")
+    } catch (failure: JSONException) {
+        errorResult("MEMORY_ARGUMENT_INVALID", "缺少 content 或参数格式不对")
+    }
+
+    /**
+     * 记忆写入的 content：必须显式给文本。
+     * 缺参数与「写入空内容」是两回事——删除条目要显式传 content=""，不能靠省略，
+     * 否则模型漏传时会被当成删除，反而误删条目。
+     */
+    private fun memoryContent(args: JSONObject): String {
+        val raw = args.opt("content")
+            ?: throw AgentMemoryException(
+                "MEMORY_CONTENT_REQUIRED",
+                "缺少 content：要写入的文本放在 content；删除条目请显式传 content=\"\"",
+            )
+        return raw as? String ?: throw AgentMemoryException(
+            "MEMORY_ARGUMENT_INVALID",
+            "content 必须是文本，收到的是 ${raw.javaClass.simpleName}",
+        )
+    }
+
+    /** 条目写入回执：回报条目数、工作记忆行数与字节数（行数/字节也用于聊天里的结果摘要）。 */
+    private fun entryWriteResult(replaced: Boolean, content: String): String {
+        val entries = AgentMemoryRepository.entries()
+        val workingBytes = AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size
+        return JSONObject()
+            .put("ok", true)
+            .put("target", "entry")
+            .put("action", when {
+                content.isBlank() -> "removed"
+                replaced -> "replaced"
+                else -> "appended"
+            })
+            .put("entry_count", entries.size)
+            .put("line_count", entries.size)
+            .put("bytes", workingBytes)
+            .put("working_bytes", workingBytes)
+            .toString()
+    }
+
+    private fun coreWriteResult(target: String): String {
+        val core = AgentMemoryRepository.coreSnapshot()
+        return JSONObject()
+            .put("ok", true)
+            .put("target", target)
+            .put("bytes", core.byteSize)
+            .put("line_count", core.lineCount)
+            .put("working_bytes", AgentMemoryRepository.coreWorking().toByteArray(Charsets.UTF_8).size)
+            .toString()
     }
 
     private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {

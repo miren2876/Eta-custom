@@ -164,6 +164,8 @@ internal class AgentRuntimeRunExecutor(
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
             val browserKey = AgentConversationIdentity.fromHandoff(request.handoff, request.runId)
+            // 记忆整理 run：只保留记忆工具，其余全部关掉，并且只允许写一层。
+            val memoryReview = request.config.memoryReviewMode
             browserBinding = BrowserSessionRegistry.acquireRun(browserKey, request.runId)
             guiRun = guiControl.openRun(request.runId, runController) { status ->
                 acceptEvent(
@@ -178,24 +180,30 @@ internal class AgentRuntimeRunExecutor(
                 browserSession = BrowserSessionRegistry.get(browserKey),
                 guiControl = guiRun,
                 virtualScreenOwner = request.virtualScreenOwner,
+                askUserConversationId = conversationId,
+                memoryWritePolicy = if (memoryReview) {
+                    AgentMemoryWritePolicy.REVIEW
+                } else {
+                    AgentMemoryWritePolicy.FULL
+                },
                 isRunCancelled = { runController.isCancelled },
                 onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
                 onVirtualTaskCancelled = { session.cancel("用户取消虚拟屏任务") },
                 browserToolsEnabled = {
-                    request.config.browserTools && currentPermissions().browserTools
+                    !memoryReview && request.config.browserTools && currentPermissions().browserTools
                 },
                 terminalToolsEnabled = {
-                    request.config.terminalTools && currentPermissions().terminalTools
+                    !memoryReview && request.config.terminalTools && currentPermissions().terminalTools
                 },
                 deviceDirectToolsEnabled = {
-                    request.config.deviceDirectTools && currentPermissions().deviceDirectTools
+                    !memoryReview && request.config.deviceDirectTools && currentPermissions().deviceDirectTools
                 },
                 deviceSensitiveReadToolsEnabled = {
-                    request.config.deviceSensitiveReadTools &&
+                    !memoryReview && request.config.deviceSensitiveReadTools &&
                         currentPermissions().deviceSensitiveReadTools
                 },
                 deviceSensitiveActionToolsEnabled = {
-                    request.config.deviceSensitiveActionTools &&
+                    !memoryReview && request.config.deviceSensitiveActionTools &&
                         currentPermissions().deviceSensitiveActionTools
                 },
                 memoryToolsEnabled = {
