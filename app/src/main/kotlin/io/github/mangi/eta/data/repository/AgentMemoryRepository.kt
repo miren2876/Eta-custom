@@ -2043,6 +2043,12 @@ internal object AgentMemoryRepository {
         return store.coreProjection(budgetChars)
     }
 
+    /** 核心记忆容量占用（与 coreProjection 同一份预算算法）。 */
+    fun coreUsage(budgetChars: Int): AgentMemoryCoreUsage {
+        ensureInitialized()
+        return store.coreUsage(budgetChars)
+    }
+
     fun migrateCoreIfNeeded(): Boolean {
         ensureInitialized()
         return store.migrateCoreIfNeeded()
