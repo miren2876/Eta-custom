@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -241,6 +242,7 @@ internal fun AgentMemoryScreen(
                     }
                     if (usage != null) {
                         val context = LocalContext.current
+                        val resources = LocalResources.current
                         EtaPreferenceGroup(
                             modifier = Modifier
                                 .padding(horizontal = 16.dp)
@@ -294,14 +296,16 @@ internal fun AgentMemoryScreen(
                                         reason = "manual",
                                         manual = true,
                                     )
-                                    val text = if (started) {
-                                        R.string.memory_compact_started
-                                    } else {
-                                        R.string.memory_compact_throttled
-                                    }
+                                    val message = resources.getString(
+                                        if (started) {
+                                            R.string.memory_compact_started
+                                        } else {
+                                            R.string.memory_compact_throttled
+                                        },
+                                    )
                                     android.widget.Toast.makeText(
                                         context,
-                                        context.getString(text),
+                                        message,
                                         android.widget.Toast.LENGTH_SHORT,
                                     ).show()
                                 },
