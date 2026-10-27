@@ -101,7 +101,8 @@ internal fun ScriptManagerScreen(
 
     // 页面可见期间持有 1 秒采样租约；离开即释放，不留常驻 root 进程。
     DisposableEffect(Unit) {
-        val lease = LinuxProcessSampler.acquire(1_000L)
+        // 页面只在可见时用 2 秒粒度刷新占用；运行状态来自任务记录，不受采样节拍影响。
+        val lease = LinuxProcessSampler.acquire(2_000L)
         onDispose {
             lease.release()
             // 离开页面后不再需要 Android 环境脚本的进程树，通知侧只关心 rootfs。

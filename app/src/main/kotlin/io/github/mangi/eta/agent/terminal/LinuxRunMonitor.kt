@@ -49,7 +49,11 @@ internal object LinuxRunMonitor {
     private const val CHANNEL = "eta_linux_run"
     private const val NOTIFICATION_ID = 1108
     private const val MAX_EXPANDED_ROWS = 6
-    private const val NOTIFY_INTERVAL_MS = 4_000L
+    /**
+     * 通知的采样节拍。每轮都要起一次 ls 扫 /proc，手机上实测单轮 100-200ms；
+     * 通知只是概览，10 秒一次足够，比 4 秒省一半以上 CPU。
+     */
+    private const val NOTIFY_INTERVAL_MS = 10_000L
     private const val RECHECK_INTERVAL_MS = 5_000L
     private const val EXIT_TIMEOUT_SECONDS = 5L
     private const val STOPPED_PID_TTL_MS = 15_000L
