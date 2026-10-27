@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,9 +56,7 @@ import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.ansiPlainText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
@@ -514,8 +513,10 @@ private fun ProcessDetailDialog(
     onRequestStop: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
+    val context = LocalContext.current
+    // 用系统时间格式，避免在 composable 里直接读 Locale（lint NonObservableLocale）。
     val timeLabel = sampledAt?.let {
-        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it))
+        android.text.format.DateFormat.getTimeFormat(context).format(Date(it))
     }
     EtaWindowDialog(show = true, title = process.usage, onDismissRequest = onDismiss) {
         Column {

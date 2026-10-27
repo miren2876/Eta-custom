@@ -49,8 +49,17 @@ internal object LinuxProcessSampler {
     private const val RESTART_DELAY_MS = 2_000L
     private const val NO_ROOT_DELAY_MS = 5_000L
 
-    /** 采样脚本的命令行标记：停止时用它兜底清理残留的 root 循环。 */
+    /** 采样脚本的命令行标记，只用于识别与日志。 */
     private const val SCRIPT_MARKER = "eta_proc_sampler"
+
+    /**
+     * 停止标志文件：脚本每轮开头检查它，存在就自行退出。
+     * 只杀 su 父进程时 root 侧 shell 会变成孤儿继续跑，这是之前 CPU 飙高的直接原因。
+     */
+    private const val STOP_FILE = "/data/local/tmp/eta_proc_sampler.stop"
+
+    /** 让旧循环看到停止标志并退出的等待时间。 */
+    private const val STOP_GRACE_MS = 1_500L
 
     private val suCandidates = listOf("/system/bin/su", "su", "/system/xbin/su", "/data/adb/ksu/bin/su")
 
@@ -126,12 +135,20 @@ internal object LinuxProcessSampler {
         val desired = desiredIntervalLocked()
         if (desired <= 0L) return
         if (!forceRestart && job?.isActive == true && activeIntervalMs == desired) return
+        val hadLoop = job != null || activeIntervalMs != 0L
         // 间隔变了必须重启 root 循环（sleep 参数写死在脚本里）；这里不阻塞调用线程。
         job?.cancel()
         activeProcess?.destroy()
         activeProcess = null
         activeIntervalMs = desired
-        job = scope.launch { runLoop(desired) }
+        job = scope.launch {
+            if (hadLoop) {
+                // 先让可能残留的旧循环看到停止标志，再启动新的，避免孤儿循环叠加。
+                stopStrayLoops()
+                delay(STOP_GRACE_MS)
+            }
+            runLoop(desired)
+        }
     }
 
     private fun ensureIntervalLocked() {
@@ -148,12 +165,13 @@ internal object LinuxProcessSampler {
         activeProcess = null
         synchronized(previousTicksLock) { previousTicks = emptyMap() }
         _snapshot.value = null
-        // su 被杀后 root 侧的 shell 可能变成孤儿继续跑，按脚本标记再清一次。
-        scope.launch { killStraySampler() }
+        // 让 root 侧循环自己退出：只 destroy su 会留下孤儿 shell。
+        scope.launch { stopStrayLoops() }
     }
 
     private suspend fun runLoop(intervalMs: Long) {
         var suIndex = 0
+        var failures = 0
         while (currentCoroutineContext().isActive) {
             if (!RootAccess.isGranted) {
                 _snapshot.value = null
@@ -164,8 +182,9 @@ internal object LinuxProcessSampler {
             val process = startSamplerProcess(su, intervalMs)
             if (process == null) {
                 suIndex += 1
+                failures += 1
                 AndroidAgentLogger.warn("linux_process_sampler_su_failed: $su")
-                delay(RESTART_DELAY_MS)
+                delay(backoffMillis(failures))
                 continue
             }
             activeProcess = process
@@ -189,11 +208,20 @@ internal object LinuxProcessSampler {
             runCatching { process.waitFor() }
             activeProcess = null
             // 这个 su 一条数据都没给（不可执行或权限被拒），换下一个候选。
-            if (!sawData) suIndex += 1
+            if (!sawData) {
+                suIndex += 1
+                failures += 1
+            } else {
+                failures = 0
+            }
             if (!currentCoroutineContext().isActive) break
-            delay(RESTART_DELAY_MS)
+            delay(if (failures > 0) backoffMillis(failures) else RESTART_DELAY_MS)
         }
     }
+
+    /** 连续失败时指数退避，避免 su 不可用时每 2 秒 fork 一次。 */
+    private fun backoffMillis(failures: Int): Long =
+        (2_000L shl failures.coerceIn(0, 5)).coerceAtMost(60_000L)
 
     private fun startSamplerProcess(su: String, intervalMs: Long): Process? = runCatching {
         ProcessBuilder(su, "-c", samplerScript(intervalMs)).redirectErrorStream(true).start()
@@ -201,18 +229,17 @@ internal object LinuxProcessSampler {
 
     private fun samplerScript(intervalMs: Long): String {
         val intervalSeconds = (intervalMs.coerceAtLeast(MIN_INTERVAL_MS) / 1000.0).toString()
-        // 每轮先用 ls 批量读 /proc/*/root 与 /proc/*/exe（各一次 fork）筛出候选 pid，
-        // 再只对候选读 stat/status/cmdline。逐进程 fork 的写法在这台机器上
-        // 20 秒只能遍历一百多个进程，常驻循环根本跑不完一轮。
+        // 每轮只做一次 ls 批量读 /proc/*/root 筛候选 pid，再只对候选读 stat/status/cmdline。
+        // 逐进程 fork 的写法在这台机器上 10 秒才处理 74 个进程，常驻循环根本跑不完一轮。
+        // 没有命中进程时把周期放宽到 5 秒，空闲时几乎不占 CPU。
         return """
             # $SCRIPT_MARKER
+            STOP='$STOP_FILE'
             EXTRA_PIDS='${extraRootPids.joinToString(" ")}'
-            while true; do
-              {
-                {
-                  ls -l /proc/[0-9]*/root 2>/dev/null
-                  ls -l /proc/[0-9]*/exe 2>/dev/null
-                } | awk '
+            rm -f "${'$'}STOP"
+            while [ ! -f "${'$'}STOP" ]; do
+              hits=${'$'}( {
+                ls -l /proc/[0-9]*/root 2>/dev/null | awk '
                   {
                     i = index(${'$'}0, " -> ")
                     if (i == 0) next
@@ -224,7 +251,8 @@ internal object LinuxProcessSampler {
                     if (lhs != "") print lhs
                   }'
                 for r in ${'$'}EXTRA_PIDS; do echo "${'$'}r"; done
-              } | sort -u | while read -r pid; do
+              } | sort -u )
+              for pid in ${'$'}hits; do
                 [ -d "/proc/${'$'}pid" ] || continue
                 st=${'$'}(cat "/proc/${'$'}pid/stat" 2>/dev/null)
                 [ -z "${'$'}st" ] && continue
@@ -340,16 +368,16 @@ internal object LinuxProcessSampler {
         return false
     }
 
-    /** 兜底清理可能残留的采样 shell（su 被杀后子进程会变孤儿）。 */
-    private fun killStraySampler() {
-        runCatching {
-            for (su in suCandidates) {
-                val process = ProcessBuilder(su, "-c", "pkill -f $SCRIPT_MARKER")
-                    .redirectErrorStream(true)
-                    .start()
+    /** 让所有 root 侧采样循环看到停止标志并退出（写文件比 pkill 安全，也不会误杀自己）。 */
+    private fun stopStrayLoops() {
+        for (su in suCandidates) {
+            val ok = runCatching {
+                val process = ProcessBuilder(su, "-c", "touch $STOP_FILE").redirectErrorStream(true).start()
                 process.inputStream.bufferedReader().readText()
                 process.waitFor()
-            }
+                true
+            }.getOrDefault(false)
+            if (ok) return
         }
     }
 }
