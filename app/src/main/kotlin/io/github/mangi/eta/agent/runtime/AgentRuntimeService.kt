@@ -1071,7 +1071,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 images = emptyList(),
             )
         )
-        return true
     }
 
     /** 记忆压缩 run：与空闲审查同样的工具裁剪，但写入策略是 COMPACT（允许删条目、重写画像）。 */
@@ -1100,6 +1099,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 images = emptyList(),
             )
         )
+        return true
     }
 
     /** 空闲审查的落盘轨迹（memory/review.log，保留最近 200 行）。 */
