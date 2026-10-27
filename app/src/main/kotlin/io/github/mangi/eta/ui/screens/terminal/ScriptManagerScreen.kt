@@ -12,10 +12,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -29,7 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.terminal.LinuxProcessInfo
+import io.github.mangi.eta.agent.terminal.LinuxProcessSampler
+import io.github.mangi.eta.agent.terminal.ProcessUsage
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
+import io.github.mangi.eta.agent.terminal.detachedProcesses
 import io.github.mangi.eta.ui.app.ConversationTimeLabels
 import io.github.mangi.eta.ui.app.ScriptLibraryStore
 import io.github.mangi.eta.ui.app.ScriptUi
@@ -54,39 +58,53 @@ import top.yukonga.miuix.kmp.squircle.squircleBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.runtime.collectAsState
 
-/** 管理脚本页：脚本库的增删改与启停，运行中的脚本每 2 秒刷新一次进程树占用。 */
+/**
+ * 后台任务页：运行中的脚本任务、游离进程与已保存脚本。
+ *
+ * 进程数据来自 [LinuxProcessSampler] 的常驻采样循环：页面只持一个 1 秒租约并订阅快照，
+ * 不再自己起 su 轮询；脚本的运行状态仍由 [ScriptLibraryStore] 每轮从任务记录现查。
+ */
 @Composable
 internal fun ScriptManagerScreen(
     store: ScriptLibraryStore,
     onBack: () -> Unit,
-    onOpenProcesses: () -> Unit = {},
 ) {
     val state by store.uiState.collectAsState()
+    val snapshot by LinuxProcessSampler.snapshot.collectAsState()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var editor by remember { mutableStateOf<ScriptDraft?>(null) }
     var actionsFor by remember { mutableStateOf<ScriptUi?>(null) }
     var stopTarget by remember { mutableStateOf<ScriptUi?>(null) }
     var deleteTarget by remember { mutableStateOf<ScriptUi?>(null) }
     var logsTaskId by remember { mutableStateOf<String?>(null) }
+    // 点过的游离进程先从列表里拿掉，等下一轮快照校正，保证「点完立刻消失」。
+    var pendingKills by remember { mutableStateOf(setOf<Int>()) }
+
+    // 页面可见期间持有 1 秒采样租约；离开即释放，不留常驻 root 进程。
+    DisposableEffect(Unit) {
+        val lease = LinuxProcessSampler.acquire(1_000L)
+        onDispose { lease.release() }
+    }
 
     // 只在本页可见时轮询；离开页面这一协程随组合取消，不留后台定时器。
     LaunchedEffect(Unit) {
         while (isActive) {
             store.refresh()
             now = System.currentTimeMillis()
-            delay(2_000)
+            delay(1_000)
         }
+    }
+
+    // 进程真的从快照里消失后，清掉对应的乐观隐藏标记（没杀掉的话下一轮会重新出现）。
+    LaunchedEffect(snapshot) {
+        val live = snapshot?.processes?.mapTo(mutableSetOf()) { it.pid }.orEmpty()
+        if (pendingKills.isNotEmpty()) pendingKills = pendingKills.filter { it in live }.toSet()
     }
 
     MiuixScaffoldPage(
         title = stringResource(R.string.route_scripts),
         onBack = onBack,
         actions = {
-            RowIconAction(
-                icon = Icons.Rounded.Memory,
-                contentDescription = stringResource(R.string.background_processes_title),
-                onClick = onOpenProcesses,
-            )
             RowIconAction(
                 icon = Icons.Rounded.Add,
                 contentDescription = stringResource(R.string.scripts_new),
@@ -109,7 +127,22 @@ internal fun ScriptManagerScreen(
         }
         val running = state.scripts.filter { it.running }
         val saved = state.scripts.filterNot { it.running }
-        if (state.loaded && state.scripts.isEmpty()) {
+        val scriptRoots = running.mapNotNull { it.pid }
+        val detached = snapshot
+            ?.let { detachedProcesses(it.processes, scriptRoots) }
+            .orEmpty()
+            .filterNot { it.pid in pendingKills }
+        if (!state.loaded) {
+            item(key = "loading") {
+                EtaPreferenceGroup {
+                    EtaPreference(
+                        title = stringResource(R.string.tasks_loading),
+                        startAction = { InfiniteProgressIndicator(size = 16.dp) },
+                    )
+                }
+            }
+        }
+        if (state.loaded && state.scripts.isEmpty() && detached.isEmpty()) {
             item(key = "empty") {
                 EtaPreferenceGroup {
                     EtaPreference(
@@ -119,22 +152,43 @@ internal fun ScriptManagerScreen(
                 }
             }
         }
-        if (running.isNotEmpty()) {
+        if (running.isNotEmpty() || detached.isNotEmpty()) {
             item(key = "running-title") {
                 EtaPreferenceGroupTitle(stringResource(R.string.scripts_group_running))
             }
-            item(key = "running") {
-                EtaPreferenceGroup {
-                    running.forEachIndexed { index, script ->
-                        if (index > 0) EtaPreferenceDivider()
-                        ScriptRow(
-                            script = script,
-                            now = now,
-                            onStart = { store.startScript(script.id) },
-                            onStop = { stopTarget = script },
-                            onLogs = script.taskId?.let { taskId -> { logsTaskId = taskId } },
-                            onClick = { actionsFor = script },
-                        )
+            if (running.isNotEmpty()) {
+                item(key = "running-scripts") {
+                    EtaPreferenceGroup {
+                        running.forEachIndexed { index, script ->
+                            if (index > 0) EtaPreferenceDivider()
+                            ScriptRow(
+                                script = script,
+                                now = now,
+                                onStart = { store.startScript(script.id) },
+                                onStop = { stopTarget = script },
+                                onLogs = script.taskId?.let { taskId -> { logsTaskId = taskId } },
+                                onClick = { actionsFor = script },
+                            )
+                        }
+                    }
+                }
+            }
+            if (detached.isNotEmpty()) {
+                item(key = "running-processes-title") {
+                    EtaPreferenceGroupTitle(stringResource(R.string.tasks_group_detached))
+                }
+                item(key = "running-processes") {
+                    EtaPreferenceGroup {
+                        detached.forEachIndexed { index, process ->
+                            if (index > 0) EtaPreferenceDivider()
+                            DetachedProcessRow(
+                                process = process,
+                                onKill = {
+                                    pendingKills = pendingKills + process.pid
+                                    store.killDetachedProcess(process.pid)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -253,6 +307,60 @@ private data class ScriptDraft(
     val cwd: String = "",
     val running: Boolean = false,
 )
+
+@Composable
+private fun DetachedProcessRow(
+    process: LinuxProcessInfo,
+    onKill: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val meta = stringResource(
+        R.string.tasks_process_meta,
+        process.pid,
+        process.cpuPercent?.let { "%.1f%%".format(it) } ?: "—",
+        "%.1f MB".format(process.memoryMb),
+    )
+    val command = ProcessUsage.commandSummary(process.command, maxChars = 56)
+    val cwd = process.cwd
+    EtaPreference(
+        content = {
+            Text(
+                text = process.usage,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = command,
+                style = MiuixTheme.textStyles.footnote2.copy(fontFamily = EtaMonospace),
+                color = colors.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Text(
+                text = if (cwd.isNullOrBlank()) meta else "$cwd · $meta",
+                style = MiuixTheme.textStyles.footnote2,
+                color = colors.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        },
+        startAction = { StatusDot(color = colors.primary) },
+        endActions = {
+            RowIconAction(
+                icon = Icons.Rounded.Stop,
+                contentDescription = stringResource(R.string.tasks_process_stop_hint),
+                tint = colors.error,
+                onClick = onKill,
+            )
+        },
+        onClick = onKill,
+    )
+}
 
 @Composable
 private fun ScriptRow(

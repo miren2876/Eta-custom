@@ -83,7 +83,7 @@
   <string name="terminal_output_truncated">Output too long; truncated</string>
   <string name="terminal_linux_not_ready">Linux environment is not installed yet</string>
   <string name="terminal_open_environment">Install now</string>
-  <string name="terminal_daemon_tasks">Background tasks</string>
+  <string name="terminal_daemon_tasks">Terminal background commands</string>
   <string name="terminal_daemon_empty">No background tasks</string>
   <string name="terminal_daemon_running">Running</string>
   <string name="terminal_daemon_exited">Exited</string>
@@ -1252,6 +1252,10 @@
   <string name="linux_run_title">Linux is running</string>
   <string name="linux_run_summary">%1$d processes running</string>
   <string name="linux_run_exit">Exit</string>
+  <string name="linux_run_group_summary">Linux is running</string>
+  <string name="linux_run_single_line">%1$s · CPU %2$s%% · %3$s MB</string>
+  <string name="linux_run_process_line">%1$s · PID %2$d · CPU %3$s%% · %4$s MB</string>
+  <string name="linux_run_more">…and %1$d more</string>
   <string name="settings_multi_run_mode">Multi-conversation runs</string>
   <string name="settings_multi_run_mode_summary">How a new task coexists with a task that is already running.</string>
   <string name="settings_multi_run_replace">Replace: the new task stops the running one (original)</string>
@@ -1753,7 +1757,7 @@
     <string name="memory_pager_prev">Previous</string>
     <string name="memory_pager_next">Next</string>
     <string name="memory_pager_status">Page %1$d of %2$d</string>
-  <string name="route_scripts">Scripts</string>
+  <string name="route_scripts">Background tasks</string>
   <string name="scripts_new">New script</string>
   <string name="scripts_name_label">Name</string>
   <string name="scripts_command_label">Command</string>
@@ -1790,7 +1794,8 @@
   <string name="top_bar_status_idle">%1$d messages · %2$s</string>
   <string name="speech_auto_read_on">Auto read-aloud on, tap to turn off</string>
   <string name="speech_auto_read_off">Auto read-aloud off, tap to turn on</string>
-  <string name="background_processes_title">Background processes</string>
-  <string name="background_processes_empty">No background processes</string>
-  <string name="background_processes_stop_hint">tap to stop</string>
+      <string name="tasks_loading">Reading processes…</string>
+  <string name="tasks_group_detached">Detached processes</string>
+  <string name="tasks_process_meta">PID %1$d · CPU %2$s · %3$s memory</string>
+  <string name="tasks_process_stop_hint">tap to stop</string>
 </resources>

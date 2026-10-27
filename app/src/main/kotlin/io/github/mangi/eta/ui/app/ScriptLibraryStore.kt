@@ -9,8 +9,9 @@ import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.ScriptDefinition
 import io.github.mangi.eta.agent.terminal.ScriptLibrary
+import io.github.mangi.eta.agent.terminal.LinuxProcessSampler
 import io.github.mangi.eta.agent.terminal.ScriptRuntimeUsage
-import io.github.mangi.eta.agent.terminal.ScriptRuntimeUsageReader
+import io.github.mangi.eta.agent.terminal.aggregateProcessTrees
 import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
@@ -38,6 +39,8 @@ internal data class ScriptUi(
     val running: Boolean = false,
     val taskId: String? = null,
     val startedAt: Long? = null,
+    /** 运行中任务的宿主 pid；游离进程判定与进程树聚合都用它。 */
+    val pid: Int? = null,
     val lastFinishedAt: Long? = null,
     /** success / failed / stopped；没有记录时为 null。 */
     val lastResult: String? = null,
@@ -53,8 +56,8 @@ internal data class ScriptManagerUiState(
 )
 
 /**
- * 管理脚本页的状态所有者：脚本库（文件）只存定义，运行状态每轮从 [DetachedTaskSupervisor] 现查，
- * 占用由 [ScriptRuntimeUsageReader] 在 Root 侧采样。页面负责驱动轮询，这里不常驻定时器。
+ * 后台任务页的状态所有者：脚本库（文件）只存定义，运行状态每轮从 [DetachedTaskSupervisor] 现查，
+ * 占用取 [LinuxProcessSampler] 的最近一份快照（与通知共用同一个采样循环）。页面负责驱动轮询。
  */
 internal class ScriptLibraryStore(
     context: Context,
@@ -73,23 +76,43 @@ internal class ScriptLibraryStore(
         },
         linuxSharedMountsProvider = { SharedFolderMounts.current() },
     )
-    private val usageReader = ScriptRuntimeUsageReader()
-
     private val _uiState = MutableStateFlow(ScriptManagerUiState())
     val uiState: StateFlow<ScriptManagerUiState> = _uiState.asStateFlow()
 
     private var refreshJob: Job? = null
+    private var pendingRefresh = false
 
-    /** 页面可见时每轮调用；上一轮还没跑完（采样要 ~1.3 秒）就跳过，不排队堆积。 */
+    /**
+     * 页面可见时每轮调用。
+     *
+     * 旧实现里占用采样要 sleep 1 秒，上一轮没跑完就把整轮丢掉，实际节拍被拉到 3 秒以上；
+     * 现在占用直接取常驻采样器的最近快照，重读一次只需读库文件与任务记录，
+     * 上一轮没跑完时记一个标志，跑完立刻补一轮，不再丢刷新。
+     */
     fun refresh() {
-        if (refreshJob?.isActive == true) return
-        refreshJob = scope.launch { reload() }
+        if (refreshJob?.isActive == true) {
+            pendingRefresh = true
+            return
+        }
+        refreshJob = scope.launch {
+            do {
+                pendingRefresh = false
+                reload()
+            } while (pendingRefresh)
+        }
     }
 
     /** 动作之后立刻反映结果：打断正在跑的轮询，重新读一遍。 */
     private fun refreshNow() {
         refreshJob?.cancel()
         refreshJob = scope.launch { reload() }
+    }
+
+    /** 结束一个游离进程；列表先由页面乐观隐藏，等采样快照校正。 */
+    fun killDetachedProcess(pid: Int) {
+        scope.launch {
+            withContext(Dispatchers.IO) { LinuxProcessSampler.killProcess(pid) }
+        }
     }
 
     fun dismissNotice() {
@@ -212,8 +235,15 @@ internal class ScriptLibraryStore(
         val statuses = withContext(Dispatchers.IO) { supervisor.list() }
         val running = statuses.filter { it.running }
         val resolved = scripts.map { script -> script to resolveTask(script, statuses, running) }
-        val pids = resolved.mapNotNull { (_, status) -> status?.takeIf { it.running }?.task?.pid }
-        val usage = withContext(Dispatchers.IO) { usageReader.read(pids) }
+        val rootPids = resolved.mapNotNull { (_, status) ->
+            status?.takeIf { it.running }?.task?.pid?.toInt()
+        }
+        val snapshot = LinuxProcessSampler.snapshot.value
+        val usage = if (snapshot == null) {
+            emptyMap()
+        } else {
+            aggregateProcessTrees(snapshot.processes, rootPids)
+        }
         _uiState.update { state ->
             state.copy(
                 scripts = resolved.map { (script, status) -> toScriptUi(script, status, usage) },
@@ -235,7 +265,7 @@ internal class ScriptLibraryStore(
     private fun toScriptUi(
         script: ScriptDefinition,
         status: DetachedTaskStatus?,
-        usage: Map<Long, ScriptRuntimeUsage>,
+        usage: Map<Int, ScriptRuntimeUsage>,
     ): ScriptUi {
         val running = status?.running == true
         val task = status?.task
@@ -248,6 +278,7 @@ internal class ScriptLibraryStore(
             running = running,
             taskId = task?.id,
             startedAt = task?.takeIf { running }?.startedAt,
+            pid = task?.takeIf { running }?.pid?.toInt(),
             lastFinishedAt = task?.completedAt ?: script.lastFinishedAt,
             lastResult = when {
                 running -> null
@@ -259,7 +290,7 @@ internal class ScriptLibraryStore(
                 }
                 else -> script.lastResult
             },
-            usage = task?.takeIf { running }?.let { usage[it.pid] },
+            usage = task?.takeIf { running }?.let { usage[it.pid.toInt()] },
         )
     }
 

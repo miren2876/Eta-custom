@@ -83,7 +83,7 @@
   <string name="terminal_output_truncated">輸出過長，已截斷</string>
   <string name="terminal_linux_not_ready">Linux 工具環境尚未安裝</string>
   <string name="terminal_open_environment">前往安裝</string>
-  <string name="terminal_daemon_tasks">背景任務</string>
+  <string name="terminal_daemon_tasks">終端後台命令</string>
   <string name="terminal_daemon_empty">暫無背景任務</string>
   <string name="terminal_daemon_running">執行中</string>
   <string name="terminal_daemon_exited">已退出</string>
@@ -1651,7 +1651,19 @@
     <string name="memory_pager_prev">上一頁</string>
     <string name="memory_pager_next">下一頁</string>
     <string name="memory_pager_status">第 %1$d / %2$d 頁</string>
-  <string name="route_scripts">管理腳本</string>
+  <string name="route_scripts">後台任務</string>
+  <string name="tasks_loading">正在讀取進程…</string>
+  <string name="tasks_group_detached">游離進程</string>
+  <string name="tasks_process_meta">PID %1$d · CPU %2$s · 記憶體 %3$s</string>
+  <string name="tasks_process_stop_hint">點一下結束</string>
+  <string name="linux_run_channel">Linux 執行</string>
+  <string name="linux_run_title">Linux 正在執行</string>
+  <string name="linux_run_summary">%1$d 個進程執行中</string>
+  <string name="linux_run_exit">退出</string>
+  <string name="linux_run_group_summary">Linux 正在執行</string>
+  <string name="linux_run_single_line">%1$s · CPU %2$s%% · %3$s MB</string>
+  <string name="linux_run_process_line">%1$s · PID %2$d · CPU %3$s%% · %4$s MB</string>
+  <string name="linux_run_more">…還有 %1$d 個</string>
   <string name="scripts_new">新增腳本</string>
   <string name="scripts_name_label">名稱</string>
   <string name="scripts_command_label">指令</string>
@@ -1688,7 +1700,4 @@
   <string name="top_bar_status_idle">%1$d 則訊息 · %2$s</string>
   <string name="speech_auto_read_on">自動朗讀已開啟，點按關閉</string>
   <string name="speech_auto_read_off">自動朗讀已關閉，點按開啟</string>
-  <string name="background_processes_title">後台進程</string>
-  <string name="background_processes_empty">目前沒有後台進程在執行</string>
-  <string name="background_processes_stop_hint">點一下結束</string>
-</resources>
+      </resources>

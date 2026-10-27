@@ -84,7 +84,7 @@
   <string name="terminal_output_truncated">输出过长，已截断</string>
   <string name="terminal_linux_not_ready">Linux 工具环境尚未安装</string>
   <string name="terminal_open_environment">前往安装</string>
-  <string name="terminal_daemon_tasks">后台任务</string>
+  <string name="terminal_daemon_tasks">终端后台命令</string>
   <string name="terminal_daemon_empty">暂无后台任务</string>
   <string name="terminal_daemon_running">运行中</string>
   <string name="terminal_daemon_exited">已退出</string>
@@ -1145,6 +1145,10 @@
   <string name="linux_run_title">Linux 正在运行</string>
   <string name="linux_run_summary">%1$d 个进程运行中</string>
   <string name="linux_run_exit">退出</string>
+  <string name="linux_run_group_summary">Linux 正在运行</string>
+  <string name="linux_run_single_line">%1$s · CPU %2$s%% · %3$s MB</string>
+  <string name="linux_run_process_line">%1$s · PID %2$d · CPU %3$s%% · %4$s MB</string>
+  <string name="linux_run_more">…还有 %1$d 个</string>
   <string name="settings_multi_run_mode">多会话运行</string>
   <string name="settings_multi_run_mode_summary">新任务与正在运行的任务如何共存。</string>
   <string name="settings_multi_run_replace">替换：新任务终止正在跑的任务（原版）</string>
@@ -1734,7 +1738,7 @@
     <string name="memory_pager_prev">上一页</string>
     <string name="memory_pager_next">下一页</string>
     <string name="memory_pager_status">第 %1$d / %2$d 页</string>
-  <string name="route_scripts">管理脚本</string>
+  <string name="route_scripts">后台任务</string>
   <string name="scripts_new">新建脚本</string>
   <string name="scripts_name_label">名称</string>
   <string name="scripts_command_label">命令</string>
@@ -1771,7 +1775,8 @@
   <string name="top_bar_status_idle">%1$d 条消息 · %2$s</string>
   <string name="speech_auto_read_on">自动朗读已开启，点按关闭</string>
   <string name="speech_auto_read_off">自动朗读已关闭，点按开启</string>
-  <string name="background_processes_title">后台进程</string>
-  <string name="background_processes_empty">当前没有后台进程在运行</string>
-  <string name="background_processes_stop_hint">点一下结束</string>
+      <string name="tasks_loading">正在读取进程…</string>
+  <string name="tasks_group_detached">游离进程</string>
+  <string name="tasks_process_meta">PID %1$d · CPU %2$s · 内存 %3$s</string>
+  <string name="tasks_process_stop_hint">点一下结束</string>
 </resources>
