@@ -1079,6 +1079,7 @@ private fun CoreEditorCard(
             MemorySaveBar(
                 visible = changed || saving || overLimit,
                 overLimit = overLimit,
+                limitBytes = limitBytes,
                 saving = saving,
                 canSave = enabled && changed && !overLimit,
                 onDiscard = { onDraftChange(saved) },
@@ -1268,6 +1269,7 @@ private fun MemoryTextStyle() = MiuixTheme.textStyles.body2.copy(lineHeight = 22
 internal fun MemorySaveBar(
     visible: Boolean,
     overLimit: Boolean,
+    limitBytes: Int = 0,
     saving: Boolean,
     canSave: Boolean,
     onDiscard: () -> Unit,
