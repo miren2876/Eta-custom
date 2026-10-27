@@ -243,6 +243,9 @@ internal fun AgentMemoryScreen(
                     if (usage != null) {
                         val context = LocalContext.current
                         val resources = LocalResources.current
+                        val startedText = resources.getString(R.string.memory_compact_started)
+                        val throttledText = resources.getString(R.string.memory_compact_throttled)
+                        val notNeededText = resources.getString(R.string.memory_compact_not_needed)
                         EtaPreferenceGroup(
                             modifier = Modifier
                                 .padding(horizontal = 16.dp)
@@ -304,22 +307,22 @@ internal fun AgentMemoryScreen(
                             EtaPreference(
                                 title = stringResource(R.string.memory_compact_now),
                                 onClick = {
-                                    val started = io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.request(
+                                    // 读盘与起 run 都在后台线程，结果回到主线程再提示。
+                                    io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.requestAsync(
                                         reason = "manual",
                                         manual = true,
-                                    )
-                                    val message = resources.getString(
-                                        when {
-                                            started -> R.string.memory_compact_started
-                                            !usage.needsCompaction -> R.string.memory_compact_not_needed
-                                            else -> R.string.memory_compact_throttled
-                                        },
-                                    )
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        message,
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
+                                    ) { started ->
+                                        val message = when {
+                                            started -> startedText
+                                            !usage.needsCompaction -> notNeededText
+                                            else -> throttledText
+                                        }
+                                        android.widget.Toast.makeText(
+                                            context.applicationContext,
+                                            message,
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
                                 },
                             )
                         }

@@ -36,14 +36,22 @@ internal object AgentMemoryCompactor {
     private val pendingState = MutableStateFlow(false)
     val pendingDecision: StateFlow<Boolean> = pendingState.asStateFlow()
 
-    private var launcher: ((String) -> Unit)? = null
+    private var launcher: ((String) -> Boolean)? = null
     private var trace: ((String) -> Unit)? = null
     private var reviewActive: (() -> Boolean)? = null
     private var notify: ((text: String, pending: Boolean) -> Unit)? = null
 
-    private var lastAttemptAtMillis = 0L
-    private var lastCompactedRevision: String? = null
-    private var activeRun = false
+    private val lock = Any()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** 压缩的读盘、拼提示词、起 run 都在这个线程上做：入口经常在启动时被主线程调用。 */
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "memory-compact").apply { isDaemon = true }
+    }
+
+    @Volatile private var lastAttemptAtMillis = 0L
+    @Volatile private var lastCompactedRevision: String? = null
+    @Volatile private var activeRun = false
     private var beforeSnapshot: CompactionSnapshot? = null
 
     /** 压缩前的样子，跑完用来算「删了几条、改写了几条」。 */
@@ -53,7 +61,7 @@ internal object AgentMemoryCompactor {
     )
 
     fun attach(
-        launcher: (String) -> Unit,
+        launcher: (String) -> Boolean,
         trace: (String) -> Unit,
         reviewActive: () -> Boolean,
         notify: (text: String, pending: Boolean) -> Unit,
@@ -86,7 +94,12 @@ internal object AgentMemoryCompactor {
 
     fun onRunFinished(runId: String) {
         if (!isCompactionRun(runId)) return
-        activeRun = false
+        synchronized(lock) { activeRun = false }
+        // 对比前后数字要读盘，放后台线程，别占主线程。
+        worker.execute { reportFinished() }
+    }
+
+    private fun reportFinished() = synchronized(lock) {
         lastAttemptAtMillis = System.currentTimeMillis()
         lastCompactedRevision = AgentMemoryRepository.coreSnapshot().revision
         val before = beforeSnapshot
@@ -109,8 +122,20 @@ internal object AgentMemoryCompactor {
      * 请求一次压缩整理。返回是否真的启动了 run。
      * reason 只用于日志（write / run-finished / app-start / manual）。
      */
-    fun request(reason: String, manual: Boolean = false): Boolean =
+    fun request(reason: String, manual: Boolean = false): Boolean = synchronized(lock) {
         runCatching { requestInternal(reason, manual) }.getOrDefault(false)
+    }
+
+    /**
+     * 从主线程入口（启动、回合结束、记忆页按钮）调用的版本：
+     * 读盘与起 run 全部丢到后台线程，回调再回到主线程。
+     */
+    fun requestAsync(reason: String, manual: Boolean = false, onResult: ((Boolean) -> Unit)? = null) {
+        worker.execute {
+            val started = request(reason, manual)
+            onResult?.let { callback -> mainHandler.post { callback(started) } }
+        }
+    }
 
     private fun requestInternal(reason: String, manual: Boolean): Boolean {
         val launch = launcher
@@ -153,10 +178,19 @@ internal object AgentMemoryCompactor {
             "start($reason) profile=${usage.profileBytes}B entry=${usage.entryBytes}B " +
                 "count=${usage.entryCount}/${usage.totalEntryCount} ratio=%.2f".format(usage.ratio),
         )
-        runCatching { launch(prompt) }.onFailure { failure ->
-            activeRun = false
-            beforeSnapshot = null
-            log("start failed: ${failure.javaClass.simpleName}")
+        // 读盘与拼提示词已经在后台线程完成；真正起 run 必须回主线程（服务内部状态不是线程安全的）。
+        mainHandler.post {
+            val launched = runCatching { launch(prompt) }.getOrElse { failure ->
+                log("start failed: ${failure.javaClass.simpleName}")
+                false
+            }
+            if (!launched) {
+                synchronized(lock) {
+                    activeRun = false
+                    beforeSnapshot = null
+                }
+                log("start aborted: run 未启动")
+            }
         }
         return true
     }

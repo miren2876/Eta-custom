@@ -653,7 +653,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 userChars = run.request.prompt.length,
             )
             // 空闲审查之后串行检查一次容量：review 刚排了定时器时会因互斥跳过。
-            AgentMemoryCompactor.request("run-finished")
+            AgentMemoryCompactor.requestAsync("run-finished")
             // 整理 run 到此为止：它不该碰胶囊，但结果要落盘，否则失败时无从定位。
             if (memoryIdleReview.isReviewRun(run.session.runId)) {
                 traceIdleReview(
@@ -1071,15 +1071,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 images = emptyList(),
             )
         )
+        return true
     }
 
     /** 记忆压缩 run：与空闲审查同样的工具裁剪，但写入策略是 COMPACT（允许删条目、重写画像）。 */
-    private fun startMemoryCompactionRun(prompt: String) {
+    private fun startMemoryCompactionRun(prompt: String): Boolean {
         val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
             .getOrNull()
         if (config == null) {
             AndroidAgentLogger.warn("Memory compaction: runtime config unavailable")
-            return
+            return false
         }
         val runId = AgentMemoryCompactor.COMPACT_RUN_PREFIX + java.util.UUID.randomUUID()
         AndroidAgentLogger.info("Memory compaction: run $runId")
@@ -1801,6 +1802,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                             val current = activeService
                             if (current == null) {
                                 service.traceIdleReview("压缩跳过：Agent 服务已停止")
+                                false
                             } else {
                                 current.startMemoryCompactionRun(prompt)
                             }
@@ -1815,8 +1817,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                             }
                         },
                     )
-                    // App 启动后首次检查一次容量。
-                    AgentMemoryCompactor.request("app-start")
+                    // App 启动后首次检查一次容量；读盘与起 run 放后台，别堵主线程。
+                    AgentMemoryCompactor.requestAsync("app-start")
                 }
             }
 
