@@ -50,10 +50,6 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
-    <permission
-        android:name="io.github.mangi.eta.permission.VIRTUAL_SCREEN_SURFACE"
-        android:protectionLevel="signature" />
-
     <application
         android:name=".EtaApp"
         android:allowBackup="false"

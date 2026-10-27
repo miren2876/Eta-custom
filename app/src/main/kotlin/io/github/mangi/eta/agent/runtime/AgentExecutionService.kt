@@ -229,7 +229,7 @@ internal class AgentExecutionService : Service() {
             mainHandler.post { instance?.refreshNotification() }
         }
 
-        /** 是否有 Agent run 正在执行；用于避免与虚拟屏保留通知重复显示。 */
+        /** 是否有 Agent run 正在执行。 */
         fun isRunActive(): Boolean =
             runStatus != null || leases.hasPrefix("run:") || instance?.foregroundActive == true
 

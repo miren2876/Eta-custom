@@ -182,13 +182,6 @@ internal object AgentRuntimeWire {
                     ?.let { AgentUiHandoffPayload.from(it.payload).conversationId }
                     ?.takeIf { it.isNotBlank() } ?: runId
             }
-
-        val virtualScreenOwner: String
-            get() = handoff?.let { entry ->
-                AgentExternalArchivePayload.from(entry.payload)?.let {
-                    AgentExternalArchivePayload.conversationId(entry.source, it.conversationKey)
-                }
-            } ?: effectiveModelSessionId
     }
 
     enum class RunPhase(val wireValue: String) {

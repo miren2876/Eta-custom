@@ -187,7 +187,7 @@ internal object AgentModelClient {
         var publishedTools = tools
         fun toolsForRound(): JSONArray {
             val capabilities = capabilitiesProvider()
-            // 只有会影响系统提示正文的能力变化才重建前缀：Root、虚拟屏、虚拟屏回退、提问开关。
+            // 只有会影响系统提示正文的能力变化才重建前缀：Root、虚拟屏回退、提问开关。
             if (capabilities.rootAvailable != promptRootAvailable ||
                 capabilities.virtualScreenEnabled != promptVirtualScreenEnabled ||
                 capabilities.virtualScreenFallbackEnabled != promptVirtualScreenFallbackEnabled ||

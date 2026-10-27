@@ -16,7 +16,7 @@ internal class ExecutionLeaseRegistry {
     @Synchronized fun release(id: String) { leases.remove(id) }
     @Synchronized fun count(): Int = leases.size
 
-    /** 是否存在指定前缀的任务引用；用于区分 run 与保留的虚拟屏会话。 */
+    /** 是否存在指定前缀的任务引用（用于按 run: 前缀判断是否有活跃 run）。 */
     @Synchronized fun hasPrefix(prefix: String): Boolean = leases.keys.any { it.startsWith(prefix) }
 
     @Synchronized fun attachOwner(owner: Long) {
