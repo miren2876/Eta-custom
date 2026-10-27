@@ -102,19 +102,36 @@ internal data class AgentMemoryEntryUsage(
  * entryBytes 是实际注入的条目字符数，skippedCount 是被预算挤掉、这一轮没有注入的条目数。
  */
 internal data class AgentMemoryCoreUsage(
+    /** 画像的 UTF-8 字节数（5 KB 文件上限按字节算）。 */
     val profileBytes: Int,
+    /** 画像注入到投影里的字符数；预算按字符算，不能和字节混加。 */
+    val profileChars: Int = 0,
+    /** 已注入条目的字符数。 */
     val entryBytes: Int,
     val entryCount: Int,
     val totalEntryCount: Int,
     val skippedCount: Int,
     val budgetChars: Int,
+    /** 工作记忆文件自身的字节数（文件写入上限按字节算）。 */
+    val workingBytes: Int = 0,
 ) {
-    val usedBytes: Int get() = profileBytes + entryBytes
-    val ratio: Float get() = if (budgetChars <= 0) 0f else usedBytes.toFloat() / budgetChars
+    /** 投影已用字符数 = 画像字符 + 条目字符。 */
+    val usedChars: Int get() = profileChars + entryBytes
+    val ratio: Float get() = if (budgetChars <= 0) 0f else usedChars.toFloat() / budgetChars
 
-    /** 需要压缩整理：已经挤掉条目，或已用超过预算的 90%。 */
-    val needsCompaction: Boolean get() = skippedCount > 0 || ratio >= 0.9f
+    /** 工作记忆文件已经超过写入上限：新增条目会被拒绝，必须靠压缩解决。 */
+    val workingOverLimit: Boolean get() = workingBytes > AgentMemoryStore.WORKING_MAX_BYTES
+
+    /** 需要压缩整理：条目被挤掉、已用超过预算 90%，或工作记忆文件自己撑爆了。 */
+    val needsCompaction: Boolean get() = skippedCount > 0 || ratio >= 0.9f || workingOverLimit
 }
+
+/**
+ * 工作记忆硬上限判定：只有「新内容变大且超过上限」才拒绝。
+ * 删除条目、改写变短永远放行，否则已经超限的文件会连自我修复都做不到。
+ */
+internal fun workingGrowDenied(newBytes: Int, previousBytes: Int, limitBytes: Int): Boolean =
+    newBytes > limitBytes && newBytes > previousBytes
 
 internal data class AgentMemoryUsageEntry(
     val hitCount: Int = 0,
@@ -557,6 +574,15 @@ internal class AgentMemoryStore(
             }
         }
         val merged = lines.joinToString("\n").trimEnd('\n')
+        val nextBytes = (if (merged.isEmpty()) "" else "$merged\n").toByteArray(Charsets.UTF_8).size
+        val previousBytes = readText(workingFile).toByteArray(Charsets.UTF_8).size
+        if (workingGrowDenied(nextBytes, previousBytes, WORKING_MAX_BYTES)) {
+            throw AgentMemoryException(
+                "MEMORY_WORKING_FULL",
+                "工作记忆已达 10 KiB 上限，这次写入会让它继续变大；先删掉或合并几条低价值条目" +
+                    "（memory_write target=entry match=\"<片段>\" content=\"\"）再写",
+            )
+        }
         writeText(workingFile, if (merged.isEmpty()) "" else "$merged\n")
         writeEntryUsageLocked(usage.copy(entries = stats))
         coreSnapshotLocked()
@@ -605,11 +631,13 @@ internal class AgentMemoryStore(
         val split = coreSplitLocked(budgetChars)
         AgentMemoryCoreUsage(
             profileBytes = split.profile.toByteArray(Charsets.UTF_8).size,
+            profileChars = split.profile.length,
             entryBytes = split.usedChars,
             entryCount = split.injected.size,
             totalEntryCount = split.injected.size + split.skipped.size,
             skippedCount = split.skipped.size,
             budgetChars = budgetChars,
+            workingBytes = readText(workingFile).toByteArray(Charsets.UTF_8).size,
         )
     }
 
@@ -1821,7 +1849,7 @@ internal class AgentMemoryStore(
         private const val PROFILE_HEADING = "## 用户画像"
         private const val WORKING_HEADING = "## 工作记忆"
         const val PROFILE_MAX_BYTES = 5 * 1024
-        /** 工作记忆软上限：超过后记忆页会自动调用模型压缩。 */
+        /** 工作记忆上限：记忆页标红并手动压缩；模型追加条目超过它会被拒绝。 */
         const val WORKING_MAX_BYTES = 10 * 1024
 
         /** 工作记忆硬上限：压缩失败时也拒绝写入，避免常驻注入被撑爆。 */

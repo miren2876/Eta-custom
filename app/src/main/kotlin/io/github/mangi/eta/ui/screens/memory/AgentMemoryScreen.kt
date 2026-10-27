@@ -252,15 +252,18 @@ internal fun AgentMemoryScreen(
                                 title = stringResource(R.string.memory_compact_title),
                                 summary = stringResource(
                                     R.string.memory_compact_summary,
-                                    formatBytes(usage.profileBytes),
-                                    formatBytes(usage.entryBytes),
-                                    formatBytes(usage.budgetChars),
+                                    formatChars(usage.usedChars),
+                                    formatChars(usage.budgetChars),
                                     (usage.ratio * 100).toInt(),
+                                    formatBytes(usage.profileBytes),
+                                    usage.entryCount,
+                                    formatChars(usage.entryBytes),
                                 ),
                                 titleColor = when {
-                                    usage.skippedCount > 0 -> top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
-                                        color = MiuixTheme.colorScheme.error,
-                                    )
+                                    usage.skippedCount > 0 || usage.workingOverLimit ->
+                                        top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
+                                            color = MiuixTheme.colorScheme.error,
+                                        )
                                     usage.ratio >= 0.9f -> top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
                                         color = MiuixTheme.colorScheme.primary,
                                     )
@@ -281,6 +284,15 @@ internal fun AgentMemoryScreen(
                                     text = stringResource(
                                         R.string.memory_compact_warning,
                                         (usage.ratio * 100).toInt(),
+                                    ),
+                                )
+                            }
+                            if (usage.workingOverLimit) {
+                                EtaPreferenceDivider()
+                                SectionHint(
+                                    text = stringResource(
+                                        R.string.memory_working_over_limit,
+                                        formatBytes(usage.workingBytes),
                                     ),
                                 )
                             }
@@ -848,6 +860,12 @@ private fun SectionBody(text: String) {
     )
 }
 
+/** 字符数（注入预算口径）：K 表示千字符，不折算成字节。 */
+internal fun formatChars(chars: Int): String = when {
+    chars < 1_000 -> "$chars"
+    else -> "%.1fK".format(chars / 1_000.0)
+}
+
 internal fun formatBytes(bytes: Int): String = when {
     bytes < 1_024 -> "$bytes B"
     bytes < 1_024 * 1_024 -> "%.1f KiB".format(bytes / 1_024.0)
@@ -1279,9 +1297,11 @@ internal fun MemorySaveBar(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(
-                        if (overLimit) R.string.memory_over_limit else R.string.memory_unsaved_changes,
-                    ),
+                    text = if (overLimit) {
+                        stringResource(R.string.memory_over_limit, formatBytes(limitBytes))
+                    } else {
+                        stringResource(R.string.memory_unsaved_changes)
+                    },
                     style = MiuixTheme.textStyles.footnote1,
                     color = if (overLimit) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     maxLines = 2,

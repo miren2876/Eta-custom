@@ -1151,7 +1151,7 @@
   <string name="context_usage_previous_response">%1$s\nMeasured last turn</string>
   <string name="context_usage_description">Context usage: %1$s</string>
   <string name="memory_budget_summary">Inject up to %1$s characters per turn. The model reads detailed content as needed</string>
-  <string name="memory_over_limit">Over the 1 MiB limit. Remove some content</string>
+  <string name="memory_over_limit">Over the %1$s limit. Remove some content</string>
   <string name="memory_unsaved_changes">Unsaved changes</string>
   <string name="memory_saving">Saving</string>
   <string name="memory_save">Save</string>
@@ -1468,9 +1468,9 @@
   <string name="memory_profile_title">User profile</string>
   <string name="memory_profile_summary">Injected every turn, up to 5 KB</string>
   <string name="memory_working_title">Working memory</string>
-  <string name="memory_working_summary">Active entries ranked by effective importance (EI), up to 10 KB</string>
-  <string name="memory_compact_title">Memory capacity</string>
-  <string name="memory_compact_summary">Profile %1$s · entries %2$s · budget %3$s (%4$d%% used)</string>
+  <string name="memory_working_summary">Working-memory entries ranked by EI; writes are refused past 10 KiB</string>
+  <string name="memory_compact_title">Injected budget</string>
+  <string name="memory_compact_summary">%1$s / %2$s chars (%3$d%%) · profile %4$s · %5$d working-memory entries, %6$s chars</string>
   <string name="memory_compact_skipped">%1$d entries are not injected because of budget</string>
   <string name="memory_compact_profile_full">The profile fills the whole budget; no entries injected</string>
   <string name="memory_compact_now">Compact now</string>
@@ -1482,9 +1482,10 @@
   <string name="memory_compact_throttled">Compacted a moment ago; try again in a few minutes</string>
   <string name="memory_compact_started">Compaction started</string>
   <string name="memory_compact_not_needed">Memory is within budget; nothing to compact</string>
+  <string name="memory_working_over_limit">Working memory is %1$s, over the 10 KiB limit; new entries are refused until you trim it</string>
   <string name="memory_compact_warning">Memory is almost full (%1$d%% of the budget)</string>
   <string name="memory_entries_title">Active entries</string>
-  <string name="memory_entries_summary">%1$d entries, ranked by EI (importance × references × decay)</string>
+  <string name="memory_entries_summary">%1$d entries in working memory, ranked by EI (importance × references × decay)</string>
   <string name="memory_entries_empty">No entries yet — the model can add one with memory_write target=entry</string>
   <string name="memory_entry_meta">Importance %1$d · EI %2$s</string>
   <string name="memory_entry_hits">%1$d refs</string>

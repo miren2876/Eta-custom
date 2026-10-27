@@ -636,6 +636,14 @@ internal class AgentLocalTools(
             }
 
             "working" -> {
+                // 模型整份覆盖也受 10 KiB 上限约束，否则它可以绕开条目的硬限。
+                val bytes = content.toByteArray(Charsets.UTF_8).size
+                if (bytes > io.github.mangi.eta.data.repository.AgentMemoryStore.WORKING_MAX_BYTES) {
+                    return errorResult(
+                        "MEMORY_WORKING_FULL",
+                        "工作记忆上限 10 KiB，这份内容有 $bytes 字节；请改用 target=entry 逐条改写/删除",
+                    )
+                }
                 AgentMemoryRepository.replaceCoreWorking(content)
                 coreWriteResult("working")
             }

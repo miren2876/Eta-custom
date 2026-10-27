@@ -1152,7 +1152,7 @@
   <string name="settings_multi_run_concurrent">并发：多个会话同时运行（GUI/终端操作可能互相干扰）</string>
   <string name="context_usage_description">上下文用量：%1$s</string>
   <string name="memory_budget_summary">每轮最多注入 %1$s 字符，详细内容由模型按需读取</string>
-  <string name="memory_over_limit">已超过 1 MiB 上限，请删减</string>
+  <string name="memory_over_limit">已超过 %1$s 上限，请删减</string>
   <string name="memory_unsaved_changes">未保存的更改</string>
   <string name="memory_saving">保存中</string>
   <string name="memory_save">保存</string>
@@ -1449,9 +1449,9 @@
   <string name="memory_profile_title">用户画像</string>
   <string name="memory_profile_summary">每轮固定注入，上限 5 KB</string>
   <string name="memory_working_title">工作记忆</string>
-  <string name="memory_working_summary">活跃条目，按有效重要度（EI）排序，上限 10 KB</string>
-  <string name="memory_compact_title">记忆容量</string>
-  <string name="memory_compact_summary">画像 %1$s · 条目 %2$s · 预算 %3$s（已用 %4$d%%）</string>
+  <string name="memory_working_summary">工作记忆条目，按 EI 排序；超过 10 KiB 不再接受新写入</string>
+  <string name="memory_compact_title">注入预算</string>
+  <string name="memory_compact_summary">%1$s / %2$s 字符（%3$d%%）· 画像 %4$s · 工作记忆条目 %5$d 条 %6$s 字符</string>
   <string name="memory_compact_skipped">有 %1$d 条条目因预算不足未注入</string>
   <string name="memory_compact_profile_full">画像占满了预算，条目未注入</string>
   <string name="memory_compact_now">立即整理</string>
@@ -1463,9 +1463,10 @@
   <string name="memory_compact_throttled">刚刚整理过，几分钟后再试</string>
   <string name="memory_compact_started">已开始压缩记忆</string>
   <string name="memory_compact_not_needed">记忆还在预算内，暂时不需要整理</string>
+  <string name="memory_working_over_limit">工作记忆已 %1$s，超过 10 KiB 上限；删减之前不再接受新条目</string>
   <string name="memory_compact_warning">记忆快满了（已用预算的 %1$d%%）</string>
   <string name="memory_entries_title">活跃条目</string>
-  <string name="memory_entries_summary">共 %1$d 条，按 EI（重要度 × 引用次数 × 衰减）排序</string>
+  <string name="memory_entries_summary">工作记忆里共 %1$d 条，按 EI（重要度 × 引用次数 × 衰减）排序</string>
   <string name="memory_entries_empty">还没有条目；模型可以用 memory_write target=entry 记一条</string>
   <string name="memory_entry_meta">重要度 %1$d · EI %2$s</string>
   <string name="memory_entry_hits">引用 %1$d 次</string>

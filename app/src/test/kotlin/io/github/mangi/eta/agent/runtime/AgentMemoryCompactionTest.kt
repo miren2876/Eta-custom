@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.runtime
 import io.github.mangi.eta.agent.tool.AgentMemoryWritePolicy
 import io.github.mangi.eta.agent.tool.memoryWriteDenied
 import io.github.mangi.eta.data.repository.AgentMemoryCoreUsage
+import io.github.mangi.eta.data.repository.workingGrowDenied
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -21,6 +22,7 @@ class AgentMemoryCompactionTest {
         budget: Int = 15_000,
     ) = AgentMemoryCoreUsage(
         profileBytes = profile,
+        profileChars = profile,
         entryBytes = entry,
         entryCount = count,
         totalEntryCount = total,
@@ -39,6 +41,24 @@ class AgentMemoryCompactionTest {
         assertTrue(usage(2_000, 12_000, 20, 20, 0).needsCompaction)
         // 11_000 / 15_000 ≈ 0.73
         assertFalse(usage(2_000, 9_000, 15, 15, 0).needsCompaction)
+    }
+
+    @Test
+    fun `工作记忆文件超 10 KiB 也要压缩`() {
+        // 投影只用了 60%，但文件本身已经超过 10 KiB：新增条目会被拒，必须压。
+        val over = AgentMemoryCoreUsage(
+            profileBytes = 800,
+            profileChars = 400,
+            entryBytes = 4_400,
+            entryCount = 20,
+            totalEntryCount = 20,
+            skippedCount = 0,
+            budgetChars = 8_000,
+            workingBytes = 10_500,
+        )
+        assertTrue(over.workingOverLimit)
+        assertTrue(over.needsCompaction)
+        assertFalse(over.copy(workingBytes = 9_000).needsCompaction)
     }
 
     @Test
@@ -77,6 +97,23 @@ class AgentMemoryCompactionTest {
         assertTrue(AgentMemoryCompactor.isCompactionRun("memory-compact:abc"))
         assertFalse(AgentMemoryCompactor.isCompactionRun("memory-review:abc"))
         assertFalse(AgentMemoryCompactor.isCompactionRun("run-1"))
+    }
+
+    @Test
+    fun `工作记忆只拒绝变大且超限的写入`() {
+        val limit = 10 * 1024
+        assertTrue(workingGrowDenied(limit + 1, limit, limit))
+        // 删除或改写变短永远放行，即使文件已经超限。
+        assertFalse(workingGrowDenied(limit + 1, limit + 200, limit))
+        // 没超限的增长照常写入。
+        assertFalse(workingGrowDenied(limit, limit - 10, limit))
+    }
+
+    @Test
+    fun `压缩提示词说明工作记忆硬上限`() {
+        val prompt = AgentMemoryCompactor.buildCompactionPrompt(usage(4_000, 12_000, 30, 35, 5))
+        assertTrue(prompt.contains("10 KiB"))
+        assertTrue(prompt.contains("工作记忆条目"))
     }
 
     @Test

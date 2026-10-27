@@ -186,9 +186,10 @@ internal object AgentMemoryCompactor {
         } else {
             append("画像 ${formatKb(usage.profileBytes)}")
         }
-        append(" · 条目 ${usage.entryCount}/${usage.totalEntryCount} 条")
+        append(" · 工作记忆条目 ${usage.entryCount}/${usage.totalEntryCount} 条")
         if (deleted > 0) append(" · 删除 $deleted 条")
         if (rewritten > 0) append(" · 改写 $rewritten 条")
+        if (usage.workingOverLimit) append(" · 工作记忆 ${formatKb(usage.workingBytes)} 仍超 10 KiB")
         append(" · 已用 ${(usage.ratio * 100).toInt()}%")
     }
 
@@ -204,7 +205,7 @@ internal object AgentMemoryCompactor {
         return buildString {
             appendLine("你是记忆压缩子代理。目标：把「用户画像 + 工作记忆条目」的总占用压到预算的 80% 以内（目标约 $target 字符），不是压到 0。")
             appendLine()
-            appendLine("当前占用：预算 ${usage.budgetChars} 字符，已用 ${usage.usedBytes} 字符（画像 ${usage.profileBytes} 字节 + 条目 ${usage.entryBytes} 字符），")
+            appendLine("当前占用：预算 ${usage.budgetChars} 字符，已用 ${usage.usedChars} 字符（画像 ${usage.profileChars} 字符 / ${usage.profileBytes} 字节 + 工作记忆条目 ${usage.entryBytes} 字符），")
             appendLine("注入条目 ${usage.entryCount} 条 / 共 ${usage.totalEntryCount} 条，已被预算挤掉 ${usage.skippedCount} 条。")
             appendLine()
             appendLine("**这一轮允许删除条目，也允许重写用户画像**（与空闲整理相反，别按空闲整理的规则来）。")
@@ -213,9 +214,10 @@ internal object AgentMemoryCompactor {
             appendLine("- 画像：memory_write target=profile content=\"<整份新画像>\"（会整份替换，务必保留全部仍然有效的偏好与关系）。")
             appendLine("- 档案：只能 append 或 edit，禁止 replace；档案层不是本轮重点。")
             appendLine("- 禁止 target=working 整份覆盖：工作记忆只能逐条改写或删除。")
+            appendLine("- 工作记忆文件有 10 KiB 上限：已经超限或再加就超限时，新增/变长的条目会被直接拒绝；先删或合并条目再写。")
             appendLine()
             appendLine("执行顺序：")
-            appendLine("1) 先合并同义/重复条目：用 match 改写为更短的一句；")
+            appendLine("1) 先合并同义/重复的工作记忆条目：用 match 改写为更短的一句；")
             appendLine("2) 再删除过时、一次性、已被档案覆盖的条目（content=\"\"）；")
             appendLine("3) 最后压缩画像：合并同类事实、删掉已过时的事实（过期日期、已完成的临时目标），")
             appendLine("   保留用户的稳定偏好、关系与长期事实；不得编造，不得丢失用户明确说过的偏好；压缩后仍是可读的短句列表。")

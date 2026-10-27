@@ -264,7 +264,8 @@ internal class AgentMemoryStore(
                             notice = appContext.getString(R.string.state_ui_memory_merged, names.size),
                         )
                     }
-                    maybeCompressWorking()
+                    // 自动路径交给注入预算压缩器；旧的整份压缩只保留给手动保存兜底。
+                    io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.request("archive-merge")
                     refreshMemory()
                 },
                 onFailure = { throwable ->
@@ -283,7 +284,12 @@ internal class AgentMemoryStore(
         }
     }
 
-    /** 工作记忆超过上限（10 KiB）时自动调用模型压缩；失败就保持原样并提示。 */
+    /**
+     * 手动保存工作记忆后的兜底：超过 10 KiB 时用模型把整份文本压回上限内。
+     *
+     * 自动路径（模型写入、回合结束、档案合并）走 [io.github.mangi.eta.agent.runtime.AgentMemoryCompactor]，
+     * 它按条目逐个改删、还能重写画像；这里只负责「用户手动保存了一份超长文本」这一种情况。
+     */
     private fun maybeCompressWorking() {
         scope.launch(Dispatchers.IO) {
             val working = runCatching { AgentMemoryRepository.coreWorking() }.getOrNull().orEmpty()
