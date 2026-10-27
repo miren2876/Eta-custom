@@ -1,6 +1,7 @@
 package io.github.mangi.eta.core
 
 import android.util.Log
+import io.github.mangi.eta.BuildConfig
 
 internal interface AgentLogger {
     /**
@@ -16,17 +17,22 @@ internal interface AgentLogger {
 }
 
 internal object AndroidAgentLogger : AgentLogger {
+    /** Release 包不输出任何日志：需要排查时用 debug 包。 */
+    private val enabled = BuildConfig.DEBUG
     private val logThrottle = LogThrottle()
 
     override fun debug(message: () -> String) {
+        if (!enabled) return
         Log.d(ModuleConfig.TAG, message())
     }
 
     override fun info(message: String) {
+        if (!enabled) return
         Log.i(ModuleConfig.TAG, message)
     }
 
     override fun warn(message: String) {
+        if (!enabled) return
         Log.w(ModuleConfig.TAG, message)
     }
 
@@ -35,12 +41,14 @@ internal object AndroidAgentLogger : AgentLogger {
         windowMs: Long = ModuleConfig.HOT_PATH_LOG_WINDOW_MS,
         message: () -> String
     ) {
+        if (!enabled) return
         if (logThrottle.shouldLog("warn:$key", windowMs)) {
             warn(message())
         }
     }
 
     override fun error(message: String, throwable: Throwable?) {
+        if (!enabled) return
         if (throwable == null) {
             Log.e(ModuleConfig.TAG, message)
         } else {
@@ -54,6 +62,7 @@ internal object AndroidAgentLogger : AgentLogger {
         windowMs: Long = ModuleConfig.HOT_PATH_LOG_WINDOW_MS,
         message: () -> String
     ) {
+        if (!enabled) return
         if (logThrottle.shouldLog("error:$key", windowMs)) {
             error(message(), throwable)
         }

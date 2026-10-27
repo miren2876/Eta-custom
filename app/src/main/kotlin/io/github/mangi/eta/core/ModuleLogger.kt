@@ -9,6 +9,9 @@ internal class ModuleLogger private constructor(
     private val logThrottle: LogThrottle
 ) : AgentLogger {
 
+    /** Release 包不向宿主日志输出任何内容。 */
+    private val enabled = io.github.mangi.eta.BuildConfig.DEBUG
+
     constructor(module: XposedModule) : this(module, null, LogThrottle())
 
     fun scoped(childScope: String): ModuleLogger {
@@ -18,14 +21,17 @@ internal class ModuleLogger private constructor(
     }
 
     override fun debug(message: () -> String) {
+        if (!enabled) return
         module.log(Log.DEBUG, ModuleConfig.TAG, format(message()))
     }
 
     override fun info(message: String) {
+        if (!enabled) return
         module.log(Log.INFO, ModuleConfig.TAG, format(message))
     }
 
     override fun warn(message: String) {
+        if (!enabled) return
         module.log(Log.WARN, ModuleConfig.TAG, format(message))
     }
 
