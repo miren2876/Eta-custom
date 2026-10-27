@@ -318,6 +318,7 @@ internal fun AgentOverlayCapsule(
                                     }
                                     consumed
                                 }
+                                android.util.Log.i("EtaOverlay", "capsule longPress finishedEarly=" + finishedEarly)
                                 if (finishedEarly == null) {
                                     lastLongPressAt = System.currentTimeMillis()
                                     onOpenHome()
@@ -474,6 +475,7 @@ internal fun AgentOverlayCapsule(
                                     label = "回到 Eta 主页",
                                     tint = MiuixTheme.colorScheme.onSurface,
                                     onClick = {
+                                        android.util.Log.i("EtaOverlay", "panel home button tapped")
                                         onCollapseRequest()
                                         onOpenHome()
                                     },

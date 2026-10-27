@@ -38,9 +38,9 @@
 # 配置 key 是字符串常量并通过静态调用访问，不需要保留类名或成员名。
 
 # ── Release 日志策略 ────────────────────────────────────────────────────────
-# Release 包不保留任何日志：Eta 自有代码里的 Log 调用（含 INFO/WARN/ERROR）全部移除，
-# 第三方依赖的日志策略由依赖自身决定。需要排查时用 debug 包。
--maximumremovedandroidloglevel 6 class io.github.mangi.eta.** { *; }
+# 仅删除 Eta 自有代码中的 Android VERBOSE/DEBUG 调用；INFO/WARN/ERROR 必须保留，
+# 第三方依赖的日志策略由依赖自身决定。
+-maximumremovedandroidloglevel 3 class io.github.mangi.eta.** { *; }
 
 # XposedModule.log 不是 android.util.Log，R8 无法通过上面的规则识别。
 # debug supplier 是纯观察 API；禁止在 supplier 内执行任何业务副作用。
