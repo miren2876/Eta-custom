@@ -80,6 +80,17 @@ internal object LinuxProcessSampler {
     /** 上一轮每个进程的 (ticks, 采样时刻)，用于算 CPU 占用。 */
     private var previousTicks = mapOf<Int, Pair<Long, Long>>()
 
+    /**
+     * 额外要纳入快照的根 pid（Android 环境的脚本任务不在 rootfs 内）。
+     * 过滤在 App 侧做，所以更新它不需要重启 root 循环。
+     */
+    @Volatile
+    private var extraRootPids: Set<Int> = emptySet()
+
+    fun setExtraRootPids(pids: Collection<Int>) {
+        extraRootPids = pids.toSet()
+    }
+
     /** 一次采样订阅；页面与通知各持一个，释放后自动降低采样频率或停止。 */
     internal class Lease internal constructor(private val onRelease: () -> Unit) {
         private var released = false
@@ -196,23 +207,17 @@ internal object LinuxProcessSampler {
             while true; do
               for p in /proc/[0-9]*; do
                 pid=${'$'}{p##*/}
-                r=${'$'}(readlink "${'$'}p/root" 2>/dev/null)
-                hit=0
-                case "${'$'}r" in *terminal/*rootfs*) hit=1;; esac
-                t=${'$'}(readlink "${'$'}p/exe" 2>/dev/null)
-                if [ "${'$'}hit" = 0 ]; then
-                  case "${'$'}t" in *terminal/*rootfs*) hit=1;; esac
-                fi
-                [ "${'$'}hit" = 1 ] || continue
                 st=${'$'}(cat "${'$'}p/stat" 2>/dev/null)
                 [ -z "${'$'}st" ] && continue
                 ppid=${'$'}(echo "${'$'}st" | awk '{print ${'$'}4}')
                 ticks=${'$'}(echo "${'$'}st" | awk '{print ${'$'}14+${'$'}15}')
                 rss=${'$'}(awk '/^VmRSS/{print ${'$'}2}' "${'$'}p/status" 2>/dev/null)
+                root=${'$'}(readlink "${'$'}p/root" 2>/dev/null)
+                exe=${'$'}(readlink "${'$'}p/exe" 2>/dev/null)
                 cwd=${'$'}(readlink "${'$'}p/cwd" 2>/dev/null)
                 cmd=${'$'}(tr '\0' ' ' < "${'$'}p/cmdline" 2>/dev/null | cut -c1-$MAX_COMMAND_CHARS)
-                [ -z "${'$'}cmd" ] && cmd="[${'$'}t]"
-                echo "P|${'$'}pid|${'$'}{ppid:-0}|${'$'}{ticks:-0}|${'$'}{rss:-0}|${'$'}cwd|${'$'}cmd"
+                [ -z "${'$'}cmd" ] && cmd="[${'$'}exe]"
+                echo "P|${'$'}pid|${'$'}{ppid:-0}|${'$'}{ticks:-0}|${'$'}{rss:-0}|${'$'}root|${'$'}exe|${'$'}cwd|${'$'}cmd"
               done
               echo "END"
               sleep $intervalSeconds
@@ -225,34 +230,58 @@ internal object LinuxProcessSampler {
         val ppid: Int,
         val ticks: Long,
         val rssKb: Long,
+        val rootfsHit: Boolean,
         val cwd: String?,
         val command: String,
     )
 
     private fun parseRow(line: String): SnapshotRow? {
-        // 命令放最后：命令行里可能出现任何字符，split 限制在 7 段内。
-        val parts = line.split('|', limit = 7)
-        if (parts.size < 7) return null
+        // 命令放最后：命令行里可能出现任何字符，split 限制在 9 段内。
+        val parts = line.split('|', limit = 9)
+        if (parts.size < 9) return null
         val pid = parts[1].trim().toIntOrNull() ?: return null
+        val root = parts[5]
+        val exe = parts[6]
         return SnapshotRow(
             pid = pid,
             ppid = parts[2].trim().toIntOrNull() ?: 0,
             ticks = parts[3].trim().toLongOrNull() ?: 0L,
             rssKb = parts[4].trim().toLongOrNull() ?: 0L,
-            cwd = parts[5].trim().ifBlank { null },
-            command = parts[6].trim(),
+            rootfsHit = isRootfsPath(root) || isRootfsPath(exe),
+            cwd = parts[7].trim().ifBlank { null },
+            command = parts[8].trim(),
         )
+    }
+
+    private fun isRootfsPath(path: String): Boolean =
+        path.contains("terminal") && path.contains("rootfs")
+
+    /** 只保留 rootfs 内进程，外加脚本任务（含 Android 环境）的整棵进程树。 */
+    private fun filterRows(rows: List<SnapshotRow>): List<SnapshotRow> {
+        val extra = extraRootPids
+        if (extra.isEmpty()) return rows.filter { it.rootfsHit }
+        val children = rows.groupBy { it.ppid }
+        val keep = mutableSetOf<Int>()
+        val queue = ArrayDeque<Int>()
+        extra.forEach { queue.add(it) }
+        while (queue.isNotEmpty()) {
+            val pid = queue.removeFirst()
+            if (!keep.add(pid)) continue
+            children[pid]?.forEach { queue.add(it.pid) }
+        }
+        return rows.filter { it.rootfsHit || it.pid in keep }
     }
 
     private fun publish(rows: List<SnapshotRow>, intervalMs: Long) {
         val now = System.currentTimeMillis()
-        if (rows.isEmpty()) {
+        val filtered = filterRows(rows)
+        if (filtered.isEmpty()) {
             _snapshot.value = LinuxProcessSnapshot(emptyList(), now)
             synchronized(previousTicksLock) { previousTicks = emptyMap() }
             return
         }
         val previous = synchronized(previousTicksLock) { previousTicks }
-        val processes = rows.map { row ->
+        val processes = filtered.map { row ->
             val prev = previous[row.pid]
             val cpu = prev?.let { (prevTicks, prevAt) ->
                 val seconds = (now - prevAt) / 1000.0
@@ -270,7 +299,7 @@ internal object LinuxProcessSampler {
             )
         }.sortedWith(compareByDescending<LinuxProcessInfo> { it.cpuPercent ?: 0.0 }.thenBy { it.pid })
         synchronized(previousTicksLock) {
-            previousTicks = rows.associate { it.pid to (it.ticks to now) }
+            previousTicks = filtered.associate { it.pid to (it.ticks to now) }
         }
         _snapshot.value = LinuxProcessSnapshot(processes, now)
     }

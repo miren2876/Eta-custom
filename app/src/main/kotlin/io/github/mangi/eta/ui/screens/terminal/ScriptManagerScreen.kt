@@ -83,7 +83,11 @@ internal fun ScriptManagerScreen(
     // 页面可见期间持有 1 秒采样租约；离开即释放，不留常驻 root 进程。
     DisposableEffect(Unit) {
         val lease = LinuxProcessSampler.acquire(1_000L)
-        onDispose { lease.release() }
+        onDispose {
+            lease.release()
+            // 离开页面后不再需要 Android 环境脚本的进程树，通知侧只关心 rootfs。
+            LinuxProcessSampler.setExtraRootPids(emptySet())
+        }
     }
 
     // 只在本页可见时轮询；离开页面这一协程随组合取消，不留后台定时器。

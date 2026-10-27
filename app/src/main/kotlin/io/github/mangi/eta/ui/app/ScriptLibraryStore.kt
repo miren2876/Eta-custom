@@ -238,6 +238,8 @@ internal class ScriptLibraryStore(
         val rootPids = resolved.mapNotNull { (_, status) ->
             status?.takeIf { it.running }?.task?.pid?.toInt()
         }
+        // Android 环境的脚本任务不在 rootfs 内，告诉采样器把它们的进程树也带上。
+        LinuxProcessSampler.setExtraRootPids(rootPids)
         val snapshot = LinuxProcessSampler.snapshot.value
         val usage = if (snapshot == null) {
             emptyMap()
