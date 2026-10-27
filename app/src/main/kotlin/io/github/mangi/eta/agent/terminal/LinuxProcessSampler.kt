@@ -80,7 +80,14 @@ internal object LinuxProcessSampler {
     private var extraRootPids: Set<Int> = emptySet()
 
     fun setExtraRootPids(pids: Collection<Int>) {
-        extraRootPids = pids.toSet()
+        val next = pids.toSet()
+        if (next == extraRootPids) return
+        synchronized(lock) {
+            if (next == extraRootPids) return
+            extraRootPids = next
+            // 脚本里的额外 pid 是插值，变了必须重启 root 循环。
+            if (leases.isNotEmpty()) ensureRunningLocked(forceRestart = true)
+        }
     }
 
     /** 一次采样订阅；页面与通知各持一个，释放后自动降低采样频率或停止。 */
@@ -115,10 +122,10 @@ internal object LinuxProcessSampler {
     private fun desiredIntervalLocked(): Long =
         (leases.values.minOrNull() ?: 0L).coerceAtLeast(MIN_INTERVAL_MS)
 
-    private fun ensureRunningLocked() {
+    private fun ensureRunningLocked(forceRestart: Boolean = false) {
         val desired = desiredIntervalLocked()
         if (desired <= 0L) return
-        if (job?.isActive == true && activeIntervalMs == desired) return
+        if (!forceRestart && job?.isActive == true && activeIntervalMs == desired) return
         // 间隔变了必须重启 root 循环（sleep 参数写死在脚本里）；这里不阻塞调用线程。
         job?.cancel()
         activeProcess?.destroy()
@@ -194,22 +201,44 @@ internal object LinuxProcessSampler {
 
     private fun samplerScript(intervalMs: Long): String {
         val intervalSeconds = (intervalMs.coerceAtLeast(MIN_INTERVAL_MS) / 1000.0).toString()
+        // 每轮先用 ls 批量读 /proc/*/root 与 /proc/*/exe（各一次 fork）筛出候选 pid，
+        // 再只对候选读 stat/status/cmdline。逐进程 fork 的写法在这台机器上
+        // 20 秒只能遍历一百多个进程，常驻循环根本跑不完一轮。
         return """
             # $SCRIPT_MARKER
+            EXTRA_PIDS='${extraRootPids.joinToString(" ")}'
             while true; do
-              for p in /proc/[0-9]*; do
-                pid=${'$'}{p##*/}
-                st=${'$'}(cat "${'$'}p/stat" 2>/dev/null)
+              {
+                {
+                  ls -l /proc/[0-9]*/root 2>/dev/null
+                  ls -l /proc/[0-9]*/exe 2>/dev/null
+                } | awk '
+                  {
+                    i = index(${'$'}0, " -> ")
+                    if (i == 0) next
+                    path = substr(${'$'}0, i + 4)
+                    if (path !~ /terminal/ || path !~ /rootfs/) next
+                    lhs = substr(${'$'}0, 1, i - 1)
+                    sub(/.*\/proc\//, "", lhs)
+                    sub(/\/.*/, "", lhs)
+                    if (lhs != "") print lhs
+                  }'
+                for r in ${'$'}EXTRA_PIDS; do echo "${'$'}r"; done
+              } | sort -u | while read -r pid; do
+                [ -d "/proc/${'$'}pid" ] || continue
+                st=${'$'}(cat "/proc/${'$'}pid/stat" 2>/dev/null)
                 [ -z "${'$'}st" ] && continue
-                ppid=${'$'}(echo "${'$'}st" | awk '{print ${'$'}4}')
-                ticks=${'$'}(echo "${'$'}st" | awk '{print ${'$'}14+${'$'}15}')
-                rss=${'$'}(awk '/^VmRSS/{print ${'$'}2}' "${'$'}p/status" 2>/dev/null)
-                root=${'$'}(readlink "${'$'}p/root" 2>/dev/null)
-                exe=${'$'}(readlink "${'$'}p/exe" 2>/dev/null)
-                cwd=${'$'}(readlink "${'$'}p/cwd" 2>/dev/null)
-                cmd=${'$'}(tr '\0' ' ' < "${'$'}p/cmdline" 2>/dev/null | cut -c1-$MAX_COMMAND_CHARS)
+                rest=${'$'}{st##*) }
+                set -- ${'$'}rest
+                ppid=${'$'}{2:-0}
+                ticks=${'$'}(( ${'$'}{12:-0} + ${'$'}{13:-0} ))
+                rss=${'$'}(awk '/^VmRSS/{print ${'$'}2}' "/proc/${'$'}pid/status" 2>/dev/null)
+                root=${'$'}(readlink "/proc/${'$'}pid/root" 2>/dev/null)
+                exe=${'$'}(readlink "/proc/${'$'}pid/exe" 2>/dev/null)
+                cwd=${'$'}(readlink "/proc/${'$'}pid/cwd" 2>/dev/null)
+                cmd=${'$'}(tr '\0' ' ' < "/proc/${'$'}pid/cmdline" 2>/dev/null | cut -c1-$MAX_COMMAND_CHARS)
                 [ -z "${'$'}cmd" ] && cmd="[${'$'}exe]"
-                echo "P|${'$'}pid|${'$'}{ppid:-0}|${'$'}{ticks:-0}|${'$'}{rss:-0}|${'$'}root|${'$'}exe|${'$'}cwd|${'$'}cmd"
+                echo "P|${'$'}pid|${'$'}ppid|${'$'}ticks|${'$'}{rss:-0}|${'$'}root|${'$'}exe|${'$'}cwd|${'$'}cmd"
               done
               echo "END"
               sleep $intervalSeconds
