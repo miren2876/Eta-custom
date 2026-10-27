@@ -1380,7 +1380,6 @@
   <string name="tool_fetch_url">读取网页正文</string>
   <string name="tool_fetch_url_description">读取网页正文并分页续读，支持内置静态抓取、DeepSeek 或自定义接口，失败时自动回退到本地静态抓取。</string>
     <string name="virtual_screen_title">虚拟屏（实验性）</string>
-  <string name="tool_virtual_screen">管理虚拟屏</string>
     <string name="tool_ask_user">向你提问</string>
     <string name="settings_ask_user_title">不确定时向我提问</string>
     <string name="settings_ask_user_summary">任务需要你拍板或信息不足时，弹出带选项的提问卡片：可单选、多选、自定义回答或跳过。</string>

@@ -72,8 +72,6 @@ internal object SettingsDataStore {
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
-    private val VIRTUAL_SCREEN_ENABLED = booleanPreferencesKey("virtual_screen_enabled")
-    private val VIRTUAL_SCREEN_FALLBACK_ENABLED = booleanPreferencesKey("virtual_screen_fallback_enabled")
     private val OVERLAY_CAPSULE_PINNED = booleanPreferencesKey("overlay_capsule_pinned")
     private val OVERLAY_CAPSULE_POS_X = intPreferencesKey("overlay_capsule_pos_x")
     private val OVERLAY_CAPSULE_POS_Y = intPreferencesKey("overlay_capsule_pos_y")
@@ -138,8 +136,6 @@ internal object SettingsDataStore {
             prefs.putOrRemove(SELECTED_PROVIDER_ID, updated.selectedProviderId)
             prefs.putOrRemove(SELECTED_MODEL_ID, updated.selectedModelId)
             prefs[MEMORY_ENABLED] = updated.memoryEnabled
-            prefs[VIRTUAL_SCREEN_ENABLED] = updated.virtualScreenEnabled
-            prefs[VIRTUAL_SCREEN_FALLBACK_ENABLED] = updated.virtualScreenFallbackEnabled
             prefs[OVERLAY_CAPSULE_PINNED] = updated.overlayCapsulePinned
             prefs[OVERLAY_CAPSULE_POS_X] = updated.overlayCapsulePosX
             prefs[OVERLAY_CAPSULE_POS_Y] = updated.overlayCapsulePosY
@@ -269,8 +265,6 @@ internal object SettingsDataStore {
         selectedProviderId = this[SELECTED_PROVIDER_ID],
         selectedModelId = this[SELECTED_MODEL_ID],
         memoryEnabled = this[MEMORY_ENABLED] ?: true,
-        virtualScreenEnabled = this[VIRTUAL_SCREEN_ENABLED] ?: false,
-        virtualScreenFallbackEnabled = this[VIRTUAL_SCREEN_FALLBACK_ENABLED] ?: false,
         overlayCapsulePinned = this[OVERLAY_CAPSULE_PINNED] ?: false,
         overlayCapsulePosX = this[OVERLAY_CAPSULE_POS_X] ?: -1,
         overlayCapsulePosY = this[OVERLAY_CAPSULE_POS_Y] ?: -1,

@@ -1337,7 +1337,6 @@
   <string name="speech_save_retry">請重試</string>
   <string name="system_notice_model_retry">模型請求重試</string>
     <string name="virtual_screen_title">虛擬螢幕（實驗性）</string>
-  <string name="tool_virtual_screen">管理虛擬螢幕</string>
     <string name="tool_ask_user">向你提問</string>
     <string name="settings_ask_user_title">不確定時向我提問</string>
     <string name="settings_ask_user_summary">任務需要你決定或資訊不足時，彈出帶選項的提問卡片：可單選、多選、自訂回答或略過。</string>

@@ -30,14 +30,9 @@ internal data class AgentToolCapabilities(
     val hotspotAvailable: Boolean = true,
     val nfcAvailable: Boolean = true,
     val nightLightAvailable: Boolean = true,
-    val virtualDisplayAvailable: Boolean = true,
-    val virtualScreenEnabled: Boolean = false,
-    val virtualScreenFallbackEnabled: Boolean = false,
-    val virtualUiTreeAvailable: Boolean = true,
     val askUser: Boolean = false,
 ) {
     fun unavailableCode(name: String): String? {
-        if (name == "virtual_screen" && !virtualDisplayAvailable) return "DEVICE_UNSUPPORTED"
         if (name == "ask_user" && !askUser) return "ASK_USER_DISABLED"
         if (name in setOf(
                 "get_flashlight",
@@ -118,9 +113,6 @@ internal data class AgentToolCapabilities(
                         (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                                 context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED),
                 colorOs = isColorOsDevice(),
-                virtualDisplayAvailable = Build.VERSION.SDK_INT >= 34,
-                virtualScreenEnabled = settings.virtualScreenEnabled,
-                virtualScreenFallbackEnabled = settings.virtualScreenFallbackEnabled,
                 askUser = io.github.mangi.eta.config.Prefs.isEnabled(io.github.mangi.eta.config.Prefs.Keys.AGENT_ASK_USER),
                 calendarReadable = io.github.mangi.eta.agent.device.CalendarPermissions.granted(
                     context,

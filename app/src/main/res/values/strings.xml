@@ -1399,7 +1399,6 @@
   <string name="tool_fetch_url">读取网页正文</string>
   <string name="tool_fetch_url_description">读取网页正文并分页续读，支持内置静态抓取、DeepSeek 或自定义接口，失败时自动回退到本地静态抓取。</string>
     <string name="virtual_screen_title">Virtual screen (experimental)</string>
-  <string name="tool_virtual_screen">Manage virtual screen</string>
     <string name="tool_ask_user">Ask you a question</string>
     <string name="settings_ask_user_title">Ask me when unsure</string>
     <string name="settings_ask_user_summary">When a task needs your decision, show a card with options: single choice, multiple choice, your own answer, or skip.</string>
