@@ -297,10 +297,10 @@ internal fun AgentMemoryScreen(
                                         manual = true,
                                     )
                                     val message = resources.getString(
-                                        if (started) {
-                                            R.string.memory_compact_started
-                                        } else {
-                                            R.string.memory_compact_throttled
+                                        when {
+                                            started -> R.string.memory_compact_started
+                                            !usage.needsCompaction -> R.string.memory_compact_not_needed
+                                            else -> R.string.memory_compact_throttled
                                         },
                                     )
                                     android.widget.Toast.makeText(
