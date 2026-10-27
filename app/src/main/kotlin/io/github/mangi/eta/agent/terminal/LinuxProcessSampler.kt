@@ -25,14 +25,6 @@ internal data class LinuxProcessInfo(
     val cpuPercent: Double?,
 ) {
     val memoryMb: Double get() = rssKb / 1024.0
-    val summaryLine: String
-        get() = buildString {
-            append(usage)
-            append(" · CPU ")
-            append(cpuPercent?.let { "%.1f%%".format(it) } ?: "—")
-            append(" · ")
-            append("%.1f MB".format(memoryMb))
-        }
 }
 
 internal data class LinuxProcessSnapshot(
@@ -179,7 +171,7 @@ internal object LinuxProcessSampler {
                         when {
                             trimmed == "END" -> {
                                 sawData = true
-                                publish(rows, intervalMs)
+                                publish(rows)
                                 rows.clear()
                             }
                             trimmed.startsWith("P|") -> parseRow(trimmed)?.let(rows::add)
@@ -272,7 +264,7 @@ internal object LinuxProcessSampler {
         return rows.filter { it.rootfsHit || it.pid in keep }
     }
 
-    private fun publish(rows: List<SnapshotRow>, intervalMs: Long) {
+    private fun publish(rows: List<SnapshotRow>) {
         val now = System.currentTimeMillis()
         val filtered = filterRows(rows)
         if (filtered.isEmpty()) {
@@ -305,13 +297,19 @@ internal object LinuxProcessSampler {
     }
 
     /** 结束单个进程；调用方负责乐观更新列表。 */
-    fun killProcess(pid: Int): Boolean = runCatching {
+    fun killProcess(pid: Int): Boolean {
         if (pid <= 1 || !RootAccess.isGranted) return false
-        val process = ProcessBuilder("/system/bin/su", "-c", "kill -9 $pid").redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        process.waitFor()
-        !output.contains("Permission denied") && !output.contains("inaccessible or not found")
-    }.getOrDefault(false)
+        for (su in suCandidates) {
+            val ok = runCatching {
+                val process = ProcessBuilder(su, "-c", "kill -9 $pid").redirectErrorStream(true).start()
+                val output = process.inputStream.bufferedReader().readText()
+                process.waitFor()
+                !output.contains("Permission denied") && !output.contains("inaccessible or not found")
+            }.getOrDefault(false)
+            if (ok) return true
+        }
+        return false
+    }
 
     /** 兜底清理可能残留的采样 shell（su 被杀后子进程会变孤儿）。 */
     private fun killStraySampler() {
