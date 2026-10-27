@@ -1043,6 +1043,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val REVIEW_GRACE_MS = 1_000L
 
     private fun startMemoryReviewRun(prompt: String) {
+        if (AgentMemoryCompactor.isActive()) {
+            traceIdleReview("整理跳过：记忆压缩正在进行")
+            return
+        }
         val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
             .getOrNull()
         if (config == null) {
@@ -1803,6 +1807,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         },
                         trace = { line -> service.traceIdleReview(line) },
                         reviewActive = { instance.hasPendingWork() },
+                        notify = { text, pending ->
+                            if (pending) {
+                                AgentExecutionService.postMemoryCompactionPending(service, text)
+                            } else {
+                                AgentExecutionService.postMemoryCompactionResult(service, text)
+                            }
+                        },
                     )
                     // App 启动后首次检查一次容量。
                     AgentMemoryCompactor.request("app-start")

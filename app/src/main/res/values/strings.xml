@@ -1474,6 +1474,14 @@
   <string name="memory_compact_skipped">%1$d entries are not injected because of budget</string>
   <string name="memory_compact_profile_full">The profile fills the whole budget; no entries injected</string>
   <string name="memory_compact_now">Compact now</string>
+  <string name="memory_compact_done_title">Memory compacted</string>
+  <string name="memory_compact_chip_done">Compacted</string>
+  <string name="memory_compact_pending_title">Memory needs your decision</string>
+  <string name="memory_compact_chip_pending">Decide</string>
+  <string name="memory_compact_pending_text">Memory is still over budget after compaction. Review the entries and pick what to drop.</string>
+  <string name="memory_compact_throttled">Compacted a moment ago; try again in a few minutes</string>
+  <string name="memory_compact_started">Compaction started</string>
+  <string name="memory_compact_warning">Memory is almost full (%1$d%% of the budget)</string>
   <string name="memory_entries_title">Active entries</string>
   <string name="memory_entries_summary">%1$d entries, ranked by EI (importance × references × decay)</string>
   <string name="memory_entries_empty">No entries yet — the model can add one with memory_write target=entry</string>

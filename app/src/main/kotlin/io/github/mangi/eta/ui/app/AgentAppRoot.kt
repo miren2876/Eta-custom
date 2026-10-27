@@ -139,6 +139,9 @@ fun AgentAppRoot(
     onTerminalOpened: () -> Unit = {},
     openTasks: Boolean = false,
     onTasksOpened: () -> Unit = {},
+    /** 记忆压缩通知点击后直达「记忆」页。 */
+    openMemory: Boolean = false,
+    onMemoryOpened: () -> Unit = {},
     onSpeechSettingsOpened: () -> Unit = {},
     onAssistantConversationOpened: (Boolean) -> Unit = {},
 ) {
@@ -174,6 +177,13 @@ fun AgentAppRoot(
         if (openTasks) {
             if (backStack.lastOrNull() != AppRoute.Scripts) backStack.add(AppRoute.Scripts)
             onTasksOpened()
+        }
+    }
+    // 记忆压缩结果/待决定通知点击后直达「记忆」页。
+    LaunchedEffect(openMemory) {
+        if (openMemory) {
+            if (backStack.lastOrNull() != AppRoute.Memory) backStack.add(AppRoute.Memory)
+            onMemoryOpened()
         }
     }
     val navigator = remember(backStack) { AgentNavigator(backStack) }

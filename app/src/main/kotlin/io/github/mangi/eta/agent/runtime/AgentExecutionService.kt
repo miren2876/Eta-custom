@@ -159,6 +159,8 @@ internal class AgentExecutionService : Service() {
         private const val CHANNEL = "eta_execution"
         private const val REVIEW_CHANNEL = "eta_memory_review"
         private const val REVIEW_RESULT_NOTIFICATION_ID = 1109
+        private const val COMPACT_RESULT_NOTIFICATION_ID = 1110
+        private const val COMPACT_PENDING_NOTIFICATION_ID = 1111
         private const val REVIEW_RESULT_TIMEOUT_MS = 30_000L
         private const val NOTIFICATION_ID = 1107
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
@@ -195,6 +197,72 @@ internal class AgentExecutionService : Service() {
             }.onFailure { failure ->
                 AndroidAgentLogger.warnThrottled("memory_review_notify_failed") {
                     "Memory review notification failed: type=${failure.safeLogType()}"
+                }
+            }
+        }
+
+        /**
+         * 记忆压缩跑完后的短提醒（与整理通知共用通道，文案区分「已压缩」）。
+         */
+        fun postMemoryCompactionResult(context: Context, text: String) {
+            postMemoryCompactionNotice(
+                context = context,
+                notificationId = COMPACT_RESULT_NOTIFICATION_ID,
+                title = context.getString(R.string.memory_compact_done_title),
+                chip = context.getString(R.string.memory_compact_chip_done),
+                text = text,
+                timeoutMs = REVIEW_RESULT_TIMEOUT_MS,
+            )
+        }
+
+        /**
+         * 压不动、等用户拍板：点通知直达记忆页。不自动消失，直到用户处理或下一次压缩成功。
+         */
+        fun postMemoryCompactionPending(context: Context, text: String) {
+            postMemoryCompactionNotice(
+                context = context,
+                notificationId = COMPACT_PENDING_NOTIFICATION_ID,
+                title = context.getString(R.string.memory_compact_pending_title),
+                chip = context.getString(R.string.memory_compact_chip_pending),
+                text = text,
+                timeoutMs = 0L,
+            )
+        }
+
+        @SuppressLint("NewApi")
+        private fun postMemoryCompactionNotice(
+            context: Context,
+            notificationId: Int,
+            title: String,
+            chip: String,
+            text: String,
+            timeoutMs: Long,
+        ) {
+            runCatching {
+                val open = PendingIntent.getActivity(
+                    context,
+                    notificationId,
+                    Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_MEMORY),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val builder = Notification.Builder(context, REVIEW_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setContentIntent(open)
+                    .setAutoCancel(true)
+                if (timeoutMs > 0L) builder.setTimeoutAfter(timeoutMs)
+                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+                    builder
+                        .setOngoing(true)
+                        .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
+                        .setShortCriticalText(chip)
+                        .setRequestPromotedOngoing(true)
+                }
+                context.getSystemService(NotificationManager::class.java).notify(notificationId, builder.build())
+            }.onFailure { failure ->
+                AndroidAgentLogger.warnThrottled("memory_compact_notify_failed") {
+                    "Memory compaction notification failed: type=${failure.safeLogType()}"
                 }
             }
         }

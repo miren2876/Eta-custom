@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -231,10 +233,14 @@ internal fun AgentMemoryScreen(
                 }
 
                 item(key = "capacity") {
-                    val usage = remember(state.entries.size, state.files.size) {
+                    // 压缩器每次跑完会改这个状态；跟着它一起刷新容量卡片。
+                    val compactionPending = io.github.mangi.eta.agent.runtime.AgentMemoryCompactor
+                        .pendingDecision.collectAsState().value
+                    val usage = remember(state.entries.size, state.files.size, compactionPending) {
                         runCatching { io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.usage() }.getOrNull()
                     }
                     if (usage != null) {
+                        val context = LocalContext.current
                         EtaPreferenceGroup(
                             modifier = Modifier
                                 .padding(horizontal = 16.dp)
@@ -249,12 +255,14 @@ internal fun AgentMemoryScreen(
                                     formatBytes(usage.budgetChars),
                                     (usage.ratio * 100).toInt(),
                                 ),
-                                titleColor = if (usage.skippedCount > 0) {
-                                    top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
+                                titleColor = when {
+                                    usage.skippedCount > 0 -> top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
                                         color = MiuixTheme.colorScheme.error,
                                     )
-                                } else {
-                                    top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor()
+                                    usage.ratio >= 0.9f -> top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
+                                        color = MiuixTheme.colorScheme.primary,
+                                    )
+                                    else -> top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor()
                                 },
                             )
                             if (usage.totalEntryCount > 0 && usage.entryCount == 0) {
@@ -265,15 +273,37 @@ internal fun AgentMemoryScreen(
                                 SectionHint(
                                     text = stringResource(R.string.memory_compact_skipped, usage.skippedCount),
                                 )
+                            } else if (usage.ratio >= 0.9f) {
+                                EtaPreferenceDivider()
+                                SectionHint(
+                                    text = stringResource(
+                                        R.string.memory_compact_warning,
+                                        (usage.ratio * 100).toInt(),
+                                    ),
+                                )
+                            }
+                            if (compactionPending) {
+                                EtaPreferenceDivider()
+                                SectionHint(text = stringResource(R.string.memory_compact_pending_text))
                             }
                             EtaPreferenceDivider()
                             EtaPreference(
                                 title = stringResource(R.string.memory_compact_now),
                                 onClick = {
-                                    io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.request(
+                                    val started = io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.request(
                                         reason = "manual",
                                         manual = true,
                                     )
+                                    val text = if (started) {
+                                        R.string.memory_compact_started
+                                    } else {
+                                        R.string.memory_compact_throttled
+                                    }
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        context.getString(text),
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
                                 },
                             )
                         }

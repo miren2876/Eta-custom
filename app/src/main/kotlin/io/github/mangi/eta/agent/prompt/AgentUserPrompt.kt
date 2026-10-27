@@ -89,6 +89,8 @@ internal object AgentUserPrompt {
         owner: String,
         args: JSONObject,
         conversationId: String? = null,
+        /** 等待上限；记忆压缩这类后台 run 用更短的超时，用户不在就不该无限挂起。 */
+        timeoutMs: Long = TIMEOUT_MS,
         /** 放在最后，保留 `request(...) { isCancelled }` 的尾随 lambda 写法。 */
         isCancelled: () -> Boolean,
     ): String {
@@ -110,7 +112,7 @@ internal object AgentUserPrompt {
             while (true) {
                 entry.answer.get()?.let { answers -> return answersResult(request, answers, timedOut = false) }
                 if (isCancelled()) return errorResult("PROMPT_CANCELLED", "任务已取消，提问未送达或未回答")
-                if (android.os.SystemClock.elapsedRealtime() - startedAt >= TIMEOUT_MS) {
+                if (android.os.SystemClock.elapsedRealtime() - startedAt >= timeoutMs) {
                     return answersResult(
                         request,
                         request.questions.map { AgentUserPromptAnswer(it.id, emptyList(), "", skipped = true) },

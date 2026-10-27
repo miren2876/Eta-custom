@@ -598,14 +598,28 @@ internal class AgentMemoryStore(
     }
 
     /**
-     * 注入用投影：用户画像 + 按 EI 降序的活跃条目（不超过 budgetChars）+ 一行档案统计。
-     * 超预算只截断条目，画像与档案行始终保留。
-     */
-    /**
      * 核心记忆的容量占用：与 [coreProjection] 用同一份预算算法，
      * 供容量检测、记忆页展示与压缩整理判断。
      */
     fun coreUsage(budgetChars: Int): AgentMemoryCoreUsage = synchronized(lock) {
+        val split = coreSplitLocked(budgetChars)
+        AgentMemoryCoreUsage(
+            profileBytes = split.profile.toByteArray(Charsets.UTF_8).size,
+            entryBytes = split.usedChars,
+            entryCount = split.injected.size,
+            totalEntryCount = split.injected.size + split.skipped.size,
+            skippedCount = split.skipped.size,
+            budgetChars = budgetChars,
+        )
+    }
+
+    /** 被预算挤掉、这一轮没有注入的条目；压缩整理用它在提示词里给出候选。 */
+    fun coreSkippedEntries(budgetChars: Int): List<AgentMemoryEntry> = synchronized(lock) {
+        coreSplitLocked(budgetChars).skipped
+    }
+
+    /** 与 [coreProjection] 同一套预算：把条目分成「已注入」与「被挤掉」两批。 */
+    private fun coreSplitLocked(budgetChars: Int): CoreSplit {
         val profile = readText(userFile).trimEnd('\n')
         val files = files()
         val head = buildString {
@@ -626,27 +640,31 @@ internal class AgentMemoryStore(
         }
         val room = (budgetChars - head.length - tail.length).coerceAtLeast(0)
         var used = 0
-        var count = 0
-        var skipped = 0
+        val injected = mutableListOf<AgentMemoryEntry>()
+        val skipped = mutableListOf<AgentMemoryEntry>()
         entriesLocked().forEach { entry ->
             val line = "- (${entry.importance}) ${entry.text}"
             if (used + line.length + 1 > room) {
-                skipped++
+                skipped += entry
             } else {
                 used += line.length + 1
-                count++
+                injected += entry
             }
         }
-        AgentMemoryCoreUsage(
-            profileBytes = profile.toByteArray(Charsets.UTF_8).size,
-            entryBytes = used,
-            entryCount = count,
-            totalEntryCount = count + skipped,
-            skippedCount = skipped,
-            budgetChars = budgetChars,
-        )
+        return CoreSplit(profile, used, injected, skipped)
     }
 
+    private data class CoreSplit(
+        val profile: String,
+        val usedChars: Int,
+        val injected: List<AgentMemoryEntry>,
+        val skipped: List<AgentMemoryEntry>,
+    )
+
+    /**
+     * 注入用投影：用户画像 + 按 EI 降序的活跃条目（不超过 budgetChars）+ 一行档案统计。
+     * 超预算只截断条目，画像与档案行始终保留。
+     */
     fun coreProjection(budgetChars: Int): String = synchronized(lock) {
         val profile = readText(userFile).trimEnd('\n')
         val files = files()
@@ -910,9 +928,6 @@ internal class AgentMemoryStore(
 
     /** 工作记忆（MEMORY.md：档案索引 + 当前进度）。 */
     fun coreWorking(): String = synchronized(lock) { readText(workingFile).trimEnd('\n') }
-
-    /** 用户画像原文（不含标题行）；压缩整理与记忆页展示用。 */
-    fun coreProfile(): String = synchronized(lock) { readText(userFile).trimEnd('\n') }
 
     fun replaceCoreProfile(text: String): AgentMemorySnapshot = synchronized(lock) {
         writeProfile(text)
@@ -1952,6 +1967,12 @@ internal object AgentMemoryRepository {
     fun coreProfile(): String {
         ensureInitialized()
         return store.coreProfile()
+    }
+
+    /** 被预算挤掉、这一轮没有注入的条目（压缩整理的候选清单）。 */
+    fun coreSkippedEntries(budgetChars: Int): List<AgentMemoryEntry> {
+        ensureInitialized()
+        return store.coreSkippedEntries(budgetChars)
     }
 
     fun coreWorking(): String {

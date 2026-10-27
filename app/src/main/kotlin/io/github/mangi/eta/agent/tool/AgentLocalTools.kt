@@ -68,6 +68,27 @@ import kotlinx.coroutines.runBlocking
 /** 记忆写入策略：整理 run 只允许写一层，且档案只能追加。 */
 internal enum class AgentMemoryWritePolicy { FULL, REVIEW, COMPACT }
 
+/**
+ * 写入前的策略判定：返回（错误码, 说明），null 表示放行。
+ *
+ * - FULL：用户会话，按工具自身规则写。
+ * - REVIEW（空闲整理）：只追加档案或写条目，一轮只写一层。
+ * - COMPACT（记忆压缩）：可以改画像、改写/删除条目、追加或修正档案，但不能整份覆盖工作记忆。
+ */
+internal fun memoryWriteDenied(
+    policy: AgentMemoryWritePolicy,
+    target: String?,
+    archive: Boolean,
+): Pair<String, String>? = when {
+    policy == AgentMemoryWritePolicy.FULL -> null
+    archive -> null
+    policy == AgentMemoryWritePolicy.COMPACT && target == "working" ->
+        "MEMORY_COMPACT_WORKING_DENIED" to "压缩 run 不能整份覆盖工作记忆，只能逐条改写或删除条目"
+    policy == AgentMemoryWritePolicy.REVIEW && target != null && target != "entry" ->
+        "MEMORY_REVIEW_TARGET_DENIED" to "整理 run 只能追加档案或写条目，不能改画像或整份工作记忆"
+    else -> null
+}
+
 internal class AgentLocalTools(
     private val context: Context,
     private val logger: AgentLogger,
@@ -375,6 +396,12 @@ internal class AgentLocalTools(
             owner = browserRunId,
             args = args,
             conversationId = askUserConversationId,
+            // 压缩 run 是后台任务：用户可能不在，90 秒没回应就按跳过处理，别把 run 挂住。
+            timeoutMs = if (memoryWritePolicy == AgentMemoryWritePolicy.COMPACT) {
+                io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.ASK_TIMEOUT_MS
+            } else {
+                30 * 60 * 1000L
+            },
             isCancelled = { closed.get() },
         )
         return textResult(result)
@@ -540,23 +567,11 @@ internal class AgentLocalTools(
 
     private fun memoryWrite(args: JSONObject): String {
         val archiveName = args.optString("archive").takeIf(String::isNotBlank)
-        if (memoryWritePolicy == AgentMemoryWritePolicy.COMPACT) {
-            val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
-            if (archiveName == null && target == "working") {
-                return errorResult(
-                    "MEMORY_COMPACT_WORKING_DENIED",
-                    "压缩 run 不能整份覆盖工作记忆，只能逐条改写或删除条目",
-                )
-            }
+        val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
+        memoryWriteDenied(memoryWritePolicy, target, archiveName != null)?.let { (code, message) ->
+            return errorResult(code, message)
         }
         if (memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
-            val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
-            if (archiveName == null && target != null && target != "entry") {
-                return errorResult(
-                    "MEMORY_REVIEW_TARGET_DENIED",
-                    "整理 run 只能追加档案或写条目，不能改画像或整份工作记忆",
-                )
-            }
             val layer = if (archiveName != null) "档案" else "条目"
             val declared = memoryReviewLayer.get()
             if (declared == null) {
