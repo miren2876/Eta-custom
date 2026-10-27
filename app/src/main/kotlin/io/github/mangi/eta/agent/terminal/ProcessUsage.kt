@@ -12,7 +12,7 @@ internal object ProcessUsage {
 
     /** 只包一层、真正干活的是后面那条命令的包装器。 */
     private val shellWrappers = setOf("bash", "sh", "dash", "ash", "zsh", "ksh", "busybox")
-    private val passThroughWrappers = setOf("sudo", "env", "nice", "ionice", "nohup", "stdbuf", "time")
+    private val passThroughWrappers = setOf("su", "sudo", "env", "nice", "ionice", "nohup", "stdbuf", "time")
 
     /** 这些选项带一个值，解析包装器时要一起跳过。 */
     private val wrappersWithValue = mapOf(
@@ -20,6 +20,7 @@ internal object ProcessUsage {
         "nice" to setOf("-n"),
         "ionice" to setOf("-c", "-n"),
         "sudo" to setOf("-u", "-g"),
+        "su" to setOf("-u", "-g", "-s", "--shell"),
     )
 
     /** 用途识别上限：命令行长到离谱时只看前面这段，避免正则回溯。 */
@@ -89,8 +90,17 @@ internal object ProcessUsage {
             return null
         }
         if (exe in passThroughWrappers) {
+            val withValue = wrappersWithValue[exe].orEmpty()
             var i = 1
-            while (i < tokens.size && tokens[i].startsWith("-")) i++
+            while (i < tokens.size) {
+                val token = tokens[i]
+                if (!token.startsWith("-")) break
+                // su/sudo 的 -c 后面跟的就是要执行的命令，直接取剩余部分。
+                if (token == "-c" || token == "--command") {
+                    return tokens.drop(i + 1).joinToString(" ").takeIf { it.isNotBlank() }
+                }
+                i += if (token in withValue) 2 else 1
+            }
             return tokens.drop(i).joinToString(" ").takeIf { it.isNotBlank() }
         }
         if (exe == "timeout") {
@@ -102,19 +112,6 @@ internal object ProcessUsage {
             // timeout 后面第一个非选项是时长，再往后才是真正的命令
             while (i < tokens.size && tokens[i].startsWith("-")) i++
             if (i < tokens.size) i++
-            return tokens.drop(i).joinToString(" ").takeIf { it.isNotBlank() }
-        }
-        if (exe == "nice" || exe == "ionice" || exe == "sudo") {
-            val withValue = wrappersWithValue[exe].orEmpty()
-            var i = 1
-            while (i < tokens.size) {
-                val token = tokens[i]
-                if (token.startsWith("-")) {
-                    i += if (token in withValue) 2 else 1
-                } else {
-                    break
-                }
-            }
             return tokens.drop(i).joinToString(" ").takeIf { it.isNotBlank() }
         }
         return null
