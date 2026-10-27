@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import io.github.mangi.eta.agent.terminal.LinuxRunMonitor
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -62,13 +63,28 @@ internal class AgentExecutionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopTasks()
-        } else {
-            ensureForeground()
-            refreshNotification()
+        when (intent?.action) {
+            ACTION_STOP -> stopTasks()
+            // Linux 运行通知的两个动作：只处理动作本身，不把服务当前台常驻。
+            LinuxRunMonitor.ACTION_EXIT_LINUX -> {
+                LinuxRunMonitor.requestExit()
+                stopSelfIfIdle(startId)
+            }
+            LinuxRunMonitor.ACTION_STOP_LINUX_PROCESS -> {
+                LinuxRunMonitor.requestStopProcess(intent?.getIntExtra(LinuxRunMonitor.EXTRA_PID, 0) ?: 0)
+                stopSelfIfIdle(startId)
+            }
+            else -> {
+                ensureForeground()
+                refreshNotification()
+            }
         }
         return START_NOT_STICKY
+    }
+
+    /** 没有正在跑的任务时，动作处理完就让服务退出，避免留下空服务。 */
+    private fun stopSelfIfIdle(startId: Int) {
+        if (activeRunCount == 0 && leases.count() == 0) stopSelf(startId)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

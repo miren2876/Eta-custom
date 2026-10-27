@@ -55,6 +55,13 @@ class ProcessTreeTest {
     }
 
     @Test
+    fun `快照刷新后剔除已消失的选中 pid`() {
+        assertEquals(setOf(2, 3), retainLivePids(setOf(1, 2, 3), setOf(2, 3, 4)))
+        assertEquals(emptySet<Int>(), retainLivePids(setOf(1), emptySet()))
+        assertEquals(setOf(1), retainLivePids(emptySet(), setOf(1)))
+    }
+
+    @Test
     fun `没有脚本任务时全部算游离进程`() {
         val processes = listOf(process(100, 1, 0.0, 512), process(200, 1, 0.0, 256))
 

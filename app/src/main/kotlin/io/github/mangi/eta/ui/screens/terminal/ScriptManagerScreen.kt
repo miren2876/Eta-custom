@@ -1,9 +1,12 @@
 package io.github.mangi.eta.ui.screens.terminal
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -34,6 +37,7 @@ import io.github.mangi.eta.agent.terminal.LinuxProcessSampler
 import io.github.mangi.eta.agent.terminal.ProcessUsage
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.agent.terminal.detachedProcesses
+import io.github.mangi.eta.agent.terminal.retainLivePids
 import io.github.mangi.eta.ui.app.ConversationTimeLabels
 import io.github.mangi.eta.ui.app.ScriptLibraryStore
 import io.github.mangi.eta.ui.app.ScriptUi
@@ -51,6 +55,9 @@ import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.ansiPlainText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
@@ -79,6 +86,19 @@ internal fun ScriptManagerScreen(
     var logsTaskId by remember { mutableStateOf<String?>(null) }
     // 点过的游离进程先从列表里拿掉，等下一轮快照校正，保证「点完立刻消失」。
     var pendingKills by remember { mutableStateOf(setOf<Int>()) }
+    // 多选：只对游离进程开放，脚本行不参与。
+    var selectedPids by remember { mutableStateOf(setOf<Int>()) }
+    var detailTarget by remember { mutableStateOf<LinuxProcessInfo?>(null) }
+    var stopProcessTarget by remember { mutableStateOf<LinuxProcessInfo?>(null) }
+    var bulkKillConfirm by remember { mutableStateOf(false) }
+
+    val runningScripts = state.scripts.filter { it.running }
+    val savedScripts = state.scripts.filterNot { it.running }
+    val scriptRootIds = runningScripts.mapNotNull { it.pid }
+    val detachedList = snapshot
+        ?.let { detachedProcesses(it.processes, scriptRootIds) }
+        .orEmpty()
+        .filterNot { it.pid in pendingKills }
 
     // 页面可见期间持有 1 秒采样租约；离开即释放，不留常驻 root 进程。
     DisposableEffect(Unit) {
@@ -103,7 +123,12 @@ internal fun ScriptManagerScreen(
     LaunchedEffect(snapshot) {
         val live = snapshot?.processes?.mapTo(mutableSetOf()) { it.pid }.orEmpty()
         if (pendingKills.isNotEmpty()) pendingKills = pendingKills.filter { it in live }.toSet()
+        // 进程已经消失就取消选中，避免 pid 复用后误杀。
+        if (selectedPids.isNotEmpty()) selectedPids = retainLivePids(selectedPids, live)
     }
+
+    // 多选模式下返回键先退出多选，不直接离开页面。
+    BackHandler(enabled = selectedPids.isNotEmpty()) { selectedPids = emptySet() }
 
     MiuixScaffoldPage(
         title = stringResource(R.string.route_scripts),
@@ -129,13 +154,9 @@ internal fun ScriptManagerScreen(
                 }
             }
         }
-        val running = state.scripts.filter { it.running }
-        val saved = state.scripts.filterNot { it.running }
-        val scriptRoots = running.mapNotNull { it.pid }
-        val detached = snapshot
-            ?.let { detachedProcesses(it.processes, scriptRoots) }
-            .orEmpty()
-            .filterNot { it.pid in pendingKills }
+        val running = runningScripts
+        val saved = savedScripts
+        val detached = detachedList
         if (!state.loaded) {
             item(key = "loading") {
                 EtaPreferenceGroup {
@@ -181,16 +202,59 @@ internal fun ScriptManagerScreen(
                 item(key = "running-processes-title") {
                     EtaPreferenceGroupTitle(stringResource(R.string.tasks_group_detached))
                 }
+                if (selectedPids.isNotEmpty()) {
+                    item(key = "multi-select-toolbar") {
+                        EtaPreferenceGroup {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.tasks_selected_count, selectedPids.size),
+                                    style = MiuixTheme.textStyles.footnote1,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                EtaChoiceChip(
+                                    text = stringResource(R.string.tasks_select_all),
+                                    selected = false,
+                                    onClick = { selectedPids = detached.map { it.pid }.toSet() },
+                                )
+                                EtaChoiceChip(
+                                    text = stringResource(R.string.tasks_kill_selected),
+                                    selected = false,
+                                    onClick = { bulkKillConfirm = true },
+                                )
+                                EtaChoiceChip(
+                                    text = stringResource(R.string.tasks_done),
+                                    selected = false,
+                                    onClick = { selectedPids = emptySet() },
+                                )
+                            }
+                        }
+                    }
+                }
                 item(key = "running-processes") {
                     EtaPreferenceGroup {
                         detached.forEachIndexed { index, process ->
                             if (index > 0) EtaPreferenceDivider()
                             DetachedProcessRow(
                                 process = process,
-                                onKill = {
-                                    pendingKills = pendingKills + process.pid
-                                    store.killDetachedProcess(process.pid)
+                                selected = process.pid in selectedPids,
+                                multiSelect = selectedPids.isNotEmpty(),
+                                onToggleSelect = {
+                                    selectedPids = if (process.pid in selectedPids) {
+                                        selectedPids - process.pid
+                                    } else {
+                                        selectedPids + process.pid
+                                    }
                                 },
+                                onLongPress = { selectedPids = selectedPids + process.pid },
+                                onOpenDetail = { detailTarget = process },
+                                onRequestStop = { stopProcessTarget = process },
                             )
                         }
                     }
@@ -298,6 +362,68 @@ internal fun ScriptManagerScreen(
         }
     }
 
+    detailTarget?.let { process ->
+        ProcessDetailDialog(
+            process = process,
+            sampledAt = snapshot?.sampledAt,
+            onDismiss = { detailTarget = null },
+            onRequestStop = {
+                detailTarget = null
+                stopProcessTarget = process
+            },
+        )
+    }
+
+    stopProcessTarget?.let { process ->
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.tasks_kill_confirm_title),
+            summary = stringResource(R.string.tasks_kill_confirm_summary, process.pid, process.usage),
+            onDismissRequest = { stopProcessTarget = null },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.tasks_process_kill),
+                destructive = true,
+                onCancel = { stopProcessTarget = null },
+                onConfirm = {
+                    pendingKills = pendingKills + process.pid
+                    store.killDetachedProcess(process.pid)
+                    selectedPids = selectedPids - process.pid
+                    stopProcessTarget = null
+                },
+            )
+        }
+    }
+
+    if (bulkKillConfirm) {
+        val targets = detachedList.filter { it.pid in selectedPids }
+        val names = targets.take(3).joinToString("、") { it.usage }
+        val summary = if (targets.isEmpty()) {
+            ""
+        } else {
+            stringResource(R.string.tasks_kill_selected_confirm, targets.size, names)
+        }
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.tasks_kill_selected),
+            summary = summary,
+            onDismissRequest = { bulkKillConfirm = false },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.tasks_kill_selected),
+                destructive = true,
+                onCancel = { bulkKillConfirm = false },
+                onConfirm = {
+                    val pids = targets.map { it.pid }
+                    pendingKills = pendingKills + pids
+                    pids.forEach(store::killDetachedProcess)
+                    selectedPids = emptySet()
+                    bulkKillConfirm = false
+                },
+            )
+        }
+    }
+
     logsTaskId?.let { taskId ->
         ScriptLogsDialog(store = store, taskId = taskId, onDismiss = { logsTaskId = null })
     }
@@ -315,18 +441,29 @@ private data class ScriptDraft(
 @Composable
 private fun DetachedProcessRow(
     process: LinuxProcessInfo,
-    onKill: () -> Unit,
+    selected: Boolean,
+    multiSelect: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPress: () -> Unit,
+    onOpenDetail: () -> Unit,
+    onRequestStop: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
-    val meta = stringResource(
-        R.string.tasks_process_meta,
-        process.pid,
-        process.cpuPercent?.let { "%.1f%%".format(it) } ?: "—",
-        "%.1f MB".format(process.memoryMb),
-    )
+    val meta = buildString {
+        append("PID ")
+        append(process.pid)
+        process.cpuPercent?.let { append(" · CPU ").append("%.1f%%".format(it)) }
+        append(" · ")
+        append("%.1f MB".format(process.memoryMb))
+    }
     val command = ProcessUsage.commandSummary(process.command, maxChars = 56)
     val cwd = process.cwd
     EtaPreference(
+        modifier = if (selected) {
+            Modifier.background(colors.primary.copy(alpha = 0.12f))
+        } else {
+            Modifier
+        },
         content = {
             Text(
                 text = process.usage,
@@ -353,17 +490,81 @@ private fun DetachedProcessRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
         },
-        startAction = { StatusDot(color = colors.primary) },
+        startAction = { StatusDot(color = if (selected) colors.primary else StatusSuccess) },
         endActions = {
             RowIconAction(
                 icon = Icons.Rounded.Stop,
-                contentDescription = stringResource(R.string.tasks_process_stop_hint),
+                contentDescription = stringResource(R.string.tasks_process_kill),
                 tint = colors.error,
-                onClick = onKill,
+                onClick = onRequestStop,
             )
         },
-        onClick = onKill,
+        onClickLabel = stringResource(R.string.tasks_process_row_action),
+        onLongClickLabel = stringResource(R.string.tasks_process_long_press),
+        onClick = if (multiSelect) onToggleSelect else onOpenDetail,
+        onLongClick = onLongPress,
     )
+}
+
+@Composable
+private fun ProcessDetailDialog(
+    process: LinuxProcessInfo,
+    sampledAt: Long?,
+    onDismiss: () -> Unit,
+    onRequestStop: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val timeLabel = sampledAt?.let {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it))
+    }
+    EtaWindowDialog(show = true, title = process.usage, onDismissRequest = onDismiss) {
+        Column {
+            Text(
+                text = process.command,
+                style = MiuixTheme.textStyles.footnote2.copy(fontFamily = EtaMonospace),
+                color = colors.onSurfaceVariantSummary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 180.dp)
+                    .verticalScroll(rememberScrollState())
+                    .squircleBackground(colors.surface, 10.dp)
+                    .padding(10.dp),
+            )
+            Text(
+                text = stringResource(R.string.tasks_process_detail_cwd, process.cwd ?: "—"),
+                style = MiuixTheme.textStyles.footnote1,
+                color = colors.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            Text(
+                text = stringResource(
+                    R.string.tasks_process_detail_meta,
+                    process.pid,
+                    process.ppid,
+                    process.cpuPercent?.let { "%.1f%%".format(it) } ?: "—",
+                    "%.1f MB".format(process.memoryMb),
+                ),
+                style = MiuixTheme.textStyles.footnote1,
+                color = colors.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            if (timeLabel != null) {
+                Text(
+                    text = stringResource(R.string.tasks_process_detail_snapshot, timeLabel),
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = colors.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.tasks_process_kill),
+                destructive = true,
+                modifier = Modifier.padding(top = 16.dp),
+                onCancel = onDismiss,
+                onConfirm = onRequestStop,
+            )
+        }
+    }
 }
 
 @Composable

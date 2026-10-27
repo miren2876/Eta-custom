@@ -38,6 +38,22 @@ class ProcessUsageTest {
     }
 
     @Test
+    fun `shell -c 里的赋值与命令替换不当命令`() {
+        // 变量赋值片段不能当用途标题
+        assertEquals("Shell 会话", ProcessUsage.describe("sh -c 'TOKEN=$(tr -d \"\\n\" < /tmp/x)'"))
+        assertEquals("Shell 会话", ProcessUsage.describe("sh -c 'NAME=value'"))
+        assertEquals("本地 Web 服务", ProcessUsage.describe("sh -c 'python3 -m http.server'"))
+    }
+
+    @Test
+    fun `用途输出限长且不含换行引号`() {
+        val usage = ProcessUsage.describe("someverylongbinaryname --with a lot of arguments here")
+        assertTrue(usage.length <= 24)
+        assertTrue(!usage.contains('\n'))
+        assertTrue(!usage.contains('"'))
+    }
+
+    @Test
     fun `认不出来时给可执行名加首个有意义的参数`() {
         assertEquals("mybinary value", ProcessUsage.describe("mybinary --debug value"))
         assertEquals("weird", ProcessUsage.describe("/opt/tools/weird"))

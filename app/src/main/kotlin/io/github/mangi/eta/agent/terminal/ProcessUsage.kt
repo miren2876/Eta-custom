@@ -10,6 +10,8 @@ internal object ProcessUsage {
 
     private val quotePattern = Regex("\"([^\"]*)\"|'([^']*)'|(\\S+)")
 
+    private val ASSIGNMENT_PATTERN = Regex("^[A-Za-z_][A-Za-z0-9_]*=.*")
+
     /** 只包一层、真正干活的是后面那条命令的包装器。 */
     private val shellWrappers = setOf("bash", "sh", "dash", "ash", "zsh", "ksh", "busybox")
     private val passThroughWrappers = setOf("su", "sudo", "env", "nice", "ionice", "nohup", "stdbuf", "time")
@@ -26,18 +28,47 @@ internal object ProcessUsage {
     /** 用途识别上限：命令行长到离谱时只看前面这段，避免正则回溯。 */
     private const val MAX_COMMAND_CHARS = 2_000
 
-    fun describe(command: String, cwd: String? = null, depth: Int = 0): String {
+    fun describe(command: String, cwd: String? = null, depth: Int = 0): String =
+        sanitize(describeRaw(command, cwd, depth))
+
+    private fun describeRaw(command: String, cwd: String?, depth: Int): String {
         val trimmed = command.trim().take(MAX_COMMAND_CHARS)
         if (trimmed.isBlank()) return "未知进程"
         val tokens = tokenize(trimmed)
         if (tokens.isEmpty()) return "未知进程"
         if (depth < 3) {
-            innerCommand(tokens)?.let { inner -> return describe(inner, cwd, depth + 1) }
+            innerCommand(tokens)?.let { inner ->
+                // shell -c 后面可能是变量赋值、命令替换等，不能当命令展示。
+                return if (isSafeInnerCommand(inner)) describeRaw(inner, cwd, depth + 1) else "Shell 会话"
+            }
         }
         val exe = executableName(tokens.first())
         val args = tokens.drop(1)
         keyword(exe, args, trimmed.lowercase())?.let { return it }
         return fallback(exe, args)
+    }
+
+    /** 内层命令必须是真实命令：不是 NAME=value、不含命令替换、引号成对。 */
+    private fun isSafeInnerCommand(inner: String): Boolean {
+        val tokens = tokenize(inner)
+        if (tokens.isEmpty()) return false
+        val first = tokens.first()
+        if (ASSIGNMENT_PATTERN.matches(first)) return false
+        if (inner.contains("$(") || inner.contains("${'$'}{") || inner.contains('`')) return false
+        if (inner.count { it == '\'' } % 2 != 0) return false
+        if (inner.count { it == '"' } % 2 != 0) return false
+        return true
+    }
+
+    /** 用途最多 24 字符，去掉换行与引号，绝不把原始命令片段原样当标题。 */
+    private fun sanitize(text: String): String {
+        val cleaned = text
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace("\"", "")
+            .replace("'", "")
+            .trim()
+        return if (cleaned.length <= 24) cleaned.ifBlank { "未知进程" } else cleaned.take(23) + "…"
     }
 
     /** 可执行名：只留 basename，去掉 Windows 后缀。 */

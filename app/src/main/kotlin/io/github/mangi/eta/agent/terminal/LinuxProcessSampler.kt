@@ -409,3 +409,6 @@ internal fun detachedProcesses(
     }
     return processes.filter { it.pid !in inTree }
 }
+
+/** 快照刷新后只保留仍然存在的 pid，避免 pid 复用后误杀。 */
+internal fun retainLivePids(selected: Set<Int>, live: Set<Int>): Set<Int> = selected intersect live

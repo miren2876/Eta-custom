@@ -1252,9 +1252,10 @@
   <string name="linux_run_summary">%1$d processes running</string>
   <string name="linux_run_exit">Exit</string>
   <string name="linux_run_group_summary">Linux is running</string>
-  <string name="linux_run_single_line">%1$s · CPU %2$s%% · %3$s MB</string>
-  <string name="linux_run_process_line">%1$s · PID %2$d · CPU %3$s%% · %4$s MB</string>
-  <string name="linux_run_more">…and %1$d more</string>
+      <string name="linux_run_more">%1$d more · tap to view all</string>
+  <string name="linux_run_summary_line">%1$d processes · CPU total %2$s · memory total %3$s</string>
+  <string name="linux_run_summary_line_no_cpu">%1$d processes · memory total %2$s</string>
+  <string name="linux_run_stop_process">Stop</string>
   <string name="settings_multi_run_mode">Multi-conversation runs</string>
   <string name="settings_multi_run_mode_summary">How a new task coexists with a task that is already running.</string>
   <string name="settings_multi_run_replace">Replace: the new task stops the running one (original)</string>
@@ -1797,4 +1798,17 @@
   <string name="tasks_group_detached">Detached processes</string>
   <string name="tasks_process_meta">PID %1$d · CPU %2$s · %3$s memory</string>
   <string name="tasks_process_stop_hint">tap to stop</string>
+  <string name="tasks_process_kill">Stop process</string>
+  <string name="tasks_kill_confirm_title">Stop process?</string>
+  <string name="tasks_kill_confirm_summary">PID %1$d · %2$s</string>
+  <string name="tasks_process_detail_cwd">Working dir: %1$s</string>
+  <string name="tasks_process_detail_meta">PID %1$d · PPID %2$d · CPU %3$s · %4$s memory</string>
+  <string name="tasks_process_detail_snapshot">Snapshot: %1$s</string>
+  <string name="tasks_process_row_action">Tap for details, use the trailing button to stop</string>
+  <string name="tasks_process_long_press">Long press to multi-select</string>
+  <string name="tasks_selected_count">%1$d selected</string>
+  <string name="tasks_select_all">Select all</string>
+  <string name="tasks_kill_selected">Stop selected</string>
+  <string name="tasks_done">Done</string>
+  <string name="tasks_kill_selected_confirm">Stop %1$d processes: %2$s</string>
 </resources>
