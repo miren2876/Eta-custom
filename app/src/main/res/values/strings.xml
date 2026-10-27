@@ -1249,7 +1249,6 @@
   <string name="settings_linux_run_notification">Linux run notification</string>
   <string name="settings_linux_run_notification_summary">Show a notification while processes are running inside the Linux environment, with a one-tap exit. Off restores the original behavior (nothing shown, nothing probed).</string>
   <string name="linux_run_channel">Linux run</string>
-  <string name="linux_run_title">Linux is running</string>
   <string name="linux_run_summary">%1$d processes running</string>
   <string name="linux_run_exit">Exit</string>
   <string name="linux_run_group_summary">Linux is running</string>

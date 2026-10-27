@@ -81,13 +81,13 @@ internal object LinuxProcessSampler {
     private var previousTicks = mapOf<Int, Pair<Long, Long>>()
 
     /** 一次采样订阅；页面与通知各持一个，释放后自动降低采样频率或停止。 */
-    internal class Lease internal constructor(private val token: Long) {
+    internal class Lease internal constructor(private val onRelease: () -> Unit) {
         private var released = false
 
         fun release() {
             if (released) return
             released = true
-            LinuxProcessSampler.release(token)
+            onRelease()
         }
     }
 
@@ -98,7 +98,7 @@ internal object LinuxProcessSampler {
             ensureRunningLocked()
             leaseSeq
         }
-        return Lease(token)
+        return Lease { release(token) }
     }
 
     private fun release(token: Long) {

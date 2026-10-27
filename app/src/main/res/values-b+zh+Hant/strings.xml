@@ -1657,7 +1657,6 @@
   <string name="tasks_process_meta">PID %1$d · CPU %2$s · 記憶體 %3$s</string>
   <string name="tasks_process_stop_hint">點一下結束</string>
   <string name="linux_run_channel">Linux 執行</string>
-  <string name="linux_run_title">Linux 正在執行</string>
   <string name="linux_run_summary">%1$d 個進程執行中</string>
   <string name="linux_run_exit">退出</string>
   <string name="linux_run_group_summary">Linux 正在執行</string>

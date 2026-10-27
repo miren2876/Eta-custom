@@ -162,10 +162,12 @@ internal object LinuxRunMonitor {
             rendered += NOTIFICATION_ID
             runCatching { manager.notify(NOTIFICATION_ID, inboxNotification(context, processes, open, exit)) }
         }
-        val stale = activeIds - rendered
-        stale.forEach { runCatching { manager.cancel(it) } }
-        activeIds.clear()
-        activeIds += rendered
+        synchronized(activeIds) {
+            val stale = activeIds - rendered
+            stale.forEach { runCatching { manager.cancel(it) } }
+            activeIds.clear()
+            activeIds += rendered
+        }
     }
 
     private fun singleNotification(
@@ -256,7 +258,9 @@ internal object LinuxRunMonitor {
     private fun cancelAll() {
         val context = appContext ?: return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        (activeIds + NOTIFICATION_ID).forEach { runCatching { manager.cancel(it) } }
-        activeIds.clear()
+        synchronized(activeIds) {
+            (activeIds + NOTIFICATION_ID).forEach { runCatching { manager.cancel(it) } }
+            activeIds.clear()
+        }
     }
 }

@@ -1142,7 +1142,6 @@
   <string name="settings_linux_run_notification">Linux 运行通知</string>
   <string name="settings_linux_run_notification_summary">Linux 环境里有进程运行时，在通知栏显示状态并可一键退出；关闭后不显示也不探测。</string>
   <string name="linux_run_channel">Linux 运行</string>
-  <string name="linux_run_title">Linux 正在运行</string>
   <string name="linux_run_summary">%1$d 个进程运行中</string>
   <string name="linux_run_exit">退出</string>
   <string name="linux_run_group_summary">Linux 正在运行</string>

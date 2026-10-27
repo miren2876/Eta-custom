@@ -391,6 +391,15 @@ private fun ScriptRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp),
             )
+            // 用途是启发式推断，用中性词展示，并排放在命令下面。
+            Text(
+                text = ProcessUsage.describe(script.command),
+                style = MiuixTheme.textStyles.footnote2,
+                color = summaryColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
             Text(
                 text = scriptMeta(script, now),
                 style = MiuixTheme.textStyles.footnote2,
