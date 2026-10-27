@@ -264,7 +264,9 @@ internal object LinuxProcessSampler {
                 root=${'$'}(readlink "/proc/${'$'}pid/root" 2>/dev/null)
                 exe=${'$'}(readlink "/proc/${'$'}pid/exe" 2>/dev/null)
                 cwd=${'$'}(readlink "/proc/${'$'}pid/cwd" 2>/dev/null)
-                cmd=${'$'}(tr '\0' ' ' < "/proc/${'$'}pid/cmdline" 2>/dev/null | cut -c1-$MAX_COMMAND_CHARS)
+                # 不要用 tr 直接读 /proc/<pid>/cmdline：父 shell 被杀后 tr 会变成孤儿并卡在读上死循环，
+                # 实测每个孤儿 tr 能占满一个核。先用 dd 读进管道，tr 从管道读会自动 EOF 退出。
+                cmd=${'$'}(dd if="/proc/${'$'}pid/cmdline" bs=$MAX_COMMAND_CHARS count=1 2>/dev/null | tr '\\0' ' ')
                 [ -z "${'$'}cmd" ] && cmd="[${'$'}exe]"
                 echo "P|${'$'}pid|${'$'}ppid|${'$'}ticks|${'$'}{rss:-0}|${'$'}root|${'$'}exe|${'$'}cwd|${'$'}cmd"
               done
