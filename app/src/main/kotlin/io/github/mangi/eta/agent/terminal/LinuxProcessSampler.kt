@@ -59,7 +59,7 @@ internal object LinuxProcessSampler {
     private const val STOP_FILE = "/data/local/tmp/eta_proc_sampler.stop"
 
     /** 让旧循环看到停止标志并退出的等待时间。 */
-    private const val STOP_GRACE_MS = 1_500L
+    private const val STOP_GRACE_MS = 1_200L
 
     private val suCandidates = listOf("/system/bin/su", "su", "/system/xbin/su", "/data/adb/ksu/bin/su")
 
@@ -228,7 +228,7 @@ internal object LinuxProcessSampler {
     }.getOrNull()
 
     private fun samplerScript(intervalMs: Long): String {
-        val intervalSeconds = (intervalMs.coerceAtLeast(MIN_INTERVAL_MS) / 1000.0).toString()
+        val intervalSeconds = (intervalMs.coerceAtLeast(1_000L) / 1_000L).toString()
         // 每轮只做一次 ls 批量读 /proc/*/root 筛候选 pid，再只对候选读 stat/status/cmdline。
         // 逐进程 fork 的写法在这台机器上 10 秒才处理 74 个进程，常驻循环根本跑不完一轮。
         // 没有命中进程时把周期放宽到 5 秒，空闲时几乎不占 CPU。
@@ -271,7 +271,13 @@ internal object LinuxProcessSampler {
                 echo "P|${'$'}pid|${'$'}ppid|${'$'}ticks|${'$'}{rss:-0}|${'$'}root|${'$'}exe|${'$'}cwd|${'$'}cmd"
               done
               echo "END"
-              sleep $intervalSeconds
+              # 分 1 秒一醒地等下一轮：停止标志出现后 1 秒内退出，避免重启时新旧循环长时间并存。
+              i=0
+              while [ "${'$'}i" -lt $intervalSeconds ]; do
+                [ -f "${'$'}STOP" ] && break
+                sleep 1
+                i=${'$'}((i+1))
+              done
             done
         """.trimIndent()
     }
