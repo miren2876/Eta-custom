@@ -637,12 +637,23 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (destroyed) return@post
             run.completedContext = completedContext
             // 记忆侧收尾必须无条件执行：整理 run 的活跃标记、普通 run 的累计信号都靠它清理。
+            if (AgentMemoryCompactor.isCompactionRun(run.session.runId)) {
+                AgentMemoryCompactor.onRunFinished(run.session.runId)
+                traceIdleReview(
+                    "压缩 run 结束 ok=${result.ok} err=${result.error.orEmpty().take(160)} " +
+                        "content=${result.content.replace("\n", " ").take(120)}",
+                )
+                if (runs.all().isEmpty() && displayedRun == null && !guiControl.state.value.userPaused) stopSelf()
+                return@post
+            }
             memoryIdleReview.onRunFinished(
                 runId = run.session.runId,
                 transcript = run.session.transcript,
                 enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
                 userChars = run.request.prompt.length,
             )
+            // 空闲审查之后串行检查一次容量：review 刚排了定时器时会因互斥跳过。
+            AgentMemoryCompactor.request("run-finished")
             // 整理 run 到此为止：它不该碰胶囊，但结果要落盘，否则失败时无从定位。
             if (memoryIdleReview.isReviewRun(run.session.runId)) {
                 traceIdleReview(
@@ -1040,6 +1051,34 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         val runId = AgentMemoryIdleReview.REVIEW_RUN_PREFIX + java.util.UUID.randomUUID()
         AndroidAgentLogger.info("Memory idle review: run $runId")
+        startRun(
+            AgentRuntimeWire.RunRequest(
+                runId = runId,
+                prompt = prompt,
+                config = config.copy(
+                    memoryReviewMode = true,
+                    terminalTools = false,
+                    browserTools = false,
+                    deviceDirectTools = false,
+                    deviceSensitiveReadTools = false,
+                    deviceSensitiveActionTools = false,
+                    hostedWebSearchEnabled = false,
+                ),
+                images = emptyList(),
+            )
+        )
+    }
+
+    /** 记忆压缩 run：与空闲审查同样的工具裁剪，但写入策略是 COMPACT（允许删条目、重写画像）。 */
+    private fun startMemoryCompactionRun(prompt: String) {
+        val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
+            .getOrNull()
+        if (config == null) {
+            AndroidAgentLogger.warn("Memory compaction: runtime config unavailable")
+            return
+        }
+        val runId = AgentMemoryCompactor.COMPACT_RUN_PREFIX + java.util.UUID.randomUUID()
+        AndroidAgentLogger.info("Memory compaction: run $runId")
         startRun(
             AgentRuntimeWire.RunRequest(
                 runId = runId,
@@ -1751,7 +1790,23 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                             )
                         }
                     },
-                ).also { instance -> idleReviewInstance = instance }
+                ).also { instance ->
+                    idleReviewInstance = instance
+                    AgentMemoryCompactor.attach(
+                        launcher = { prompt ->
+                            val current = activeService
+                            if (current == null) {
+                                service.traceIdleReview("压缩跳过：Agent 服务已停止")
+                            } else {
+                                current.startMemoryCompactionRun(prompt)
+                            }
+                        },
+                        trace = { line -> service.traceIdleReview(line) },
+                        reviewActive = { instance.hasPendingWork() },
+                    )
+                    // App 启动后首次检查一次容量。
+                    AgentMemoryCompactor.request("app-start")
+                }
             }
 
         /** 胶囊展开列表里最多保留几条会话（运行中 + 最近完成）。 */

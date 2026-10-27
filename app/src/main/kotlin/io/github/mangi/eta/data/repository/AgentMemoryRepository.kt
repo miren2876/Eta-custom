@@ -97,6 +97,25 @@ internal data class AgentMemoryEntryUsage(
 )
 
 /** 章节的引用统计；持久化在 memory/usage.json，不影响 MEMORY.md 的 revision。 */
+/**
+ * 核心记忆（画像 + 工作记忆条目）的容量占用。
+ * entryBytes 是实际注入的条目字符数，skippedCount 是被预算挤掉、这一轮没有注入的条目数。
+ */
+internal data class AgentMemoryCoreUsage(
+    val profileBytes: Int,
+    val entryBytes: Int,
+    val entryCount: Int,
+    val totalEntryCount: Int,
+    val skippedCount: Int,
+    val budgetChars: Int,
+) {
+    val usedBytes: Int get() = profileBytes + entryBytes
+    val ratio: Float get() = if (budgetChars <= 0) 0f else usedBytes.toFloat() / budgetChars
+
+    /** 需要压缩整理：已经挤掉条目，或已用超过预算的 90%。 */
+    val needsCompaction: Boolean get() = skippedCount > 0 || ratio >= 0.9f
+}
+
 internal data class AgentMemoryUsageEntry(
     val hitCount: Int = 0,
     val lastHitAtMillis: Long = 0L,
@@ -582,6 +601,52 @@ internal class AgentMemoryStore(
      * 注入用投影：用户画像 + 按 EI 降序的活跃条目（不超过 budgetChars）+ 一行档案统计。
      * 超预算只截断条目，画像与档案行始终保留。
      */
+    /**
+     * 核心记忆的容量占用：与 [coreProjection] 用同一份预算算法，
+     * 供容量检测、记忆页展示与压缩整理判断。
+     */
+    fun coreUsage(budgetChars: Int): AgentMemoryCoreUsage = synchronized(lock) {
+        val profile = readText(userFile).trimEnd('\n')
+        val files = files()
+        val head = buildString {
+            append(PROFILE_HEADING).append('\n')
+            if (profile.isNotEmpty()) append(profile).append('\n')
+            append('\n').append(WORKING_HEADING).append('\n')
+        }
+        val tail = buildString {
+            append('\n').append(ARCHIVE_HEADING).append('\n')
+            if (files.isEmpty()) {
+                append("暂无档案。")
+            } else {
+                append("共 ").append(files.size).append(" 个档案")
+                val warm = files.count { file -> !file.cold }
+                if (warm in 1 until files.size) append("（").append(warm).append(" 个活跃）")
+                append("；细节用 memory_get query=<关键词> 或 archive=<名字> 读取。")
+            }
+        }
+        val room = (budgetChars - head.length - tail.length).coerceAtLeast(0)
+        var used = 0
+        var count = 0
+        var skipped = 0
+        entriesLocked().forEach { entry ->
+            val line = "- (${entry.importance}) ${entry.text}"
+            if (used + line.length + 1 > room) {
+                skipped++
+            } else {
+                used += line.length + 1
+                count++
+            }
+        }
+        AgentMemoryCoreUsage(
+            profileBytes = profile.toByteArray(Charsets.UTF_8).size,
+            entryBytes = used,
+            entryCount = count,
+            totalEntryCount = count + skipped,
+            skippedCount = skipped,
+            budgetChars = budgetChars,
+        )
+    }
+
     fun coreProjection(budgetChars: Int): String = synchronized(lock) {
         val profile = readText(userFile).trimEnd('\n')
         val files = files()
@@ -845,6 +910,9 @@ internal class AgentMemoryStore(
 
     /** 工作记忆（MEMORY.md：档案索引 + 当前进度）。 */
     fun coreWorking(): String = synchronized(lock) { readText(workingFile).trimEnd('\n') }
+
+    /** 用户画像原文（不含标题行）；压缩整理与记忆页展示用。 */
+    fun coreProfile(): String = synchronized(lock) { readText(userFile).trimEnd('\n') }
 
     fun replaceCoreProfile(text: String): AgentMemorySnapshot = synchronized(lock) {
         writeProfile(text)

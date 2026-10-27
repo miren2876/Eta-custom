@@ -66,7 +66,7 @@ import org.json.JSONObject
 import kotlinx.coroutines.runBlocking
 
 /** 记忆写入策略：整理 run 只允许写一层，且档案只能追加。 */
-internal enum class AgentMemoryWritePolicy { FULL, REVIEW }
+internal enum class AgentMemoryWritePolicy { FULL, REVIEW, COMPACT }
 
 internal class AgentLocalTools(
     private val context: Context,
@@ -540,6 +540,15 @@ internal class AgentLocalTools(
 
     private fun memoryWrite(args: JSONObject): String {
         val archiveName = args.optString("archive").takeIf(String::isNotBlank)
+        if (memoryWritePolicy == AgentMemoryWritePolicy.COMPACT) {
+            val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
+            if (archiveName == null && target == "working") {
+                return errorResult(
+                    "MEMORY_COMPACT_WORKING_DENIED",
+                    "压缩 run 不能整份覆盖工作记忆，只能逐条改写或删除条目",
+                )
+            }
+        }
         if (memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
             val target = args.optString("target").takeIf(String::isNotBlank)?.lowercase()
             if (archiveName == null && target != null && target != "entry") {
@@ -559,7 +568,12 @@ internal class AgentLocalTools(
                 )
             }
         }
-        return if (archiveName != null) memoryWriteArchive(args, archiveName) else memoryWriteMemory(args)
+        val result = if (archiveName != null) memoryWriteArchive(args, archiveName) else memoryWriteMemory(args)
+        // 写入后顺手检查一次容量；压缩器自带节流，不会每次写入都起 run。
+        if (memoryWritePolicy == AgentMemoryWritePolicy.FULL) {
+            io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.request("write")
+        }
+        return result
     }
 
     /** 写独立档案：mode=append 追加，mode=replace 整体替换（不存在则创建）。 */
@@ -581,10 +595,10 @@ internal class AgentLocalTools(
                 .toString()
         }
         val append = mode != "replace"
-        if (!append && memoryWritePolicy == AgentMemoryWritePolicy.REVIEW) {
+        if (!append && memoryWritePolicy != AgentMemoryWritePolicy.FULL) {
             return errorResult(
                 "MEMORY_REVIEW_APPEND_ONLY",
-                "整理 run 不能整体覆盖档案；要修正既有内容请用 mode=edit + old_text",
+                "整理/压缩 run 不能整体覆盖档案；要修正既有内容请用 mode=edit + old_text",
             )
         }
         val info = AgentMemoryRepository.writeFile(name, content, append)

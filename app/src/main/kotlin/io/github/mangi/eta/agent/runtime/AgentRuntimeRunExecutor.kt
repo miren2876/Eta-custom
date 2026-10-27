@@ -186,10 +186,10 @@ internal class AgentRuntimeRunExecutor(
                 browserSession = BrowserSessionRegistry.get(browserKey),
                 guiControl = guiRun,
                 askUserConversationId = conversationId,
-                memoryWritePolicy = if (memoryReview) {
-                    AgentMemoryWritePolicy.REVIEW
-                } else {
-                    AgentMemoryWritePolicy.FULL
+                memoryWritePolicy = when {
+                    AgentMemoryCompactor.isCompactionRun(request.runId) -> AgentMemoryWritePolicy.COMPACT
+                    memoryReview -> AgentMemoryWritePolicy.REVIEW
+                    else -> AgentMemoryWritePolicy.FULL
                 },
                 browserToolsEnabled = {
                     !memoryReview && request.config.browserTools && currentPermissions().browserTools

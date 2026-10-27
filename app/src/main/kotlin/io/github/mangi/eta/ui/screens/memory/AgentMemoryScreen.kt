@@ -230,6 +230,56 @@ internal fun AgentMemoryScreen(
                     )
                 }
 
+                item(key = "capacity") {
+                    val usage = remember(state.entries.size, state.files.size) {
+                        runCatching { io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.usage() }.getOrNull()
+                    }
+                    if (usage != null) {
+                        EtaPreferenceGroup(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            EtaPreference(
+                                title = stringResource(R.string.memory_compact_title),
+                                summary = stringResource(
+                                    R.string.memory_compact_summary,
+                                    formatBytes(usage.profileBytes),
+                                    formatBytes(usage.entryBytes),
+                                    formatBytes(usage.budgetChars),
+                                    (usage.ratio * 100).toInt(),
+                                ),
+                                titleColor = if (usage.skippedCount > 0) {
+                                    top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor(
+                                        color = MiuixTheme.colorScheme.error,
+                                    )
+                                } else {
+                                    top.yukonga.miuix.kmp.basic.BasicComponentDefaults.titleColor()
+                                },
+                            )
+                            if (usage.totalEntryCount > 0 && usage.entryCount == 0) {
+                                EtaPreferenceDivider()
+                                SectionHint(text = stringResource(R.string.memory_compact_profile_full))
+                            } else if (usage.skippedCount > 0) {
+                                EtaPreferenceDivider()
+                                SectionHint(
+                                    text = stringResource(R.string.memory_compact_skipped, usage.skippedCount),
+                                )
+                            }
+                            EtaPreferenceDivider()
+                            EtaPreference(
+                                title = stringResource(R.string.memory_compact_now),
+                                onClick = {
+                                    io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.request(
+                                        reason = "manual",
+                                        manual = true,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+
                 item(key = "entries-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_entries_title)) }
                 item(key = "entries-card") {
                     EtaPreferenceGroup(
