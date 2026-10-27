@@ -200,8 +200,10 @@ internal object LinuxRunMonitor {
             return
         }
         ensureChannel(context, manager)
+        // 点通知直达「后台任务」页；ACTION_OPEN_TASKS 由 MainActivity 的启动请求链路消费。
         val open = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java),
+            context, 0,
+            Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_TASKS),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val exit = PendingIntent.getService(

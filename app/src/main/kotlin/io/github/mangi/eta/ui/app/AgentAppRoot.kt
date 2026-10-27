@@ -137,6 +137,8 @@ fun AgentAppRoot(
     openSpeechSettings: Boolean = false,
     openTerminal: Boolean = false,
     onTerminalOpened: () -> Unit = {},
+    openTasks: Boolean = false,
+    onTasksOpened: () -> Unit = {},
     onSpeechSettingsOpened: () -> Unit = {},
     onAssistantConversationOpened: (Boolean) -> Unit = {},
 ) {
@@ -165,6 +167,13 @@ fun AgentAppRoot(
         if (openTerminal) {
             if (backStack.lastOrNull() != AppRoute.Terminal) backStack.add(AppRoute.Terminal)
             onTerminalOpened()
+        }
+    }
+    // Linux 运行通知点击后直达「后台任务」页（AppRoute.Scripts）。
+    LaunchedEffect(openTasks) {
+        if (openTasks) {
+            if (backStack.lastOrNull() != AppRoute.Scripts) backStack.add(AppRoute.Scripts)
+            onTasksOpened()
         }
     }
     val navigator = remember(backStack) { AgentNavigator(backStack) }

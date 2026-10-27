@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
                             launchRequests = launchRequests.copy(terminal = false)
                             intent?.action = null
                         },
+                        openTasks = launchRequests.tasks,
+                        onTasksOpened = {
+                            launchRequests = launchRequests.copy(tasks = false)
+                            intent?.action = null
+                        },
                         onSpeechSettingsOpened = {
                             launchRequests = launchRequests.copy(speechSettings = false)
                             intent?.action = null
@@ -165,6 +170,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_OPEN_TERMINAL = "io.github.mangi.eta.action.OPEN_TERMINAL"
+        const val ACTION_OPEN_TASKS = "io.github.mangi.eta.action.OPEN_TASKS"
         /** 运行浮层的结果卡片回到本体：App 发起的 run 带会话 ID，直接打开该会话。 */
         const val ACTION_OPEN_CONVERSATION_ID = "io.github.mangi.eta.action.OPEN_CONVERSATION_ID"
         const val EXTRA_CONVERSATION_ID = "io.github.mangi.eta.extra.CONVERSATION_ID"
