@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.ui.voice.SpeechDictationButton
 import io.github.mangi.eta.ui.voice.SpeechInputFeedback
 import io.github.mangi.eta.ui.voice.rememberSpeechInput

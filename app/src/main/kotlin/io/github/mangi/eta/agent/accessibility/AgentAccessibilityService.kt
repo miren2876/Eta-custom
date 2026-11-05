@@ -116,21 +116,6 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        when (event?.eventType) {
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                pruneWindowContentGenerations()
-                signalWindowChanged()
-            }
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                bumpWindowContentGeneration(event.windowId)
-                observeScrollEvent(event)
-            }
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
-            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ->
-                bumpWindowContentGeneration(event.windowId)
-        }
     }
 
     override fun onInterrupt() = Unit
@@ -206,7 +191,7 @@ class AgentAccessibilityService : AccessibilityService() {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val point = Point()
         @Suppress("DEPRECATION")
-        windowManager.defaultDisplay.getRealSize(point)
+        display.getRealSize(point)
         if (point.x > 0 && point.y > 0) point.x to point.y else null
     }.getOrNull()
 
@@ -237,13 +222,14 @@ class AgentAccessibilityService : AccessibilityService() {
 
     internal fun packageWindowVisibility(packageName: String): PackageWindowVisibility =
         runOnMainSync {
-            val activeRoot = rootInActiveWindow
+            val activeRoot = activeRootOnDisplay(android.view.Display.DEFAULT_DISPLAY)
             if (activeRoot?.packageName?.toString() == packageName) {
                 return@runOnMainSync PackageWindowVisibility.VISIBLE
             }
             var inspectedRoot = activeRoot != null
             var hasUnknownRelevantWindow = false
             for (window in windows.orEmpty()) {
+                if (window.displayId != android.view.Display.DEFAULT_DISPLAY) continue
                 val root = window.root
                 if (root == null) {
                     if (

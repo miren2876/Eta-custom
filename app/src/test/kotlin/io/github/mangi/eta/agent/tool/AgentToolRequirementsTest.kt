@@ -101,7 +101,8 @@ class AgentToolRequirementsTest {
         terminalTools = true, browserTools = true, deviceDirectTools = true,
         deviceSensitiveReadTools = true, deviceSensitiveActionTools = true,
         skillGitHubDiscovery = true, skillGitHubInstall = true, memoryTools = true,
-        capabilities = AgentToolCapabilities(rootAvailable = root),
+        // ask_user 默认关，但注册表里有它；这里要把能力全开才能对上「每个注册工具都有唯一要求」。
+        capabilities = AgentToolCapabilities(rootAvailable = root, askUser = true),
     )
 
     private fun JSONArray.names(): Set<String> = (0 until length()).mapTo(linkedSetOf()) {

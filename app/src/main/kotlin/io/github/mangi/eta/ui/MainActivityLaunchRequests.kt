@@ -12,9 +12,13 @@ internal data class MainActivityLaunchRequests(
     val archivedConversation: ArchivedConversationRequest? = null,
     val speechSettings: Boolean = false,
     val terminal: Boolean = false,
+    val tasks: Boolean = false,
+    val memory: Boolean = false,
 ) {
     fun accept(intent: Intent?): MainActivityLaunchRequests = when (intent?.action) {
         MainActivity.ACTION_OPEN_TERMINAL -> copy(terminal = true)
+        MainActivity.ACTION_OPEN_TASKS -> copy(tasks = true)
+        MainActivity.ACTION_OPEN_MEMORY -> copy(memory = true)
         ACTION_SPEECH_SETTINGS -> copy(speechSettings = true)
         MainActivity.ACTION_OPEN_CONVERSATION_ID -> copy(
             conversationId = intent.nonBlankExtra(MainActivity.EXTRA_CONVERSATION_ID),
@@ -42,6 +46,8 @@ internal data class MainActivityLaunchRequests(
             putString("archive_conversation_key", archivedConversation?.conversationKey)
             putBoolean("speech_settings", speechSettings)
             putBoolean("terminal", terminal)
+            putBoolean("tasks", tasks)
+            putBoolean("memory", memory)
         })
     }
 
@@ -62,6 +68,8 @@ internal data class MainActivityLaunchRequests(
                 } else null,
                 speechSettings = saved.getBoolean("speech_settings"),
                 terminal = saved.getBoolean("terminal"),
+                tasks = saved.getBoolean("tasks"),
+                memory = saved.getBoolean("memory"),
             )
         }
     }

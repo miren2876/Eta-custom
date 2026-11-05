@@ -49,7 +49,8 @@ internal object EtaBackupValidation {
                 modelCount = header.providers.sumOf { it.models.size },
                 conversationCount = conversationIds.size,
                 messageCount = messageCount,
-                memoryBytes = header.memoryMd.toByteArray(Charsets.UTF_8).size,
+                memoryBytes = header.memoryCoreMd.toByteArray(Charsets.UTF_8).size +
+                    header.memoryFiles.values.sumOf { it.toByteArray(Charsets.UTF_8).size },
                 characterCount = header.roleplay?.characters?.size ?: 0,
             )
         } catch (failure: IllegalArgumentException) {
@@ -89,6 +90,13 @@ internal object EtaBackupValidation {
         if (document.conversationState != null && document.conversationState.id != ConversationStateEntity.SINGLETON_ID) {
             throw EtaBackupException("备份中的会话状态无效")
         }
-        if (document.memoryMd.toByteArray(Charsets.UTF_8).size > 1024 * 1024) throw EtaBackupException("MEMORY.md 超过 1 MiB 限制")
+        if (document.memoryCoreMd.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
+            throw EtaBackupException("备份中的核心记忆超过 64 KiB 限制")
+        }
+        document.memoryFiles.forEach { (name, content) ->
+            if (content.toByteArray(Charsets.UTF_8).size > 10 * 1024 * 1024) {
+                throw EtaBackupException("备份中的档案「$name」超过 10 MiB 限制")
+            }
+        }
     }
 }

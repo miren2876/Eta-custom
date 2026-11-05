@@ -122,7 +122,7 @@ class EtaBackupStreamingTest {
         val dao = EtaDatabase.get(context).conversationDao()
         dao.insertConversations(listOf(conversation("original")))
         AgentMemoryRepository.replaceAll("原记忆")
-        val document = EtaBackupDocument(exportedAt = 0, memoryMd = "新记忆",
+        val document = EtaBackupDocument(exportedAt = 0, memoryCoreMd = "新记忆",
             conversations = listOf(conversation("new")),
             messages = listOf(
                 ConversationMessageEntity("valid", "new", 0, "user", "有效"),

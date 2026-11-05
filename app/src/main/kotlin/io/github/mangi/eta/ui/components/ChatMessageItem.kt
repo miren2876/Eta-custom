@@ -229,25 +229,21 @@ internal fun ChatMessageItem(
             onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
             modifier = modifier,
         )
-        is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
-            ContextCompactionMarker(message = message, modifier = modifier)
-        } else {
-            AgentMessageBlock(
+        is SystemNoticeMessageUi -> when {
+            message.code == SystemNoticeCode.ContextCompaction -> ContextCompactionMarker(
+                message = message,
+                modifier = modifier,
+            )
+            message.code.isMemoryReview -> MemoryReviewNode(
+                code = message.code,
+                detail = message.detail,
+                modifier = modifier,
+            )
+            else -> AgentMessageBlock(
                 message = AgentMessageUi(
                     id = message.id,
                     content = buildString {
-                        append(
-                            stringResource(
-                                when (message.code) {
-                                    SystemNoticeCode.Stopped -> R.string.system_notice_stopped
-                                    SystemNoticeCode.EmptyResult -> R.string.system_notice_empty_result
-                                    SystemNoticeCode.ContextCompaction -> R.string.context_compaction
-                                    SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
-                                    SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
-                                    SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
-                                },
-                            ),
-                        )
+                        append(stringResource(systemNoticeTextRes(message.code)))
                         message.detail?.takeIf(String::isNotBlank)?.let { detail ->
                             append("\n\n")
                             append(detail)
@@ -282,6 +278,26 @@ internal fun ChatMessageItem(
         is ToolSummaryMessageUi -> ToolSummaryInline(message = message, modifier = modifier, compact = compact)
         is SuggestionChipsMessageUi -> SuggestionChipsRow(message = message, onSuggestionClick = onSuggestionClick, modifier = modifier)
     }
+}
+
+/** 记忆整理的结果通知：聊天流里渲染成一条时间线节点，不再走普通提示文案。 */
+private val SystemNoticeCode.isMemoryReview: Boolean
+    get() = this == SystemNoticeCode.MemoryReviewNew ||
+        this == SystemNoticeCode.MemoryReviewAppended ||
+        this == SystemNoticeCode.MemoryReviewNone
+
+/** 普通提示按状态码取文案；记忆整理的三条由 [MemoryReviewNode] 单独渲染。 */
+private fun systemNoticeTextRes(code: SystemNoticeCode): Int = when (code) {
+    SystemNoticeCode.Stopped -> R.string.system_notice_stopped
+    SystemNoticeCode.EmptyResult -> R.string.system_notice_empty_result
+    SystemNoticeCode.ContextCompaction -> R.string.context_compaction
+    SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
+    SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
+    SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+    SystemNoticeCode.MemoryReviewNew,
+    SystemNoticeCode.MemoryReviewAppended,
+    SystemNoticeCode.MemoryReviewNone,
+        -> R.string.memory_review_done_title
 }
 
 // ── 用户消息：轻盈美观气泡 ──────────────────────────────────────────────

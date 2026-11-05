@@ -30,10 +30,20 @@ internal data class AgentToolCapabilities(
     val hotspotAvailable: Boolean = true,
     val nfcAvailable: Boolean = true,
     val nightLightAvailable: Boolean = true,
+    val askUser: Boolean = false,
 ) {
     fun unavailableCode(name: String): String? {
-        if (name in setOf("get_flashlight", "set_flashlight") && !flashlightAvailable) return "DEVICE_UNSUPPORTED"
-        if (name in setOf("get_hotspot", "set_hotspot") && !hotspotAvailable) return "DEVICE_UNSUPPORTED"
+        if (name == "ask_user" && !askUser) return "ASK_USER_DISABLED"
+        if (name in setOf(
+                "get_flashlight",
+                "set_flashlight"
+            ) && !flashlightAvailable
+        ) return "DEVICE_UNSUPPORTED"
+        if (name in setOf(
+                "get_hotspot",
+                "set_hotspot"
+            ) && !hotspotAvailable
+        ) return "DEVICE_UNSUPPORTED"
         val requirement = AgentToolRequirements.find(name) ?: return "UNKNOWN_TOOL"
         if (requirement.rootRequirement == RootRequirement.REQUIRED && !rootAvailable) return "ROOT_REQUIRED"
         if (requirement.lsposedRequirement == LsposedRequirement.REQUIRED && !lsposedAvailable) return "LSPOSED_REQUIRED"
@@ -47,8 +57,9 @@ internal data class AgentToolCapabilities(
             ToolSystemAccess.NONE -> null
             ToolSystemAccess.NOTIFICATIONS -> if (notificationsAllowed ||
                 (rootAvailable && (name == "recent_notifications" ||
-                    (name == "search_personal_orders" && colorOs)))
+                        (name == "search_personal_orders" && colorOs)))
             ) null else "NOTIFICATION_ACCESS_REQUIRED"
+
             ToolSystemAccess.USAGE -> if (usageAllowed) null else "APP_USAGE_ACCESS_REQUIRED"
             ToolSystemAccess.LOCATION -> if (locationAllowed) null else "LOCATION_PERMISSION_REQUIRED"
         }
@@ -61,9 +72,17 @@ internal data class AgentToolCapabilities(
                 val tool = rootProjected.getJSONObject(index)
                 val name = tool.getJSONObject("function").getString("name")
                 if (unavailableCode(name) == null) {
-                    if (name in setOf("get_device_state", "set_device_state") && (!nfcAvailable || !nightLightAvailable)) {
-                        val target = tool.getJSONObject("function").getJSONObject("parameters").getJSONObject("properties").getJSONObject("target")
-                        target.put("enum", JSONArray(SystemStateControls.targets.filterNot { it == "nfc" && !nfcAvailable || it == "night_light" && !nightLightAvailable }))
+                    if (name in setOf(
+                            "get_device_state",
+                            "set_device_state"
+                        ) && (!nfcAvailable || !nightLightAvailable)
+                    ) {
+                        val target = tool.getJSONObject("function").getJSONObject("parameters")
+                            .getJSONObject("properties").getJSONObject("target")
+                        target.put(
+                            "enum",
+                            JSONArray(SystemStateControls.targets.filterNot { it == "nfc" && !nfcAvailable || it == "night_light" && !nightLightAvailable })
+                        )
                     }
                     visible.put(tool)
                 }
@@ -72,10 +91,13 @@ internal data class AgentToolCapabilities(
     }
 
     companion object {
+
         fun isColorOsDevice(): Boolean = Build.MANUFACTURER.lowercase(Locale.ROOT) in
-            setOf("oppo", "oneplus", "realme")
+                setOf("oppo", "oneplus", "realme")
 
         fun capture(context: Context): AgentToolCapabilities {
+            val settings =
+                kotlinx.coroutines.runBlocking { io.github.mangi.eta.data.datastore.SettingsDataStore.settings() }
             val root = RootAccess.state.value
             return AgentToolCapabilities(
                 rootAvailable = root.isGranted,
@@ -83,20 +105,31 @@ internal data class AgentToolCapabilities(
                 lsposedAvailable = EtaApp.serviceInstance != null,
                 accessibilityAvailable = AgentAccessibilityService.isAvailable(),
                 accessibilityRecoveryAvailable = EtaApp.serviceInstance != null &&
-                    AccessibilityProtectionClient.isEnabled(context),
+                        AccessibilityProtectionClient.isEnabled(context),
                 notificationsAllowed = AgentNotificationHistoryService.isEnabled(context),
                 usageAllowed = AgentPersonalContextTools.hasUsageAccess(context),
                 locationAllowed = context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
-                    PackageManager.PERMISSION_GRANTED &&
-                    (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED),
+                        PackageManager.PERMISSION_GRANTED &&
+                        (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED),
                 colorOs = isColorOsDevice(),
-                calendarReadable = io.github.mangi.eta.agent.device.CalendarPermissions.granted(context, false),
-                calendarWritable = io.github.mangi.eta.agent.device.CalendarPermissions.granted(context, true),
+                askUser = io.github.mangi.eta.config.Prefs.isEnabled(io.github.mangi.eta.config.Prefs.Keys.AGENT_ASK_USER),
+                calendarReadable = io.github.mangi.eta.agent.device.CalendarPermissions.granted(
+                    context,
+                    false
+                ),
+                calendarWritable = io.github.mangi.eta.agent.device.CalendarPermissions.granted(
+                    context,
+                    true
+                ),
                 flashlightAvailable = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH),
                 hotspotAvailable = Build.VERSION.SDK_INT >= 36,
                 nfcAvailable = context.packageManager.hasSystemFeature(PackageManager.FEATURE_NFC),
-                nightLightAvailable = context.resources.getIdentifier("config_nightDisplayAvailable", "bool", "android").let { it != 0 && context.resources.getBoolean(it) },
+                nightLightAvailable = context.resources.getIdentifier(
+                    "config_nightDisplayAvailable",
+                    "bool",
+                    "android"
+                ).let { it != 0 && context.resources.getBoolean(it) },
             )
         }
     }

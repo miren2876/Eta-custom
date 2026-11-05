@@ -65,10 +65,9 @@ class AgentChatScrollPolicyTest {
     }
 
     @Test
-    fun completedConversationDoesNotJumpToInitialBottom() {
-        assertFalse(
+    fun openingConversationRequestsLatestMessage() {
+        assertTrue(
             shouldRequestInitialBottom(
-                isStreaming = false,
                 keepBottomAnchored = true,
                 isUserDragging = false,
             )
@@ -76,12 +75,21 @@ class AgentChatScrollPolicyTest {
     }
 
     @Test
-    fun streamingConversationRequestsInitialBottom() {
-        assertTrue(
+    fun scrolledAwayConversationKeepsReaderPosition() {
+        assertFalse(
             shouldRequestInitialBottom(
-                isStreaming = true,
-                keepBottomAnchored = true,
+                keepBottomAnchored = false,
                 isUserDragging = false,
+            )
+        )
+    }
+
+    @Test
+    fun draggingSkipsInitialRequest() {
+        assertFalse(
+            shouldRequestInitialBottom(
+                keepBottomAnchored = true,
+                isUserDragging = true,
             )
         )
     }

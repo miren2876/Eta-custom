@@ -17,6 +17,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,15 +35,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,13 +71,18 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownState
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/** 展开动画结束后再定位运行节点，否则量到的是动画中途的位置。 */
+private const val RevealSettleMillis = 320L
 
 /**
  * 把连续的思考与工具调用收束为一条可展开的工作过程：折叠时只是一行摘要，展开后是
@@ -86,6 +98,8 @@ internal fun AgentWorkProcess(
     retainedStreamingStates: Map<String, StreamingMarkdownState>,
     modifier: Modifier = Modifier,
     active: Boolean = false,
+    /** 外部请求号（自增即一次请求）：只用于展开卡片并定位运行节点，不会因此折叠。 */
+    revealRequest: Int = 0,
 ) {
     val running = messages.any { message ->
         (message is ThinkingMessageUi && message.isStreaming) ||
@@ -99,6 +113,20 @@ internal fun AgentWorkProcess(
     // running 会短暂为 false，按它收起会造成反复开合。展开态在组合期同步推导，与正文
     // 条目插入落在同一帧，不经 LaunchedEffect 晚一帧收起。语音浮层空间有限，自动模式不展开。
     val bodyVisible = manualExpanded ?: (active && !assistantOverlay)
+
+    // 顶栏副标题点击：展开卡片；若本轮正在运行，把它带进视野的是运行中的那个节点而不是卡片顶部。
+    var handledRevealRequest by remember(id) { mutableIntStateOf(revealRequest) }
+    val revealRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(revealRequest) {
+        if (revealRequest <= handledRevealRequest) return@LaunchedEffect
+        handledRevealRequest = revealRequest
+        val alreadyExpanded = bodyVisible
+        manualExpanded = true
+        if (steps.lastOrNull()?.running != true) return@LaunchedEffect
+        if (alreadyExpanded) withFrameNanos { } else delay(RevealSettleMillis)
+        // 等待期间这轮可能刚好结束、节点上的 requester 已被摘掉，定位失败不该影响界面。
+        runCatching { revealRequester.bringIntoView() }
+    }
 
     Column(
         modifier = modifier
@@ -129,13 +157,21 @@ internal fun AgentWorkProcess(
             Column(modifier = Modifier.padding(bottom = 6.dp)) {
                 steps.forEachIndexed { index, step ->
                     key(step.key) {
-                        AgentWorkStepNode(
-                            step = step,
-                            isLast = index == steps.lastIndex,
-                            onOpenBrowser = onOpenBrowser,
-                            currentBrowserMessageId = currentBrowserMessageId,
-                            retainedStreamingStates = retainedStreamingStates,
-                        )
+                        Box(
+                            modifier = if (step.running) {
+                                Modifier.bringIntoViewRequester(revealRequester)
+                            } else {
+                                Modifier
+                            },
+                        ) {
+                            AgentWorkStepNode(
+                                step = step,
+                                isLast = index == steps.lastIndex,
+                                onOpenBrowser = onOpenBrowser,
+                                currentBrowserMessageId = currentBrowserMessageId,
+                                retainedStreamingStates = retainedStreamingStates,
+                            )
+                        }
                     }
                 }
             }
@@ -242,6 +278,8 @@ private fun AgentWorkStepNode(
             ToolGroupRow(group = step, onOpenBrowser = onOpenBrowser)
         }
 
+        is AgentWorkStep.Skill -> SkillNodeRow(step = step, isLast = isLast)
+
         is AgentWorkStep.Single -> when (val message = step.message) {
             is ToolActivityMessageUi -> WorkTimelineNode(
                 icon = iconForTool(message.toolName),
@@ -305,11 +343,12 @@ internal fun WorkTimelineNode(
     tone: WorkNodeTone,
     isLast: Boolean,
     connectTop: Boolean = true,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val lineColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.6f)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .drawBehind {
                 val x = WorkGutterWidth.toPx() / 2f
@@ -453,6 +492,74 @@ internal fun ExpandChevron(
             .graphicsLayer { rotationZ = rotation },
         tint = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f),
     )
+}
+
+/**
+ * 无展开、无跳转的节点内容：标题 + 可选副标题，几何与取色跟工具行一致。
+ * 技能读取与记忆整理这类「只说明发生了什么」的节点用它。
+ */
+@Composable
+internal fun WorkNodeLabel(
+    title: String,
+    subtitle: String? = null,
+    running: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = WorkRowHeight)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            ShimmerText(
+                text = title,
+                active = running,
+                style = MiuixTheme.textStyles.body2,
+                color = if (running) {
+                    MiuixTheme.colorScheme.onSurface
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 记忆整理跑完后的一句话结论：新建 / 追加 / 无需记录；不带展开，点击不跳页。 */
+@Composable
+internal fun MemoryReviewNode(
+    code: SystemNoticeCode,
+    detail: String?,
+    modifier: Modifier = Modifier,
+) {
+    val title = when (code) {
+        SystemNoticeCode.MemoryReviewNew -> stringResource(R.string.work_memory_review_new, detail.orEmpty())
+        SystemNoticeCode.MemoryReviewAppended ->
+            stringResource(R.string.work_memory_review_appended, detail.orEmpty())
+        else -> stringResource(R.string.work_memory_review_none)
+    }
+    Box(modifier = modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+        WorkTimelineNode(
+            icon = Icons.Rounded.Psychology,
+            tone = WorkNodeTone.Done,
+            isLast = true,
+            connectTop = false,
+        ) {
+            WorkNodeLabel(title = title)
+        }
+    }
 }
 
 /** 时间线标题行与节点徽章共用的几何尺寸，保证图标中心与首行文字中线对齐。 */

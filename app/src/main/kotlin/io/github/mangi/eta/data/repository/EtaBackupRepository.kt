@@ -23,6 +23,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import java.io.InputStream
@@ -42,7 +43,15 @@ internal data class EtaBackupDocument(
     val messages: List<ConversationMessageEntity> = emptyList(),
     val contextCheckpoints: List<ConversationContextCheckpointEntity> = emptyList(),
     val conversationState: ConversationStateEntity? = null,
-    val memoryMd: String = "",
+    /**
+     * 核心记忆文本：`## 用户画像`（USER.md）+ `## 工作记忆`（MEMORY.md）两节。
+     * 字段名沿用旧备份的 JSON 键以保持兼容；导入时按两节分别写回两个文件。
+     */
+    val memoryCoreMd: String = "",
+    /** 记忆档案：档案名 → 正文（memory/files/<name>.md）。 */
+    val memoryFiles: Map<String, String> = emptyMap(),
+    /** 归档内容（旧版单文件格式，导入时按标题拆回 memory/archive/）；旧备份缺省为空，导入时不覆盖本机归档。 */
+    val memoryArchiveMd: String = "",
     val roleplay: CharacterBackupData? = null,
 ) {
     companion object {
@@ -87,7 +96,11 @@ internal object EtaBackupRepository {
                     val providers = database.providerDao().providers().map {
                         EtaBackupProvider(it.provider.withoutOAuthSecrets(), it.models)
                     }
-                    val memory = AgentMemoryRepository.snapshot().content
+                    val memoryCore = AgentMemoryRepository.coreSnapshot().content
+                    val memoryArchive = AgentMemoryRepository.archiveSnapshot().content
+                    val memoryFiles = AgentMemoryRepository.files().associate { file ->
+                        file.name to AgentMemoryRepository.fileText(file.name)
+                    }
                     writer.value("format", String.serializer(), EtaBackupDocument.FORMAT)
                     writer.value("schemaVersion", Int.serializer(), EtaBackupDocument.SCHEMA_VERSION)
                     writer.value("exportedAt", Long.serializer(), System.currentTimeMillis())
@@ -96,7 +109,13 @@ internal object EtaBackupRepository {
                     writer.value("selectedProviderId", String.serializer().nullable, settings.selectedProviderId)
                     writer.value("selectedModelId", String.serializer().nullable, settings.selectedModelId)
                     writer.value("conversationState", ConversationStateEntity.serializer().nullable, dao.state())
-                    writer.value("memoryMd", String.serializer(), memory)
+                    writer.value("memoryArchiveMd", String.serializer(), memoryArchive)
+                    writer.value("memoryCoreMd", String.serializer(), memoryCore)
+                    writer.value(
+                        "memoryFiles",
+                        MapSerializer(String.serializer(), String.serializer()),
+                        memoryFiles,
+                    )
                     val boundAvatars = linkedMapOf<String, String?>()
                     var conversationCount = 0
                     var messageCount = 0
@@ -128,7 +147,9 @@ internal object EtaBackupRepository {
                     val roleplay = CharacterBackupTransfer.snapshot(appContext, boundAvatars)
                     writer.value("roleplay", CharacterBackupData.serializer().nullable, roleplay)
                     EtaBackupSummary(providers.size, providers.sumOf { it.models.size }, conversationCount,
-                        messageCount, memory.toByteArray(Charsets.UTF_8).size, roleplay.characters.size)
+                        messageCount, memoryCore.toByteArray(Charsets.UTF_8).size +
+                            memoryFiles.values.sumOf { it.toByteArray(Charsets.UTF_8).size },
+                        roleplay.characters.size)
                 }
             }
         } catch (failure: Throwable) {
@@ -151,7 +172,11 @@ internal object EtaBackupRepository {
                 val summary = EtaBackupValidation.validate(staged)
                 val document = staged.header
                 val database = EtaDatabase.get(appContext)
-                val previousMemory = AgentMemoryRepository.snapshot().content
+                val previousFiles = AgentMemoryRepository.files().associate { file ->
+                    file.name to AgentMemoryRepository.fileText(file.name)
+                }
+                val previousArchive = AgentMemoryRepository.archiveSnapshot().content
+                val previousCore = AgentMemoryRepository.coreSnapshot().content
                 val previousRoleMemories = document.roleplay?.assets.orEmpty().associate {
                     it.characterId to CharacterMemoryRepository.snapshot(appContext, it.characterId).content
                 }
@@ -203,17 +228,39 @@ internal object EtaBackupRepository {
                             phase = "restore_memory"
                             cancellation.ensureActive()
                             memoryWriteStarted = true
-                            AgentMemoryRepository.replaceAll(document.memoryMd)
+                            // 记忆：档案文件 + 核心 + 归档（3.3.3 的 OAuth 流程旁边保留我们的拆分存储）
+                            AgentMemoryRepository.replaceAllFiles(document.memoryFiles)
+                            if (document.memoryCoreMd.isNotEmpty()) {
+                                AgentMemoryRepository.replaceCoreLegacy(document.memoryCoreMd)
+                            }
+                            if (document.memoryArchiveMd.isNotEmpty()) {
+                                AgentMemoryRepository.replaceArchive(document.memoryArchiveMd)
+                            }
                             document.roleplay?.let { CharacterBackupTransfer.restoreMemories(appContext, it) }
                             cancellation.ensureActive()
                         }
                     } catch (failure: Throwable) {
+                        // 记忆写入失败时数据库事务已回滚，这里补偿已经替换掉的文件。
                         if (memoryWriteStarted) {
-                            try { AgentMemoryRepository.replaceAll(previousMemory) } catch (restoreFailure: Throwable) {
+                            try {
+                                AgentMemoryRepository.replaceAllFiles(previousFiles)
+                            } catch (restoreFailure: Throwable) {
+                                failure.addSuppressed(restoreFailure)
+                            }
+                            try {
+                                AgentMemoryRepository.replaceArchive(previousArchive)
+                            } catch (restoreFailure: Throwable) {
+                                failure.addSuppressed(restoreFailure)
+                            }
+                            try {
+                                AgentMemoryRepository.replaceCoreLegacy(previousCore)
+                            } catch (restoreFailure: Throwable) {
                                 failure.addSuppressed(restoreFailure)
                             }
                             previousRoleMemories.forEach { (id, content) ->
-                                try { CharacterMemoryRepository.replaceAll(appContext, id, content) } catch (restoreFailure: Throwable) {
+                                try {
+                                    CharacterMemoryRepository.replaceAll(appContext, id, content)
+                                } catch (restoreFailure: Throwable) {
                                     failure.addSuppressed(restoreFailure)
                                 }
                             }
@@ -228,9 +275,11 @@ internal object EtaBackupRepository {
                         phase = "activate_provider_connections"
                         database.withTransaction {
                             oauthProviders.forEach { provider ->
-                                check(database.providerDao().activateRestoredOAuthProvider(
-                                    provider.id, provider.authMode, provider.isEnabled,
-                                ) == 1)
+                                check(
+                                    database.providerDao().activateRestoredOAuthProvider(
+                                        provider.id, provider.authMode, provider.isEnabled,
+                                    ) == 1,
+                                )
                             }
                         }
                     } catch (failure: Exception) {

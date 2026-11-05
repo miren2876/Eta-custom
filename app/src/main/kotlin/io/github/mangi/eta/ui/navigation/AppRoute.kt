@@ -13,6 +13,9 @@ sealed interface AppRoute : NavKey {
     data class Browser(val sessionKey: String = BrowserSessionRegistry.MANUAL_SESSION_KEY) : AppRoute
 
     @Serializable
+    data object ManageChats : AppRoute
+
+    @Serializable
     data object Terminal : AppRoute
 
     @Serializable
@@ -20,6 +23,9 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object WebToolsSettings : AppRoute
+
+    @Serializable
+    data object Scripts : AppRoute
 
     @Serializable
     data object Skills : AppRoute
@@ -71,6 +77,9 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object Memory : AppRoute
+
+    @Serializable
+    data class MemoryArchive(val name: String) : AppRoute
 
     @Serializable
     data object LinuxEnvironment : AppRoute

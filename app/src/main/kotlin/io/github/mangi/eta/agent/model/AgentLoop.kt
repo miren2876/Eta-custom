@@ -39,6 +39,8 @@ internal class AgentLoop(
     private val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
     private val roleplayContext: RoleplayRunContext? = null,
     initialSupplementIndex: Int = 0,
+    /** MCP 工具名 → 聊天里显示的名字；取不到就让 formatter 从模型名里解析。 */
+    private val mcpToolLabels: Map<String, String> = emptyMap(),
 ) {
     data class Result(
         val content: String,
@@ -403,7 +405,7 @@ internal class AgentLoop(
                 round = round,
                 toolCallId = roundCall.id,
                 name = roundCall.name,
-                argsPreview = traceFormatter.summarizeArguments(roundCall),
+                argsPreview = traceFormatter.summarizeArguments(roundCall, mcpToolLabels[roundCall.name]),
                 command = traceFormatter.displayCommand(roundCall),
             )
         )
@@ -439,7 +441,7 @@ internal class AgentLoop(
                 round = round,
                 toolCallId = toolCall.id,
                 name = toolCall.name,
-                argsPreview = traceFormatter.summarizeArguments(toolCall),
+                argsPreview = traceFormatter.summarizeArguments(toolCall, mcpToolLabels[toolCall.name]),
                 command = traceFormatter.displayCommand(toolCall),
             )
         )

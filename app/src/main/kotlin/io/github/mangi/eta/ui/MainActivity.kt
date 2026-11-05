@@ -11,10 +11,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import io.github.mangi.eta.agent.runtime.AgentRuntimeService
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AppearanceThemeMode
@@ -44,6 +47,10 @@ class MainActivity : ComponentActivity() {
             setContent {
                 val appearance by AppearanceSettingsRepository.settingsFlow()
                     .collectAsState(initial = initialAppearance)
+                // 提问卡片按会话过滤，需要知道当前打开的是哪条会话。
+                val agentAppViewModel = viewModel<io.github.mangi.eta.ui.app.AgentAppViewModel>()
+                // 侧栏打开时收起卡片：卡片画在整棵界面之上，会把侧栏内容盖住。
+                var conversationPaneOpen by remember { mutableStateOf(false) }
 
                 LaunchedEffect(appearance.themeMode) {
                     updateApplicationNightMode(appearance.themeMode)
@@ -80,6 +87,16 @@ class MainActivity : ComponentActivity() {
                         openTerminal = launchRequests.terminal,
                         onTerminalOpened = {
                             launchRequests = launchRequests.copy(terminal = false)
+                            intent?.action = null
+                        },
+                        openTasks = launchRequests.tasks,
+                        onTasksOpened = {
+                            launchRequests = launchRequests.copy(tasks = false)
+                            intent?.action = null
+                        },
+                        openMemory = launchRequests.memory,
+                        onMemoryOpened = {
+                            launchRequests = launchRequests.copy(memory = false)
                             intent?.action = null
                         },
                         onSpeechSettingsOpened = {
@@ -183,6 +200,9 @@ class MainActivity : ComponentActivity() {
             private set
 
         const val ACTION_OPEN_TERMINAL = "io.github.mangi.eta.action.OPEN_TERMINAL"
+        const val ACTION_OPEN_TASKS = "io.github.mangi.eta.action.OPEN_TASKS"
+        /** 记忆压缩结果/待决定通知点击后直达「记忆」页。 */
+        const val ACTION_OPEN_MEMORY = "io.github.mangi.eta.action.OPEN_MEMORY"
         /** 运行浮层的结果卡片回到本体：App 发起的 run 带会话 ID，直接打开该会话。 */
         const val ACTION_OPEN_CONVERSATION_ID = "io.github.mangi.eta.action.OPEN_CONVERSATION_ID"
         const val EXTRA_CONVERSATION_ID = "io.github.mangi.eta.extra.CONVERSATION_ID"

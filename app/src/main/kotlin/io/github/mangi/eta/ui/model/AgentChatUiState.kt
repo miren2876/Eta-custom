@@ -78,7 +78,12 @@ enum class SystemNoticeCode(val wireValue: String) {
     RuntimeFailed("runtime_failed"),
     ModelRetry("model_retry"),
     ContextCompaction("context_compaction"),
-    Interrupted("interrupted");
+    Interrupted("interrupted"),
+
+    /** 空闲记忆整理的结果；detail 存档案名，「无需记录」时为空。 */
+    MemoryReviewNew("memory_review_new"),
+    MemoryReviewAppended("memory_review_appended"),
+    MemoryReviewNone("memory_review_none");
 
     companion object {
         fun fromWireValue(value: String): SystemNoticeCode? = entries.firstOrNull {

@@ -50,7 +50,6 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
-
     <application
         android:name=".EtaApp"
         android:allowBackup="false"

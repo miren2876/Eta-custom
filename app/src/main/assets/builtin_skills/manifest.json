@@ -21,6 +21,16 @@
       "hasEvals": false
     },
     {
+      "id": "memory-keeper",
+      "name": "memory-keeper",
+      "description": "维护 Eta 的持久记忆：工作记忆 MEMORY.md 的条目池（按有效重要度 EI 排序注入）、用户画像 USER.md、主题档案 memory/files/*.md 与归档；负责 GC（去重、调权、压缩、归档）、记忆工具用法（memory_get / memory_write 的 entry、profile、archive 形态）与分级召回（热记忆 → 档案 → 会话历史 → 设备数据）。当用户要求\u201c清理记忆\u201d、\u201c整理记忆\u201d、\u201c跑记忆 GC\u201d，询问\u201c你还记得…吗\u201d、\u201c我们上次…是什么时候\u201d，或一次会话写入大量记忆之后使用。",
+      "assetPath": "builtin_skills/memory-keeper",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "skill-installer",
       "name": "skill-installer",
       "description": "从 curated 目录或公共 GitHub 仓库发现并安装 Skills。仅在用户明确请求列出可安装项、安装、更新，或调用 $skill-installer 时使用。",

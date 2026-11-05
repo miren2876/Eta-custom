@@ -32,7 +32,9 @@ val buildMetadataSuffix = buildMetadata?.let { "+$it" }.orEmpty()
 android {
     namespace = "io.github.mangi.eta"
     compileSdk = 37
-    ndkVersion = libs.versions.ndk.get()
+    // 本地 arm64 无可用 NDK（官方 NDK 主机工具仅 x86_64）；原生库已在 jniLibs 中预编译，
+    // 这里不声明 ndkVersion，交给 AGP 跳过符号剥离。
+    // ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
         applicationId = "io.github.mangi.eta"
@@ -120,6 +122,8 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // 纯 JVM 测试里没有 android.util.Log：让它返回默认值，避免「not mocked」打断用例。
+        unitTests.isReturnDefaultValues = true
         // Robolectric 在高版本 JDK 下需要访问内部 API，参数只作用于测试 JVM。
         unitTests.all {
             it.jvmArgs(

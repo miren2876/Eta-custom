@@ -4,40 +4,61 @@ import io.github.mangi.eta.data.repository.AgentMemoryStore
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 声明持久记忆的有界读取与原子局部更新工具。 */
+/**
+ * 声明持久记忆工具。存储分三层：
+ * - 用户画像 `memory/USER.md`（稳定偏好、关系、长期事实，每轮注入）
+ * - 工作记忆 `memory/MEMORY.md`（档案清单 + 当前进度，每轮注入）
+ * - 档案 `memory/files/<name>.md`（一档一主题，按需读取）
+ * - 归档 `memory/archive/<名字>.md`（冷档案迁入，一档一文件，可在记忆页还原）
+ */
 internal object AgentMemoryToolCatalog {
     fun appendTo(tools: JSONArray, writable: Boolean = true) {
         tools
             .put(
                 AgentToolSchema.function(
                     name = "memory_get",
-                    description = "Read persistent cross-conversation memory from MEMORY.md. Core memory and the heading index are already provided at run start, so call this only to inspect details, answer what is remembered, or refresh after a conflict. Use query for just-in-time retrieval instead of reading the whole file.",
+                    description = "Read persistent memory. The user profile (USER.md), the working-memory entries " +
+                        "(MEMORY.md, ranked by effective importance) and one line of archive stats are already injected " +
+                        "every turn, so call this only to inspect details. " +
+                        "archive=<name>: read one archive file (memory/files/<name>.md, or memory/archive/ once archived); " +
+                        "add outline=true for just the section headings with line counts, or section=\"<heading>\" for one section. " +
+                        "query=<text>: relevance search across ALL archive files and working-memory entries — returns " +
+                        "matching archives with their hit lines and matching entries (each hit also bumps its reference count). " +
+                        "With neither argument: return the profile, every entry with EI and reference counts, and the archive index.",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
                             "properties",
                             JSONObject()
                                 .put(
+                                    "archive",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 120)
+                                        .put("description", "Name of one archive file to read (see the archive index)."),
+                                )
+                                .put(
                                     "query",
                                     JSONObject()
                                         .put("type", "string")
                                         .put("maxLength", 500)
-                                        .put("description", "Optional case-insensitive text to search for in the full memory file."),
+                                        .put(
+                                            "description",
+                                            "Search text; scored per line across all archives, results ranked by relevance.",
+                                        ),
                                 )
                                 .put(
-                                    "start_line",
+                                    "outline",
                                     JSONObject()
-                                        .put("type", "integer")
-                                        .put("minimum", 1)
-                                        .put("description", "1-based first line for paged reading when query is omitted; default 1."),
+                                        .put("type", "boolean")
+                                        .put("description", "With archive=: return only section headings and their line counts."),
                                 )
                                 .put(
-                                    "max_chars",
+                                    "section",
                                     JSONObject()
-                                        .put("type", "integer")
-                                        .put("minimum", AgentMemoryStore.MIN_READ_CHARS)
-                                        .put("maximum", AgentMemoryStore.MAX_READ_CHARS)
-                                        .put("description", "Maximum returned characters; default 12000, maximum 32000."),
+                                        .put("type", "string")
+                                        .put("maxLength", 120)
+                                        .put("description", "With archive=: return only this section's body (exact heading, else substring match)."),
                                 ),
                         ),
                 ),
@@ -47,56 +68,96 @@ internal object AgentMemoryToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "memory_write",
-                    description = "Atomically update persistent MEMORY.md. Store only durable cross-conversation facts, preferences, relationships, and ongoing project context; never store secrets, credentials, verification codes, or transient requests. Keep '# 核心记忆' concise, correct stale facts, and prefer replacing an existing section over blindly appending duplicates. Use the revision from the most recent memory_write or memory_get result, or the session memory snapshot if neither has run.",
+                    description = "Write persistent memory. " +
+                        "Provide exactly one of target= (entry|profile|working) or archive=<name>; a call with " +
+                        "neither is rejected with MEMORY_TARGET_REQUIRED. " +
+                        "target=entry: append ONE working-memory line `- (importance 1-5) fact` — entries are injected " +
+                        "every turn and ranked by effective importance (EI = importance × access × 30-day decay), " +
+                        "so keep one fact per entry and put long details in an archive instead; " +
+                        "add match=<片段> to rewrite the matching entry (content=\"\" deletes it). " +
+                        "archive=<name>: create or update one archive file (mode=append adds a paragraph, " +
+                        "mode=replace overwrites the file) — one archive per topic, then add an entry pointing at it. " +
+                        "target=profile: overwrite USER.md, the user profile (durable preferences, relationships, ≤5 KB). " +
+                        "target=working: overwrite MEMORY.md wholesale (rarely needed; prefer target=entry). " +
+                        "Never store secrets, credentials, verification codes or transient requests. " +
+                        "Near-duplicate archive appends are rejected with MEMORY_DUPLICATE plus a hint to merge.",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
                             "properties",
                             JSONObject()
                                 .put(
+                                    "archive",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 120)
+                                        .put("description", "Archive file name to create or update."),
+                                )
+                                .put(
+                                    "target",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("enum", JSONArray().put("entry").put("profile").put("working"))
+                                        .put(
+                                            "description",
+                                            "Required unless archive= is given (no default): " +
+                                                "entry = add or rewrite one working-memory entry; " +
+                                                "profile = overwrite USER.md; working = overwrite MEMORY.md.",
+                                        ),
+                                )
+                                .put(
+                                    "importance",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("minimum", 1)
+                                        .put("maximum", 5)
+                                        .put(
+                                            "description",
+                                            "Entry importance 1-5 (default 3); higher keeps the entry injected longer.",
+                                        ),
+                                )
+                                .put(
+                                    "match",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 200)
+                                        .put(
+                                            "description",
+                                            "For target=entry: rewrite the entry containing this text; " +
+                                                "content=\"\" removes that entry.",
+                                        ),
+                                )
+                                .put(
                                     "mode",
                                     JSONObject()
                                         .put("type", "string")
+                                        .put("enum", JSONArray().put("append").put("replace").put("edit"))
                                         .put(
-                                            "enum",
-                                            JSONArray()
-                                                .put("replace_range")
-                                                .put("append")
-                                                .put("clear"),
-                                        )
-                                        .put("description", "replace_range edits inclusive 1-based lines; append adds a distinct section; clear removes all memory."),
+                                            "description",
+                                            "For archive writes: append (default) adds, edit replaces one unique old_text " +
+                                                "snippet, replace overwrites the whole file (not allowed for the background review run).",
+                                        ),
                                 )
                                 .put(
-                                    "revision",
+                                    "old_text",
                                     JSONObject()
                                         .put("type", "string")
-                                        .put("minLength", 64)
-                                        .put("maxLength", 64)
-                                        .put("description", "Exact SHA-256 revision from the most recent memory_write or memory_get result, or the session memory snapshot."),
-                                )
-                                .put(
-                                    "start_line",
-                                    JSONObject()
-                                        .put("type", "integer")
-                                        .put("minimum", 1)
-                                        .put("description", "Required for replace_range; inclusive 1-based first line."),
-                                )
-                                .put(
-                                    "end_line",
-                                    JSONObject()
-                                        .put("type", "integer")
-                                        .put("minimum", 1)
-                                        .put("description", "Required for replace_range; inclusive 1-based last line."),
+                                        .put("maxLength", 2000)
+                                        .put("description", "For mode=edit: the existing snippet to replace; must appear exactly once."),
                                 )
                                 .put(
                                     "content",
                                     JSONObject()
                                         .put("type", "string")
                                         .put("maxLength", AgentMemoryStore.MAX_WRITE_CONTENT_CHARS)
-                                        .put("description", "Replacement or appended Markdown, at most 3500 characters. Empty content deletes a replace_range."),
+                                        .put(
+                                            "description",
+                                            "Text to write: one entry (≤500 characters, one fact), a whole file, " +
+                                                "or archive markdown.",
+                                        ),
                                 ),
                         )
-                        .put("required", JSONArray().put("mode").put("revision")),
+                        .put("required", JSONArray().put("content")),
                 ),
             )
     }
