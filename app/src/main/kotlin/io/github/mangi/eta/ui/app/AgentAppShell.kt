@@ -69,7 +69,6 @@ import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.MiuixBackButton
 import io.github.mangi.eta.ui.components.RoleplayChatUi
 import io.github.mangi.eta.ui.components.TopBarBackdrop
-import io.github.mangi.eta.ui.components.rememberOpenVirtualScreenAction
 import io.github.mangi.eta.ui.components.captureForTopBar
 import io.github.mangi.eta.ui.components.rememberTopBarBackdrop
 import io.github.mangi.eta.ui.components.topBarContainerColor
@@ -271,8 +270,6 @@ private fun AgentTopBar(
             MiuixBackButton(onClick = onBack)
         }
     }
-    // 虚拟屏入口放进「···」菜单；点了直接打开独立虚拟屏应用。
-    val onOpenVirtualScreen = rememberOpenVirtualScreenAction()
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
             TopBarOverflowMenu(
@@ -285,7 +282,6 @@ private fun AgentTopBar(
                 onStopKimiWeb = onStopKimiWeb,
                 onRefreshKimiWeb = onRefreshKimiWeb,
                 onOpenBrowser = onOpenBrowser,
-                onOpenVirtualScreen = onOpenVirtualScreen,
             )
         }
     }
@@ -456,7 +452,6 @@ private fun TopBarOverflowMenu(
     onStopKimiWeb: () -> Unit,
     onRefreshKimiWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
-    onOpenVirtualScreen: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -482,7 +477,6 @@ private fun TopBarOverflowMenu(
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
-            val openVirtualScreenText = stringResource(R.string.virtual_screen_open_menu)
             val autoReadText = stringResource(
                 if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
             )
@@ -493,12 +487,10 @@ private fun TopBarOverflowMenu(
                 launchKimiWebText,
                 openBrowserText,
                 stopKimiWebText,
-                openVirtualScreenText,
                 canStopKimiWeb,
                 autoReadText,
                 hasSpeechPlayback,
                 autoReadEnabled,
-                onOpenVirtualScreen,
             ) {
                 listOf(
                     DropdownItem(
@@ -551,22 +543,7 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                ) + (if (onOpenVirtualScreen != null) {
-                    listOf(
-                        DropdownItem(
-                            text = openVirtualScreenText,
-                            icon = { modifier ->
-                                Icon(
-                                    imageVector = Icons.Rounded.Smartphone,
-                                    contentDescription = null,
-                                    modifier = modifier.size(TopBarMenuIconSize),
-                                )
-                            },
-                        ),
-                    )
-                } else {
-                    emptyList()
-                }) + (if (canStopKimiWeb) {
+                ) + (if (canStopKimiWeb) {
                     listOf(
                         DropdownItem(
                             text = stopKimiWebText,
@@ -606,7 +583,6 @@ private fun TopBarOverflowMenu(
                 add(onOpenScripts)
                 add(onLaunchKimiWeb)
                 add(onOpenBrowser)
-                if (onOpenVirtualScreen != null) add(onOpenVirtualScreen)
                 if (canStopKimiWeb) add(onStopKimiWeb)
                 if (hasSpeechPlayback) {
                     add {
