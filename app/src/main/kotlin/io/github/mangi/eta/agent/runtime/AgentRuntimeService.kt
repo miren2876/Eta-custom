@@ -1232,12 +1232,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         // 整理 run 是后台任务：不能顶替用户任务的状态，但也不该静默——给它自己的文案。
         val active = runs.all().filterNot { it.session.isTerminal }
         val userRuns = active.filterNot { memoryIdleReview.isReviewRun(it.runId) }
-        val owner = guiState.ownerRunId?.let(runs::get)
+        // GUI 归属只看真正的 owner：owner 释放后 userPaused 可能还保留，
+        // 这时不能把它算到回落的后台 run 头上，否则通知会一直停在「已暂停」。
+        val guiOwner = guiState.ownerRunId?.let(runs::get)
             ?.takeIf { !memoryIdleReview.isReviewRun(it.runId) }
-            ?: userRuns.firstOrNull()
         val status = when {
-            owner != null && guiState.userPaused -> AgentOverlayStatus.Paused
-            owner != null -> owner.overlayState.status
+            guiOwner != null && guiState.userPaused -> AgentOverlayStatus.Paused
+            guiOwner != null -> guiOwner.overlayState.status
+            userRuns.isNotEmpty() -> userRuns.first().overlayState.status
             active.isNotEmpty() -> AgentOverlayStatus.MemoryReview
             else -> null
         }
