@@ -1236,7 +1236,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             ?.takeIf { !memoryIdleReview.isReviewRun(it.runId) }
             ?: userRuns.lastOrNull()
         val status = when {
-            guiState.userPaused -> AgentOverlayStatus.Paused
+            owner != null && guiState.userPaused -> AgentOverlayStatus.Paused
             owner != null -> owner.overlayState.status
             active.isNotEmpty() -> AgentOverlayStatus.MemoryReview
             else -> null

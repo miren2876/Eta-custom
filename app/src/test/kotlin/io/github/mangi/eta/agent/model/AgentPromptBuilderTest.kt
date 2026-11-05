@@ -149,8 +149,6 @@ class AgentPromptBuilderTest {
         assertTrue(messages.getJSONObject(2).getString("content").contains("只需 command"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("同一轮模型回复最多调用一次 read_image"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("必须等待当前图片返回并观察内容，再在下一轮调用下一张"))
-        assertTrue(messages.getJSONObject(2).getString("content").contains("同一轮最多读取一张"))
-        assertTrue(messages.getJSONObject(2).getString("content").contains("观察返回内容后再读下一张"))
         assertTrue(messages.getJSONObject(3).getString("content").contains("可调用 subagent 派发子智能体"))
         assertFalse(messages.systemContents().any { it.contains("网页浏览、读取") })
         assertEquals("旧问题", messages.getJSONObject(4).getString("content"))

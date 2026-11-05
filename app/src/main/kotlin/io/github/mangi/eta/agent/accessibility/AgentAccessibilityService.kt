@@ -116,6 +116,21 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        when (event?.eventType) {
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                pruneWindowContentGenerations()
+                signalWindowChanged()
+            }
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                bumpWindowContentGeneration(event.windowId)
+                observeScrollEvent(event)
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ->
+                bumpWindowContentGeneration(event.windowId)
+        }
     }
 
     override fun onInterrupt() = Unit
@@ -191,7 +206,7 @@ class AgentAccessibilityService : AccessibilityService() {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val point = Point()
         @Suppress("DEPRECATION")
-        display.getRealSize(point)
+        windowManager.defaultDisplay.getRealSize(point)
         if (point.x > 0 && point.y > 0) point.x to point.y else null
     }.getOrNull()
 

@@ -133,10 +133,7 @@ internal class AgentExecutionService : Service() {
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        // 设备是 Android 16（SDK_INT_FULL = 36.0）：BAKLAVA_1(36.1) 永远不满足，
-        // 等于整段流体云提升被跳过。这里按 BAKLAVA 判断，lint 库标的是 36.1，故抑制 NewApi。
-        @SuppressLint("NewApi")
-        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+        if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(status.shortText())
@@ -186,7 +183,7 @@ internal class AgentExecutionService : Service() {
                     .setContentText(text)
                     .setAutoCancel(true)
                     .setTimeoutAfter(REVIEW_RESULT_TIMEOUT_MS)
-                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
                     builder
                         .setOngoing(true)
                         .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
@@ -253,7 +250,7 @@ internal class AgentExecutionService : Service() {
                     .setContentIntent(open)
                     .setAutoCancel(true)
                 if (timeoutMs > 0L) builder.setTimeoutAfter(timeoutMs)
-                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
                     builder
                         .setOngoing(true)
                         .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
