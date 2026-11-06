@@ -37,7 +37,6 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.mangi.eta.EtaApp
-import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import java.io.File
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
@@ -48,7 +47,6 @@ import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
-import io.github.mangi.eta.agent.overlay.AgentOverlayRunningSession
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
@@ -101,30 +99,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     @Volatile private var destroyed = false
     @Volatile private var lastGuiOwnerRunId: String? = null
     private var displayedRun: RuntimeRunRegistry.Run? = null
-
-    /** 收起态小球的屏幕位置（像素）：拖动时更新，供面板定位与持久化使用。 */
-    private val capsuleOffsetX = mutableStateOf(0)
-    private val capsuleOffsetY = mutableStateOf(0)
-    private var capsuleCollapsedX = Int.MIN_VALUE
-    private var capsuleCollapsedY = Int.MIN_VALUE
-
-    /** 已经跑完但仍要在胶囊里可点的会话（按完成顺序，最多 SESSION_LIST_LIMIT 条）。 */
-    private val recentSessionInfo = linkedMapOf<String, RunningSessionInfo>()
-
-    /** 运行中的会话信息，用于胶囊里的会话清单。 */
-    private val runningSessionInfo = linkedMapOf<String, RunningSessionInfo>()
-
-    private data class RunningSessionInfo(
-        val runId: String,
-        val conversationId: String,
-        val title: String,
-    )
-
-    /** 常驻开关：打开 Eta 后胶囊一直在，不随任务结束消失。 */
-    private var capsulePinned = false
-
-    /** 完成后未读：胶囊保留「已完成」提示，直到用户打开 Eta 或点开会话。 */
-    private var unreadFinished = false
 
     /**
      * 记忆空闲审查：打分 + 空闲定时器 + 隐藏整理 run。
@@ -203,39 +177,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_PIN_CAPSULE -> {
-                capsulePinned = true
-                if (runningSessionCount() == 0) {
-                    // 没有任务：进空闲态，胶囊立刻出现在桌面上。
-                    enterIdleState()
-                } else {
-                    // 对话进行中才打开常驻：直接绑到当前任务的显示上，否则开关看起来「没反应」。
-                    runs.all().lastOrNull { !it.session.isTerminal }?.let { bindDisplayedRun(it) }
-                    ensureOverlayVisible()
-                }
-            }
-            ACTION_UNPIN_CAPSULE -> {
-                capsulePinned = false
-                // 关掉常驻就是让胶囊马上消失：顺手清掉未读角标，别让它挂着"已完成"不退。
-                unreadFinished = false
-                if (state.value.finishedBadge != 0) state.value = state.value.copy(finishedBadge = 0)
-                if (runningSessionCount() == 0) {
-                    dismissAndStop()
-                    // 如果这条指令是 startForegroundService 送进来的，必须尽快让服务退出，
-                    // 否则系统会判定「没有调用 startForeground」直接 ANR 杀掉进程。
-                    stopSelf(startId)
-                }
-            }
-            ACTION_CLEAR_READ -> onCapsuleRead()
-            else -> {
-                val keepAlive = intent?.action == ACTION_KEEP_ALIVE && runs.all().isNotEmpty()
-                // 有待执行/在跑的整理时不停服务，否则整理 run 会撞 destroyed 被丢弃。
-                if (!keepAlive && !capsulePinned && !unreadFinished && !memoryIdleReview.hasPendingWork()) {
-                    stopSelf(startId)
-                }
-            }
-        }
+        val keepAlive = intent?.action == ACTION_KEEP_ALIVE && runs.all().isNotEmpty()
+        // 有待执行/在跑的整理时不停服务，否则整理 run 会撞 destroyed 被丢弃。
+        if (!keepAlive && !memoryIdleReview.hasPendingWork()) stopSelf(startId)
         return START_NOT_STICKY
     }
 
@@ -448,13 +392,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             // 用户任务优先撤掉「待执行」的整理；已经在跑的整理不打断，和用户任务并行。
             memoryIdleReview.onUserRunStarted()
         }
-        val handoffPayload = request.handoff?.payload?.let { raw -> AgentUiHandoffPayload.from(raw) }
-        runningSessionInfo[request.runId] = RunningSessionInfo(
-            runId = request.runId,
-            conversationId = handoffPayload?.conversationId.orEmpty(),
-            title = handoffPayload?.title.orEmpty(),
-        )
-        syncRunningSessions()
         val admission = runs.admit(request) {
             lateinit var session: AgentRuntimeSession
             session = AgentRuntimeSession(
@@ -514,13 +451,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 ))
                 return null
             }
-        }
-        // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
-        // 默认不主动弹胶囊：纯聊天/终端/记忆任务不该在桌面上留一个悬浮窗。
-        // 想常驻就打开「常驻胶囊」开关；真正操作手机的任务由 applyGuiControlState 自动显示。
-        if (!memoryIdleReview.isReviewRun(request.runId) && capsulePinnedSetting()) {
-            bindDisplayedRun(run)
-            ensureOverlayVisible()
         }
         val allowBoundFallback = RootAccess.isGranted
         val executionHeld = AgentExecutionService.acquire(
@@ -683,8 +613,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 return@post
             }
             val guiState = guiControl.state.value
-            rememberFinishedSession(run.session.runId)
-            syncRunningSessions()
             // 只有「别的 run 正持有 GUI」或用户暂停时才跳过胶囊收尾。
             val hasOtherGuiOwner = guiState.ownerRunId != null && guiState.ownerRunId != run.runId
             if (guiState.userPaused || hasOtherGuiOwner ||
@@ -1042,60 +970,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    /** 按当前 runs 同步胶囊用的会话清单（运行中的在前，其后是最近完成的）。 */
-    private fun syncRunningSessions() {
-        val activeRunIds = runs.all().map { it.runId }
-        runningSessionInfo.keys.retainAll(activeRunIds.toSet())
-        val list = mutableListOf<AgentOverlayRunningSession>()
-        activeRunIds.forEach { runId ->
-            runningSessionInfo[runId]?.let { info ->
-                list += AgentOverlayRunningSession(info.runId, info.conversationId, info.title, running = true)
-            }
-        }
-        recentSessionInfo.values.toList().asReversed().forEach { info ->
-            if (list.size >= SESSION_LIST_LIMIT) return@forEach
-            if (list.any { it.runId == info.runId }) return@forEach
-            list += AgentOverlayRunningSession(info.runId, info.conversationId, info.title, running = false)
-        }
-        val trimmed = list.take(SESSION_LIST_LIMIT)
-        if (state.value.runningSessions == trimmed) return
-        state.value = state.value.copy(runningSessions = trimmed)
-    }
-
-    /** 会话结束后把它记进「最近会话」，胶囊展开后仍可点回去。 */
-    private fun rememberFinishedSession(runId: String) {
-        val info = runningSessionInfo[runId] ?: return
-        recentSessionInfo.remove(runId)
-        recentSessionInfo[runId] = info
-        while (recentSessionInfo.size > SESSION_LIST_LIMIT) {
-            val oldest = recentSessionInfo.keys.firstOrNull() ?: break
-            recentSessionInfo.remove(oldest)
-        }
-    }
-
-    /** 仍在运行的会话数（含正在收尾的）。 */
-    private fun runningSessionCount(): Int = runs.all().count { !it.session.isTerminal }
-
-    /** 读完完成提示：没有任务在跑时回到空闲态（常驻）或收掉服务。 */
-    private fun onCapsuleRead() {
-        unreadFinished = false
-        if (state.value.finishedBadge != 0) state.value = state.value.copy(finishedBadge = 0)
-        if (runningSessionCount() > 0) return
-        if (capsulePinned) enterIdleState() else dismissAndStop()
-    }
-
-    /** 常驻但没有任务时显示空闲。 */
-    private fun enterIdleState() {
-        state.value = AgentOverlayState(phase = AgentOverlayPhase.IDLE, status = AgentOverlayStatus.Idle)
-        capsuleExpanded.value = false
-        if (virtualDisplayState.value.active) {
-            updateCapsuleWindowBounds(expanding = false)
-        } else {
-            setCapsuleWindowSize(CAPSULE_COLLAPSED_SIZE_DP, CAPSULE_COLLAPSED_SIZE_DP)
-        }
-        ensureOverlayVisible()
-    }
-
     /** 起一个隐藏的记忆整理 run：只给记忆工具，不属于任何会话。 */
     /** 打分与排整理定时器的宽限窗口；必须大于同队列里 onRunFinished 的执行延迟。 */
     private val REVIEW_GRACE_MS = 1_000L
@@ -1311,11 +1185,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onSwipeVirtualCanvas = { sx, sy, ex, ey, durationMs ->
                     VirtualDisplayController.dispatchUserSwipeOnCanvas(sx, sy, ex, ey, durationMs)
                 },
-                onOpenConversation = ::openConversation,
-                onDragBy = ::moveCapsuleBy,
-                onDragFinished = ::snapCapsuleToEdge,
-                collapsedX = capsuleOffsetX.value,
-                collapsedY = capsuleOffsetY.value,
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -1359,69 +1228,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         VirtualDisplayController.setStageExpanded(expand && virtualDisplayState.value.active)
         // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
         if (expand) updateCapsuleWindowBounds(expanding = true)
-        if (!expand && !virtualDisplayState.value.active) {
-            setCapsuleWindowSize(CAPSULE_COLLAPSED_SIZE_DP, CAPSULE_COLLAPSED_SIZE_DP)
-        }
         capsuleExpanded.value = expand
     }
 
     private fun onCapsuleCollapsedSettled() {
         if (!capsuleExpanded.value) {
             VirtualDisplayController.setStageExpanded(false)
-            if (virtualDisplayState.value.active) {
-                updateCapsuleWindowBounds(expanding = false)
-            } else {
-                setCapsuleWindowSize(CAPSULE_COLLAPSED_SIZE_DP, CAPSULE_COLLAPSED_SIZE_DP)
-            }
-        }
-    }
-
-    /** 收起态拖动小球：跟着手指走，超出屏幕会被夹住。 */
-    private fun moveCapsuleBy(dx: Float, dy: Float) {
-        if (capsuleExpanded.value) return
-        val lp = capsuleParams ?: return
-        val capsule = capsuleView ?: return
-        val wm = windowManager ?: return
-        val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
-        val topInset = statusBarHeightPx()
-        lp.x = (lp.x + dx.toInt()).coerceIn(0, maxOf(0, screenWidth - lp.width))
-        lp.y = (lp.y + dy.toInt()).coerceIn(topInset, maxOf(topInset, screenHeight - lp.height))
-        capsuleCollapsedX = lp.x
-        capsuleCollapsedY = lp.y
-        capsuleOffsetX.value = lp.x
-        capsuleOffsetY.value = lp.y
-        runCatching { wm.updateViewLayout(capsule, lp) }
-    }
-
-    /** 松手自动吸附：小球中心在屏幕左半边就贴左边缘，否则贴右。 */
-    private fun snapCapsuleToEdge() {
-        if (capsuleExpanded.value) return
-        val lp = capsuleParams ?: return
-        val capsule = capsuleView ?: return
-        val wm = windowManager ?: return
-        val screenWidth = resources.displayMetrics.widthPixels
-        val maxX = maxOf(0, screenWidth - lp.width)
-        val targetX = if (lp.x + lp.width / 2 < screenWidth / 2) 0 else maxX
-        if (lp.x != targetX) {
-            lp.x = targetX
-            runCatching { wm.updateViewLayout(capsule, lp) }
-        }
-        capsuleCollapsedX = lp.x
-        capsuleCollapsedY = lp.y
-        capsuleOffsetX.value = lp.x
-        capsuleOffsetY.value = lp.y
-        persistCapsulePosition(lp.x, lp.y)
-    }
-
-    /** 记住位置：重启 App 后小球还停在上次的地方。 */
-    private fun persistCapsulePosition(x: Int, y: Int) {
-        runCatching {
-            runBlocking {
-                SettingsDataStore.updateSettings { settings ->
-                    settings.copy(overlayCapsulePosX = x, overlayCapsulePosY = y)
-                }
-            }
+            updateCapsuleWindowBounds(expanding = false)
         }
     }
 
@@ -1507,25 +1320,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 回到 Eta 本体并定位到本次任务的会话。卡片窗口可见时属于前台可见的用户操作，
      * 允许从服务启动 Activity；启动失败时保留卡片，不让用户丢失结果。
      */
-    /** 点胶囊里的会话 → 回到对应会话，并清掉完成提示。 */
-    private fun openConversation(conversationId: String) {
-        if (conversationId.isBlank()) return
-        runCatching {
-            startActivity(
-                Intent(this, MainActivity::class.java)
-                    .setAction(MainActivity.ACTION_OPEN_CONVERSATION_ID)
-                    .putExtra(MainActivity.EXTRA_CONVERSATION_ID, conversationId)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            )
-            capsuleExpanded.value = false
-            onCapsuleRead()
-        }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("overlay_open_conversation_failed") {
-                "Overlay open conversation failed: type=" + throwable.safeLogType()
-            }
-        }
-    }
-
     private fun openEtaFromResult(run: RuntimeRunRegistry.Run?) {
         val handoff = run?.request?.handoff
         val conversationId = handoff
@@ -1619,8 +1413,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      */
     private fun capsuleLayoutParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
-            dpToPx(if (virtualDisplayState.value.active) CAPSULE_MICRO_WINDOW_WIDTH_DP else CAPSULE_COLLAPSED_SIZE_DP),
-            dpToPx(if (virtualDisplayState.value.active) CAPSULE_COLLAPSED_HEIGHT_DP else CAPSULE_COLLAPSED_SIZE_DP),
+            dpToPx(if (virtualDisplayState.value.active) CAPSULE_MICRO_WINDOW_WIDTH_DP else CAPSULE_WINDOW_WIDTH_DP),
+            dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP),
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -1628,20 +1422,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // 用左上角绝对坐标：只有这样才能把小球自由拖到任意位置并贴边；
-            // CENTER_HORIZONTAL 时 x 是相对居中的偏移，拖动范围会被限制在中间一小段。
-            gravity = Gravity.TOP or Gravity.START
-            val saved = runCatching { runBlocking { SettingsDataStore.settings() } }.getOrNull()
-            val savedX = saved?.overlayCapsulePosX ?: -1
-            val savedY = saved?.overlayCapsulePosY ?: -1
-            if (savedX >= 0) capsuleCollapsedX = savedX
-            if (savedY >= 0) capsuleCollapsedY = savedY
-            x = if (capsuleCollapsedX != Int.MIN_VALUE) {
-                capsuleCollapsedX
-            } else {
-                ((resources.displayMetrics.widthPixels - dpToPx(CAPSULE_COLLAPSED_SIZE_DP)) / 2)
-            }
-            y = if (capsuleCollapsedY != Int.MIN_VALUE) capsuleCollapsedY else statusBarHeightPx()
+            // 贴在状态栏下方居中：远离多数应用的主要点击区，也和系统胶囊、流体云的位置习惯一致。
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = statusBarHeightPx()
             windowAnimations = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
@@ -1794,21 +1577,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
     }
 
-    /** 常驻开关的权威值：设置页写的是 Settings，指令可能因后台限制没送到服务。 */
-    private fun capsulePinnedSetting(): Boolean = runCatching {
-        runBlocking { SettingsDataStore.settings() }.overlayCapsulePinned
-    }.getOrDefault(capsulePinned)
-
     private fun dismissAndStop() {
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
-        unreadFinished = false
-        capsulePinned = capsulePinnedSetting()
-        if (capsulePinned && runningSessionCount() == 0) {
-            // 常驻模式下不撤胶囊，只收回到空闲态。
-            enterIdleState()
-            return
-        }
         // stopSelf 不会销毁仍被客户端绑定的服务；窗口关闭后不再保留完整请求与结果历史。
         displayedRun?.completedContext = null
         displayedRun = null
@@ -1944,13 +1715,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 }
             }
 
-        /** 胶囊展开列表里最多保留几条会话（运行中 + 最近完成）。 */
-        const val SESSION_LIST_LIMIT = 3
-
-        const val ACTION_PIN_CAPSULE = "io.github.mangi.eta.agent.runtime.PIN_CAPSULE"
-        const val ACTION_UNPIN_CAPSULE = "io.github.mangi.eta.agent.runtime.UNPIN_CAPSULE"
-        const val ACTION_CLEAR_READ = "io.github.mangi.eta.agent.runtime.CLEAR_READ"
-
         private const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
         private const val HIDE_DELAY_MS = 2_500L
         private const val RESULT_REVIEW_DELAY_MS = 120_000L
@@ -1959,8 +1723,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_WINDOW_WIDTH_DP = 272
         private const val CAPSULE_MICRO_WINDOW_WIDTH_DP = 290
         private const val CAPSULE_STAGE_WINDOW_WIDTH_DP = 324
-        /** 收起态窗口是正方形：圆球才不会被拉成长条，窗口小才能拖到屏幕任意位置。 */
-        private const val CAPSULE_COLLAPSED_SIZE_DP = 88
         private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
         private const val CAPSULE_STAGE_HEIGHT_DP = 524

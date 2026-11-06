@@ -126,10 +126,6 @@ private fun SettingsPageContent(
     var hasUsedSystemizer by remember { mutableStateOf(enhancementHistory.hasUsedSystemizer) }
     var showSystemizerDialog by remember { mutableStateOf(false) }
     var installingSystemizer by remember { mutableStateOf(false) }
-    var capsulePinned by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        capsulePinned = runCatching { SettingsDataStore.settings().overlayCapsulePinned }.getOrDefault(false)
-    }
 
     // 悬浮窗权限状态：授权后从系统设置返回时（ON_RESUME）刷新。
     var overlayGranted by remember {
@@ -374,50 +370,6 @@ private fun SettingsPageContent(
                         key = Prefs.Keys.AGENT_ASK_USER,
                         icon = Icons.Rounded.Forum,
                         iconTint = EtaPreferenceColors.Blue,
-                    )
-
-                    EtaPreferenceDivider()
-                    EtaSwitchPreference(
-                        title = stringResource(R.string.overlay_capsule_pinned_title),
-                        summary = stringResource(R.string.overlay_capsule_pinned_summary),
-                        startAction = {
-                            EtaPreferenceIcon(
-                                icon = Icons.Rounded.ChatBubble,
-                                tint = EtaPreferenceColors.Blue,
-                            )
-                        },
-                        checked = capsulePinned,
-                        onCheckedChange = { value ->
-                            capsulePinned = value
-                            // 胶囊走系统悬浮窗（无障碍可用时免授权）：没授权先跳去授权，用户回来再拨一次。
-                            if (value && !Settings.canDrawOverlays(context)) {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(
-                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            android.net.Uri.parse("package:${'$'}{context.packageName}"),
-                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                }
-                            }
-                            coroutineScope.launch(Dispatchers.IO) {
-                                SettingsDataStore.updateSettings { it.copy(overlayCapsulePinned = value) }
-                                runCatching {
-                                    context.startService(
-                                        Intent(
-                                            context,
-                                            io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java,
-                                        ).setAction(
-                                            if (value) {
-                                                io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_PIN_CAPSULE
-                                            } else {
-                                                io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_UNPIN_CAPSULE
-                                            },
-                                        ),
-                                    )
-                                }
-                            }
-                        },
                     )
 
                     EtaPreferenceDivider()

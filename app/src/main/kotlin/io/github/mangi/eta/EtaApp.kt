@@ -67,20 +67,6 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener, Application
         ProviderRepository.init(this)
         McpServerRepository.init(this)
         XposedServiceHelper.registerListener(this)
-        // 悬浮胶囊常驻：上次开着就继续挂上，没有任务时显示空闲。
-        applicationScope.launch(Dispatchers.IO) {
-            val pinned = runCatching { SettingsDataStore.settings().overlayCapsulePinned }.getOrDefault(false)
-            if (pinned) {
-                runCatching {
-                    startService(
-                        android.content.Intent(
-                            this@EtaApp,
-                            io.github.mangi.eta.agent.runtime.AgentRuntimeService::class.java,
-                        ).setAction(io.github.mangi.eta.agent.runtime.AgentRuntimeService.ACTION_PIN_CAPSULE),
-                    )
-                }
-            }
-        }
         applicationScope.launch {
             try {
                 SpeechOssUpload(this@EtaApp).retryPending(this@EtaApp)
