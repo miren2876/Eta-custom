@@ -6,6 +6,8 @@ import org.json.JSONArray
 
 /** 声明模型可见的工具及其 JSON Schema；不包含任何执行逻辑。 */
 internal object AgentToolCatalog {
+    /** 上一次发布的工具名快照；仅用于变化时记录一行诊断日志。 */
+
     fun build(
         terminalTools: Boolean,
         browserTools: Boolean,
@@ -40,6 +42,7 @@ internal object AgentToolCatalog {
                 githubInstall = skillGitHubInstall,
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
+            if (capabilities.askUser) AgentUserPromptToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

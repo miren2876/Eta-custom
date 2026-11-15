@@ -17,6 +17,10 @@ class ConversationSearchTest {
             SystemNoticeCode.ModelRetry -> "Retrying"
             SystemNoticeCode.RuntimeFailed -> "Runtime failed"
             SystemNoticeCode.Interrupted -> "Interrupted"
+            SystemNoticeCode.MemoryReviewNew,
+            SystemNoticeCode.MemoryReviewAppended,
+            SystemNoticeCode.MemoryReviewNone,
+                -> "Memory review"
         }
     }
 

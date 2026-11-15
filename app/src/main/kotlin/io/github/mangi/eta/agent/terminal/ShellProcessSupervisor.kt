@@ -520,9 +520,24 @@ internal data class OneShotShellResult(
     val stderrTruncated: Boolean = false,
 )
 
-/** 控制台 PTY 的前提是随包原生组件已被安装器提取为可执行文件；不启动进程，可在入口直接调用。 */
-internal fun ptySupported(): Boolean = TerminalRuntime.nativeExecutable(PTY_EXECUTABLE) != null
+/**
+ * 探测控制台 PTY 的前提：Root 侧 BusyBox 带 script applet。
+ * 用 --list 精确匹配 applet 名；--help 的首行是版本横幅，不含 applet 名。
+ * 只在控制台入口调用，不在进程启动热路径使用。
+ */
+internal fun ptySupported(processSupervisor: ShellProcessSupervisor): Boolean {
+    val command = AndroidBusyBox.discoveryScript() +
+        "; [ -n \"\$eta_busybox\" ] || exit 1; \"\$eta_busybox\" --list 2>/dev/null | grep -qx script"
+    val result = runOneShotShell(
+        processSupervisor = processSupervisor,
+        identity = "root",
+        command = command,
+        timeoutSeconds = 10,
+    )
+    return result.exitCode == 0
+}
 
+/** 子进程提前退出导致输入管道写入失败时的退出码；由调用方区分「命令成功但输入没送进去」。 */
 internal const val PTY_EXECUTABLE = "libeta_pty.so"
 internal const val SHELL_STDIN_FAILED_EXIT_CODE = -4
 

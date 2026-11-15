@@ -34,6 +34,7 @@ internal object AgentContinuationBuilder {
                 id = newRunId,
                 payload = AgentUiHandoffPayload(
                     conversationId = payload.conversationId,
+                    title = payload.title,
                     promptSupplement = nextSupplement,
                 ).toJson(),
             )

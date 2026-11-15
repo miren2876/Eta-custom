@@ -82,6 +82,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -308,6 +309,29 @@ private fun MemorySettingsGroup(
                     summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),
                     showChevron = false,
                 )
+                Divider()
+                CouiPreference(
+                    title = stringResource(R.string.memory_tidy_now),
+                    summary = stringResource(R.string.memory_tidy_now_summary),
+                    showChevron = false,
+                    onClick = { onAction(AgentMemoryAction.CompactNow) },
+                )
+                if (state.files.isNotEmpty()) {
+                    Divider()
+                    CouiPreference(
+                        title = stringResource(R.string.memory_archive_files_title),
+                        summary = stringResource(R.string.memory_archive_files_summary, state.files.size),
+                        showChevron = false,
+                    )
+                    state.files.forEach { file ->
+                        Divider()
+                        CouiPreference(
+                            title = file.name,
+                            summary = stringResource(R.string.memory_file_lines, file.lineCount),
+                            onClick = { onAction(AgentMemoryAction.ExpandFile(file.name)) },
+                        )
+                    }
+                }
             }
         }
         AppearanceUiStyle.MIUIX -> {
@@ -327,6 +351,24 @@ private fun MemorySettingsGroup(
                     title = stringResource(R.string.ui_core_memory_injection_budget_48b5d5),
                     summary = stringResource(R.string.memory_budget_summary, formatNumber(state.coreBudgetChars)),
                 )
+                ArrowPreference(
+                    title = stringResource(R.string.memory_tidy_now),
+                    summary = stringResource(R.string.memory_tidy_now_summary),
+                    onClick = { onAction(AgentMemoryAction.CompactNow) },
+                )
+                if (state.files.isNotEmpty()) {
+                    BasicComponent(
+                        title = stringResource(R.string.memory_archive_files_title),
+                        summary = stringResource(R.string.memory_archive_files_summary, state.files.size),
+                    )
+                    state.files.forEach { file ->
+                        ArrowPreference(
+                            title = file.name,
+                            summary = stringResource(R.string.memory_file_lines, file.lineCount),
+                            onClick = { onAction(AgentMemoryAction.ExpandFile(file.name)) },
+                        )
+                    }
+                }
             }
         }
     }

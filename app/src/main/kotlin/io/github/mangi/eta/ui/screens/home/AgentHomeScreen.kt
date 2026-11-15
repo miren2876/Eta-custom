@@ -37,6 +37,8 @@ internal fun AgentHomeScreen(
     isDrawerOpen: Boolean = false,
     isBranching: Boolean = false,
     topInset: Dp = 0.dp,
+    scrollToTopRequest: Int = 0,
+    workProcessRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     // key 内保持完整分支，避免提前返回遗留无法转换为 DEX 的编译器标记。
@@ -101,12 +103,16 @@ internal fun AgentHomeScreen(
                     },
                     onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
                     onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
+                    characterName = state.roleplay?.characterName,
+                    conversationId = conversationKey,
                     hasEarlierMessages = state.hasEarlierMessages,
                     messageStartIndex = state.messageStartIndex,
                     historyLoadState = historyLoadState,
                     onLoadEarlierMessages = { onAction(AgentHomeAction.LoadEarlierMessages) },
                     onHistoryViewportChanged = { onAction(AgentHomeAction.HistoryViewportChanged(it)) },
                     isDrawerOpen = isDrawerOpen,
+                    scrollToTopRequest = scrollToTopRequest,
+                    workProcessRequest = workProcessRequest,
                     modifier = modifier,
                 )
             }

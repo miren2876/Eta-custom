@@ -40,6 +40,8 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.itos.coui.effect.LocalCouiContourGlowEnabled
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.ui.model.SystemNoticeCode
+import java.io.File
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
@@ -52,6 +54,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
+import io.github.mangi.eta.agent.prompt.AgentUserPrompt
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
@@ -104,6 +107,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     @Volatile private var lastGuiOwnerRunId: String? = null
     private var displayedRun: RuntimeRunRegistry.Run? = null
 
+    /**
+     * 记忆空闲审查：打分 + 空闲定时器 + 隐藏整理 run。
+     * 取进程级单例：run 结束、服务空闲后会 stopSelf()，实例字段会随服务丢掉。
+     */
+    private val memoryIdleReview: AgentMemoryIdleReview
+        get() = sharedIdleReview(this)
+
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
     private var capsuleView: ComposeView? = null
@@ -148,12 +158,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     override fun onCreate() {
         super.onCreate()
         activeInstance = this
+        activeService = this
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         AgentOverlayClearance.attach(clearanceHost)
         serviceScope.launch { guiControl.state.collect(::applyGuiControlState) }
+        // 提问挂起/作答后都要重算状态，否则流体云会停在提问前的那一条。
+        serviceScope.launch { AgentUserPrompt.state.collect { publishExecutionState() } }
         serviceScope.launch {
             VirtualDisplayController.snapshots.collect { snapshot ->
                 val wasActive = virtualDisplayState.value.active
@@ -173,9 +186,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_KEEP_ALIVE || runs.all().isEmpty()) {
-            stopSelf(startId)
-        }
+        val keepAlive = intent?.action == ACTION_KEEP_ALIVE && runs.all().isNotEmpty()
+        // 有待执行/在跑的整理时不停服务，否则整理 run 会撞 destroyed 被丢弃。
+        if (!keepAlive && !memoryIdleReview.hasPendingWork()) stopSelf(startId)
         return START_NOT_STICKY
     }
 
@@ -191,6 +204,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     override fun onDestroy() {
         destroyed = true
         if (activeInstance === this) activeInstance = null
+        if (activeService === this) activeService = null
         setKeepScreenOn(false)
         runs.all().forEach { run ->
             run.releaseIncoming()
@@ -380,23 +394,39 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "Agent Runtime 服务已停止"))
             return null
         }
+        val reviewRun = memoryIdleReview.isReviewRun(request.runId)
+        memoryIdleReview.bindRun(request.runId, request.effectiveModelSessionId, request.history.size)
+        if (!reviewRun) {
+            // 用户新任务优先：撤掉待执行的整理，并中止正在跑的整理。
+            // 用户任务优先撤掉「待执行」的整理；已经在跑的整理不打断，和用户任务并行。
+            memoryIdleReview.onUserRunStarted()
+        }
         val admission = runs.admit(request) {
             lateinit var session: AgentRuntimeSession
             session = AgentRuntimeSession(
                 runId = request.runId,
                 operation = request.operation,
-                eventSink = { event -> sendEventTo(replyTo, event) },
+                eventSink = { event ->
+                    if (event is AgentEvent.ToolFinished) {
+                        memoryIdleReview.recordToolFinished(request.runId, event.name)
+                    }
+                    sendEventTo(replyTo, event)
+                },
                 resultSink = { result -> sendResultTo(replyTo, result) },
                 beforeTerminalPublish = {
                     runs.finish(request.runId, session)?.releaseIncoming()
                     AgentExecutionService.release("run:${request.runId}")
-                    mainHandler.post {
+                    // 延后一拍再判断：onRunFinished（打分→排整理定时器）也是 post 进来的，
+                    // 同队列里先于它执行会把「待执行的整理」看成没有，服务一停整理 run 就起不来。
+                    mainHandler.postDelayed({
                         if (!destroyed) {
                             publishExecutionState()
                             updateKeepScreenOn()
-                            if (runs.all().isEmpty() && displayedRun == null && !guiControl.state.value.userPaused) stopSelf()
+                            if (runs.all().isEmpty() && displayedRun == null &&
+                                !guiControl.state.value.userPaused && !memoryIdleReview.hasPendingWork()
+                            ) stopSelf()
                         }
-                    }
+                    }, REVIEW_GRACE_MS)
                 },
             )
             RuntimeRunRegistry.Run(request, session, incoming) {
@@ -431,7 +461,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 return null
             }
         }
-        // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
         val allowBoundFallback = RootAccess.isGranted
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
@@ -528,7 +557,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
             runCatching {
                 run.overlayState = run.overlayState.applyEvent(event)
-                if (displayedRun === run && ownsGui && !run.session.isTerminal) {
+                if (displayedRun === run && !run.session.isTerminal) {
                     state.value = run.overlayState
                     syncActiveRunOverlayVisibility(run)
                 }
@@ -564,9 +593,42 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (destroyed) return@post
             run.completedContext = completedContext
+            // 记忆侧收尾必须无条件执行：整理 run 的活跃标记、普通 run 的累计信号都靠它清理。
+            if (AgentMemoryCompactor.isCompactionRun(run.session.runId)) {
+                AgentMemoryCompactor.onRunFinished(run.session.runId)
+                traceIdleReview(
+                    "压缩 run 结束 ok=${result.ok} err=${result.error.orEmpty().take(160)} " +
+                        "content=${result.content.replace("\n", " ").take(120)}",
+                )
+                if (runs.all().isEmpty() && displayedRun == null && !guiControl.state.value.userPaused) stopSelf()
+                return@post
+            }
+            memoryIdleReview.onRunFinished(
+                runId = run.session.runId,
+                transcript = run.session.transcript,
+                enabled = Prefs.isEnabled(Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW),
+                userChars = run.request.prompt.length,
+            )
+            // 空闲审查之后串行检查一次容量：review 刚排了定时器时会因互斥跳过。
+            AgentMemoryCompactor.requestAsync("run-finished")
+            // 整理 run 到此为止：它不该碰胶囊，但结果要落盘，否则失败时无从定位。
+            if (memoryIdleReview.isReviewRun(run.session.runId)) {
+                traceIdleReview(
+                    "整理 run 结束 ok=${result.ok} err=${result.error.orEmpty().take(160)} " +
+                        "content=${result.content.replace("\n", " ").take(120)}",
+                )
+                // 整理是最后一件事：收尾后按空闲规则退出，别让服务因等它而常驻。
+                if (runs.all().isEmpty() && displayedRun == null && !guiControl.state.value.userPaused) stopSelf()
+                return@post
+            }
             val guiState = guiControl.state.value
-            if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
-                (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
+            // 只有「别的 run 正持有 GUI」或用户暂停时才跳过胶囊收尾。
+            val hasOtherGuiOwner = guiState.ownerRunId != null && guiState.ownerRunId != run.runId
+            if (guiState.userPaused || hasOtherGuiOwner ||
+                (lastGuiOwnerRunId != null && lastGuiOwnerRunId != run.runId)
+            ) {
+                return@post
+            }
             bindDisplayedRun(run)
             updateKeepScreenOn()
             runCatching {
@@ -602,10 +664,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sendEventTo(
         target: Messenger?,
         event: AgentEvent,
+        virtualScreen: Boolean? = null,
     ) {
         runCatching {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_EVENT)
-            msg.data = AgentRuntimeWire.eventToBundle(event)
+            msg.data = AgentRuntimeWire.eventToBundle(event, virtualScreen)
             target?.send(msg)
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_event_delivery_failed") {
@@ -916,6 +979,84 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
+    /** 起一个隐藏的记忆整理 run：只给记忆工具，不属于任何会话。 */
+    /** 打分与排整理定时器的宽限窗口；必须大于同队列里 onRunFinished 的执行延迟。 */
+    private val REVIEW_GRACE_MS = 1_000L
+
+    private fun startMemoryReviewRun(prompt: String) {
+        if (AgentMemoryCompactor.isActive()) {
+            traceIdleReview("整理跳过：记忆压缩正在进行")
+            return
+        }
+        val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
+            .getOrNull()
+        if (config == null) {
+            AndroidAgentLogger.warn("Memory idle review: runtime config unavailable")
+            return
+        }
+        val runId = AgentMemoryIdleReview.REVIEW_RUN_PREFIX + java.util.UUID.randomUUID()
+        AndroidAgentLogger.info("Memory idle review: run $runId")
+        startRun(
+            AgentRuntimeWire.RunRequest(
+                runId = runId,
+                prompt = prompt,
+                config = config.copy(
+                    memoryReviewMode = true,
+                    terminalTools = false,
+                    browserTools = false,
+                    deviceDirectTools = false,
+                    deviceSensitiveReadTools = false,
+                    deviceSensitiveActionTools = false,
+                    hostedWebSearchEnabled = false,
+                ),
+                images = emptyList(),
+            )
+        )
+    }
+
+    /** 记忆压缩 run：与空闲审查同样的工具裁剪，但写入策略是 COMPACT（允许删条目、重写画像）。 */
+    private fun startMemoryCompactionRun(prompt: String): Boolean {
+        val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
+            .getOrNull()
+        if (config == null) {
+            AndroidAgentLogger.warn("Memory compaction: runtime config unavailable")
+            return false
+        }
+        val runId = AgentMemoryCompactor.COMPACT_RUN_PREFIX + java.util.UUID.randomUUID()
+        AndroidAgentLogger.info("Memory compaction: run $runId")
+        startRun(
+            AgentRuntimeWire.RunRequest(
+                runId = runId,
+                prompt = prompt,
+                config = config.copy(
+                    memoryReviewMode = true,
+                    terminalTools = false,
+                    browserTools = false,
+                    deviceDirectTools = false,
+                    deviceSensitiveReadTools = false,
+                    deviceSensitiveActionTools = false,
+                    hostedWebSearchEnabled = false,
+                ),
+                images = emptyList(),
+            )
+        )
+        return true
+    }
+
+    /** 空闲审查的落盘轨迹（memory/review.log，保留最近 200 行）。 */
+    private fun traceIdleReview(line: String) {
+        runCatching {
+            val file = File(filesDir, "memory/review.log")
+            val stamp = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date())
+            file.appendText("$stamp $line\n")
+            val lines = file.readLines()
+            if (lines.size > 200) {
+                file.writeText(lines.takeLast(200).joinToString("\n", postfix = "\n"))
+            }
+        }
+    }
+
     private fun updateKeepScreenOn() {
         val guiState = guiControl.state.value
         val session = guiState.ownerRunId?.let(runs::get)?.session
@@ -969,18 +1110,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun publishExecutionState() {
         val guiState = guiControl.state.value
-        val activeRuns = runs.all().filterNot { it.session.isTerminal }
-        val owner = activeRuns.firstOrNull { it.runId == guiState.ownerRunId }
-        val status = if (owner != null && guiState.userPaused) {
-            AgentOverlayStatus.Paused
-        } else {
-            (owner ?: activeRuns.firstOrNull())?.overlayState?.status
+        // 没有 GUI 归属的任务（纯聊天/终端/记忆）也要有状态，否则执行通知拿不到 status，
+        // 流体云（Live Update）就不会出现。
+        // 整理 run 是后台任务：不能顶替用户任务的状态，但也不该静默——给它自己的文案。
+        val active = runs.all().filterNot { it.session.isTerminal }
+        val userRuns = active.filterNot { memoryIdleReview.isReviewRun(it.runId) }
+        // GUI 归属只看真正的 owner：owner 释放后 userPaused 可能还保留，
+        // 这时不能把它算到回落的后台 run 头上，否则通知会一直停在「已暂停」。
+        val guiOwner = guiState.ownerRunId?.let(runs::get)
+            ?.takeIf { !memoryIdleReview.isReviewRun(it.runId) }
+        val status = when {
+            // 有提问在等用户回答：run 挂着但没在思考，别显示成思考中。
+            AgentUserPrompt.current() != null -> AgentOverlayStatus.AskingUser
+            guiOwner != null && guiState.userPaused -> AgentOverlayStatus.Paused
+            guiOwner != null -> guiOwner.overlayState.status
+            userRuns.isNotEmpty() -> userRuns.first().overlayState.status
+            active.isNotEmpty() -> AgentOverlayStatus.MemoryReview
+            else -> null
         }
-        AgentExecutionService.updateRunStatus(
-            this,
-            status,
-            activeRunCount = activeRuns.size,
-        )
+        AgentExecutionService.updateRunStatus(this, status, activeRunCount = userRuns.size)
     }
 
     private fun setKeepScreenOn(enabled: Boolean) {
@@ -1449,11 +1597,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun dismissAndStop() {
+        mainHandler.removeCallbacks(restoreCapsule)
+        capsuleYielded.value = false
         // stopSelf 不会销毁仍被客户端绑定的服务；窗口关闭后不再保留完整请求与结果历史。
         displayedRun?.completedContext = null
         displayedRun = null
         removeOverlayWindows()
-        if (runs.all().isEmpty() && !guiControl.state.value.userPaused) {
+        if (runs.all().isEmpty() && !guiControl.state.value.userPaused && !memoryIdleReview.hasPendingWork()) {
             VirtualDisplayController.release(this)
             stopSelf()
         }
@@ -1508,6 +1658,81 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             val instance = activeInstance ?: return
             instance.mainHandler.post { instance.handleEtaUiVisibilityChanged() }
         }
+        @Volatile
+        private var idleReviewInstance: AgentMemoryIdleReview? = null
+
+        /** 当前活着的实例：idle review 单例跨服务重建，回调必须落到这里而不是首次的实例。 */
+        @Volatile
+        private var activeService: AgentRuntimeService? = null
+
+        /** 进程内唯一的空闲审查协调器；首次调用时用当时存活的 service 绑好回调。 */
+        private fun sharedIdleReview(service: AgentRuntimeService): AgentMemoryIdleReview =
+            idleReviewInstance ?: synchronized(this) {
+                idleReviewInstance ?: AgentMemoryIdleReview(
+                    postDelayed = { delay, action -> service.mainHandler.postDelayed(action, delay) },
+                    cancelDelayed = { action -> service.mainHandler.removeCallbacks(action) },
+                    launchReview = { _, prompt ->
+                        // 服务被回收后，旧实例的 destroyed 会让 startRun 静默丢弃整理 run。
+                        val current = activeService
+                        if (current == null) {
+                            service.traceIdleReview("整理跳过：Agent 服务已停止，待执行期间被回收")
+                        } else {
+                            current.startMemoryReviewRun(prompt)
+                        }
+                    },
+                    trace = { line -> service.traceIdleReview(line) },
+                    notifyOutcome = { code, name, sessionKey ->
+                        AgentExecutionService.postMemoryReviewResult(
+                            service,
+                            when (code) {
+                                SystemNoticeCode.MemoryReviewNew -> service.getString(
+                                    io.github.mangi.eta.R.string.memory_review_done_new,
+                                    name.orEmpty(),
+                                )
+                                SystemNoticeCode.MemoryReviewAppended -> service.getString(
+                                    io.github.mangi.eta.R.string.memory_review_done_append,
+                                    name.orEmpty(),
+                                )
+                                else -> service.getString(io.github.mangi.eta.R.string.memory_review_done_none)
+                            },
+                        )
+                        sessionKey?.takeIf(String::isNotBlank)?.let { conversationId ->
+                            AgentMemoryIdleReview.publishOutcome(
+                                AgentMemoryReviewOutcome(
+                                    token = java.util.UUID.randomUUID().toString(),
+                                    conversationId = conversationId,
+                                    code = code,
+                                    detail = name,
+                                ),
+                            )
+                        }
+                    },
+                ).also { instance ->
+                    idleReviewInstance = instance
+                    AgentMemoryCompactor.attach(
+                        launcher = { prompt ->
+                            val current = activeService
+                            if (current == null) {
+                                service.traceIdleReview("压缩跳过：Agent 服务已停止")
+                                false
+                            } else {
+                                current.startMemoryCompactionRun(prompt)
+                            }
+                        },
+                        trace = { line -> service.traceIdleReview(line) },
+                        reviewActive = { instance.hasPendingWork() },
+                        notify = { text, pending ->
+                            if (pending) {
+                                AgentExecutionService.postMemoryCompactionPending(service, text)
+                            } else {
+                                AgentExecutionService.postMemoryCompactionResult(service, text)
+                            }
+                        },
+                    )
+                    // App 启动后首次检查一次容量；读盘与起 run 放后台，别堵主线程。
+                    AgentMemoryCompactor.requestAsync("app-start")
+                }
+            }
 
         private const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
         private const val HIDE_DELAY_MS = 2_500L

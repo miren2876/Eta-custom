@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.Hub
@@ -455,6 +456,28 @@ private fun SettingsPageContent(
                     )
                 }
 
+                Group(title = stringResource(R.string.settings_conversation)) {
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_ask_user_title),
+                        summary = stringResource(R.string.settings_ask_user_summary),
+                        key = Prefs.Keys.AGENT_ASK_USER,
+                        icon = Icons.Rounded.Forum,
+                        iconTint = SettingsIconColors.Blue,
+                    )
+                    CouiIconDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_memory_idle_review_title),
+                        summary = stringResource(R.string.settings_memory_idle_review_summary),
+                        key = Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW,
+                        icon = Icons.Rounded.Psychology,
+                        iconTint = SettingsIconColors.Green,
+                    )
+                }
+
                 Group(title = stringResource(R.string.ui_tool_a72ef1)) {
                     CouiPreference(
                         title = stringResource(R.string.settings_tools_list),
@@ -491,6 +514,22 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.LinuxEnvironment) },
+                    )
+                    CouiIconDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_linux_run_notification),
+                        summary = stringResource(R.string.settings_linux_run_notification_summary),
+                        key = Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION,
+                        icon = Icons.Rounded.Terminal,
+                        iconTint = SettingsIconColors.Blue,
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = stringResource(R.string.route_scripts),
+                        icon = { CouiSettingsIcon(Icons.Rounded.Code, SettingsIconColors.Yellow) },
+                        onClick = { onNavigate(AppRoute.Scripts) },
                     )
                 }
 
@@ -898,6 +937,30 @@ private fun SettingsPageContent(
                     }
                 }
 
+                item(key = "section_conversation") {
+                    SmallTitle(stringResource(R.string.settings_conversation))
+                    SettingsGroupCard {
+                        SwitchPref(
+                            context = context,
+                            prefs = agentPrefs,
+                            title = stringResource(R.string.settings_ask_user_title),
+                            summary = stringResource(R.string.settings_ask_user_summary),
+                            key = Prefs.Keys.AGENT_ASK_USER,
+                            icon = Icons.Rounded.Forum,
+                            iconTint = SettingsIconColors.Blue,
+                        )
+                        SwitchPref(
+                            context = context,
+                            prefs = agentPrefs,
+                            title = stringResource(R.string.settings_memory_idle_review_title),
+                            summary = stringResource(R.string.settings_memory_idle_review_summary),
+                            key = Prefs.Keys.AGENT_MEMORY_IDLE_REVIEW,
+                            icon = Icons.Rounded.Psychology,
+                            iconTint = SettingsIconColors.Green,
+                        )
+                    }
+                }
+
                 item(key = "section_tools") {
                     SmallTitle(stringResource(R.string.ui_tool_a72ef1))
                     SettingsGroupCard {
@@ -933,6 +996,20 @@ private fun SettingsPageContent(
                                 )
                             },
                             onClick = { onNavigate(AppRoute.LinuxEnvironment) },
+                        )
+                        SwitchPref(
+                            context = context,
+                            prefs = agentPrefs,
+                            title = stringResource(R.string.settings_linux_run_notification),
+                            summary = stringResource(R.string.settings_linux_run_notification_summary),
+                            key = Prefs.Keys.AGENT_LINUX_RUN_NOTIFICATION,
+                            icon = Icons.Rounded.Terminal,
+                            iconTint = SettingsIconColors.Blue,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.route_scripts),
+                            startAction = { SettingsIcon(Icons.Rounded.Code, tint = SettingsIconColors.Yellow) },
+                            onClick = { onNavigate(AppRoute.Scripts) },
                         )
                     }
                 }

@@ -45,6 +45,28 @@ class AgentWorkStepsTest {
     }
 
     @Test
+    fun skillReadsMergeIntoOneNodePerSkill() {
+        val steps = listOf(
+            tool("t1", "read_file"),
+            tool("t2", "read_file"),
+            tool("s1", "skills_read", argumentsSummary = "技能 · ponytail"),
+            tool("s2", "skills_read_resource", argumentsSummary = "技能 · ponytail"),
+            tool("s3", "skills_read", argumentsSummary = "技能 · memory-keeper"),
+            tool("l1", "skills_list", argumentsSummary = "查看技能列表"),
+        ).toWorkSteps()
+
+        // 同一技能的正文与资源读取合成一条；浏览技能仍是普通工具行。
+        assertEquals(4, steps.size)
+        assertEquals(listOf("t1", "t2"), (steps[0] as AgentWorkStep.ToolGroup).calls.map { it.id })
+        val skill = steps[1] as AgentWorkStep.Skill
+        assertEquals("技能 · ponytail", skill.title)
+        assertEquals(listOf("s1", "s2"), skill.calls.map { it.id })
+        assertEquals(1, skill.resourceCount)
+        assertEquals("技能 · memory-keeper", (steps[2] as AgentWorkStep.Skill).title)
+        assertEquals("l1", (steps[3] as AgentWorkStep.Single).message.id)
+    }
+
+    @Test
     fun groupKeyStaysStableWhileCallsAppend() {
         val first = listOf(tool("t1", "read_file"), tool("t2", "read_file")).toWorkSteps()
         val next = listOf(tool("t1", "read_file"), tool("t2", "read_file"), tool("t3", "read_file")).toWorkSteps()
@@ -98,12 +120,13 @@ class AgentWorkStepsTest {
         id: String,
         name: String,
         status: ToolActivityStatusUi = ToolActivityStatusUi.Success,
+        argumentsSummary: String = name,
         resultSummary: String? = null,
     ) = ToolActivityMessageUi(
         id = id,
         toolName = name,
         status = status,
-        argumentsSummary = name,
+        argumentsSummary = argumentsSummary,
         resultSummary = resultSummary,
     )
 }

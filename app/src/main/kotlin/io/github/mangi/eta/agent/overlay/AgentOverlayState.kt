@@ -65,8 +65,10 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
     // 新一轮思考从空白开始，避免把上一轮的尾句当成当前想法。
     is AgentEvent.AssistantBlockStart -> if (event.kind == AgentEvent.AssistantBlockKind.THINKING) copy(thought = "") else this
 
-    is AgentEvent.ToolStarted -> running(AgentOverlayStatus.RunningTool(event.name), event.round)
-        .copy(thought = event.argsPreview.trim())
+    is AgentEvent.ToolStarted -> running(
+        if (event.name == ASK_USER_TOOL) AgentOverlayStatus.AskingUser else AgentOverlayStatus.RunningTool(event.name),
+        event.round,
+    ).copy(thought = event.argsPreview.trim())
     is AgentEvent.HostedToolStarted -> running(AgentOverlayStatus.HostedToolRunning(event.name), event.round)
 
     // 工具结束后模型马上开始下一轮思考；直接回到思考态，由下一次工具调用切换文字。
@@ -101,6 +103,8 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
     -> this
 }
 
+private const val ASK_USER_TOOL = "ask_user"
+
 private fun AgentOverlayState.running(status: AgentOverlayStatus, round: Int) =
     copy(phase = AgentOverlayPhase.RUNNING, round = round, status = status)
 
@@ -109,6 +113,7 @@ private fun AgentOverlayState.thinkingUnlessWorking(): AgentOverlayState = when 
     is AgentOverlayStatus.RunningTool,
     is AgentOverlayStatus.HostedToolRunning,
     AgentOverlayStatus.GeneratingAnswer,
+    AgentOverlayStatus.AskingUser,
     AgentOverlayStatus.Paused,
     AgentOverlayStatus.Stopping,
     -> this

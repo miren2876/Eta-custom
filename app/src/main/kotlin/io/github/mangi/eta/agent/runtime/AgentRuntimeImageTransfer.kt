@@ -130,15 +130,16 @@ internal object AgentRuntimeImageTransfer {
     }
 
     /** 必须在 Runtime 后台线程调用；会消费并关闭 [incoming] 持有的文件描述符。 */
-    fun materialize(
-        incoming: AgentRuntimeWire.IncomingRunRequest,
-    ): AgentRuntimeWire.RunRequest = incoming.use { request ->
-        if (request.images.size > MAX_IMAGE_COUNT) {
+    /** 把 IPC 层图片物化成模型可用的引用。 */
+    fun materializeImages(
+        images: List<AgentRuntimeWire.WireImage>,
+    ): List<AgentModelClient.ModelImage> {
+        if (images.size > MAX_IMAGE_COUNT) {
             throw ImageTransferException("一次最多支持 $MAX_IMAGE_COUNT 张图片")
         }
 
         var totalBytes = 0L
-        val images = request.images.mapIndexed { index, image ->
+        return images.mapIndexed { index, image ->
             image.fileDescriptor?.let { descriptor ->
                 val startedAt = SystemClock.elapsedRealtime()
                 val statSize = descriptor.statSize
@@ -198,7 +199,12 @@ internal object AgentRuntimeImageTransfer {
                 preserveOriginal = image.preserveOriginal,
             ) ?: throw ImageTransferException("无法读取旧协议中的图片")
         }
-        request.materializeText().copy(images = images)
+    }
+
+    fun materialize(
+        incoming: AgentRuntimeWire.IncomingRunRequest,
+    ): AgentRuntimeWire.RunRequest = incoming.use { request ->
+        request.materializeText().copy(images = materializeImages(request.images))
     }
 
     private fun AgentModelClient.ModelImage.toWireImage(

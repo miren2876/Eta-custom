@@ -27,14 +27,19 @@ internal object ConversationMemoryPins {
     }
 
     @Synchronized
-    fun contextFor(conversationId: String?, snapshot: AgentMemorySnapshot, contextWindow: Int?): AgentMemoryContext {
+    fun contextFor(
+        conversationId: String?,
+        snapshot: AgentMemorySnapshot,
+        contextWindow: Int?,
+        core: String = "",
+    ): AgentMemoryContext {
         if (conversationId != null) {
             val pin = pins[conversationId]
             if (pin != null && pin.knownRevision == snapshot.revision && pin.contextWindow == contextWindow) {
                 return pin.context
             }
         }
-        val context = AgentMemoryContextBuilder.build(snapshot, contextWindow)
+        val context = AgentMemoryContextBuilder.build(snapshot, contextWindow, core = core)
         if (conversationId != null) pins[conversationId] = Pin(context, contextWindow, snapshot.revision)
         return context
     }

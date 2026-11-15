@@ -12,6 +12,7 @@ import androidx.room.migration.Migration
         AgentTextChunkEntity::class,
         ConversationEntity::class,
         ConversationContextCheckpointEntity::class,
+        ConversationFolderEntity::class,
         ConversationMessageEntity::class,
         ConversationStateEntity::class,
         ProviderEntity::class,
@@ -26,7 +27,7 @@ import androidx.room.migration.Migration
         CharacterEntity::class,
         UserPersonaEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -69,6 +70,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_23_24,
                         MIGRATION_24_25,
                         MIGRATION_25_26,
+                        MIGRATION_26_27,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -138,6 +140,50 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_25_26 = Migration(25, 26) { database ->
             database.execSQL("ALTER TABLE conversation_messages ADD COLUMN cache_write_tokens INTEGER")
             database.execSQL("ALTER TABLE conversation_messages ADD COLUMN compaction_archive_id TEXT")
+        }
+
+        /**
+         * 定制版历史库的版本号与上游撞号（我方 25 版 = 上游 23 版 + 会话组织列）。
+         * 26→27 一次性把上游 24→25 的性能统计列和会话组织列都幂等补齐，不重建、不清数据。
+         */
+        internal val MIGRATION_26_27 = Migration(26, 27) { database ->
+            ensureConversationMessagePerfColumns(database)
+            ensureConversationOrganizationColumns(database)
+        }
+
+        private fun ensureConversationMessagePerfColumns(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+            val existingColumns = database.query("PRAGMA table_info(conversation_messages)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                buildSet {
+                    while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+                }
+            }
+            listOf("step_count", "llm_ms", "tool_ms", "ttft_ms", "ttft_steps", "decode_ms", "decode_tokens")
+                .filter { it !in existingColumns }
+                .forEach { database.execSQL("ALTER TABLE conversation_messages ADD COLUMN $it INTEGER") }
+        }
+
+        private fun ensureConversationOrganizationColumns(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS conversation_folders (" +
+                    "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, " +
+                    "sort_index INTEGER NOT NULL, created_at INTEGER NOT NULL)"
+            )
+            val existingColumns = database.query("PRAGMA table_info(conversations)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                buildSet {
+                    while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+                }
+            }
+            if ("folder_id" !in existingColumns) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
+            }
+            if ("is_pinned" !in existingColumns) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
+            }
+            if ("is_archived" !in existingColumns) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
+            }
         }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {

@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.components
 
+import io.github.mangi.eta.agent.prompt.AgentUserPrompt
+import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -50,6 +52,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -86,6 +90,8 @@ import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ConversationBranchBoundary
 import io.github.mangi.eta.ui.model.branchMessageOutline
@@ -103,30 +109,32 @@ import io.github.mangi.eta.ui.model.PendingImageUi
 import io.github.mangi.eta.ui.model.QueuedMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
+import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.latestContextUsage
 import io.github.mangi.eta.ui.voice.SpeechAutoReadAloud
-import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import kotlin.math.exp
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import androidx.compose.foundation.border
 
 /**
  * 聊天主体：消息流 + 底部输入框。
@@ -181,8 +189,12 @@ internal fun AgentChatBody(
     historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
     onLoadEarlierMessages: () -> Unit = {},
     onHistoryViewportChanged: (Boolean) -> Unit = {},
+    characterName: String? = null,
+    conversationId: String? = null,
     isDrawerOpen: Boolean = false,
     topInset: Dp = 0.dp,
+    scrollToTopRequest: Int = 0,
+    workProcessRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState(initialFirstVisibleItemIndex = messages.size + if (hasEarlierMessages) 1 else 0)
@@ -244,7 +256,10 @@ internal fun AgentChatBody(
         AgentChatScaffold(
             visibleMessages = visibleMessages,
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
+            scrollToTopRequest = scrollToTopRequest,
+            workProcessRequest = workProcessRequest,
             scrollState = scrollState,
+            conversationId = conversationId,
             input = input,
             modelPickerState = modelPickerState,
             isCompacting = isCompacting,
@@ -317,7 +332,10 @@ internal fun AgentChatBody(
 private fun AgentChatScaffold(
     visibleMessages: List<AgentChatMessageUi>,
     hasMessages: Boolean,
+    scrollToTopRequest: Int,
+    workProcessRequest: Int,
     scrollState: LazyListState,
+    conversationId: String?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
@@ -380,6 +398,7 @@ private fun AgentChatScaffold(
         ),
         bottomBar = {
             AgentChatBottomBar(
+                conversationId = conversationId,
                 input = input,
                 isCompacting = isCompacting,
                 contextUsage = contextUsage,
@@ -425,6 +444,8 @@ private fun AgentChatScaffold(
             AgentConversationMessages(
                 visibleMessages = visibleMessages,
                 scrollState = scrollState,
+                scrollToTopRequest = scrollToTopRequest,
+                workProcessRequest = workProcessRequest,
                 isStreaming = isStreaming,
                 topInset = topInset,
                 bottomInset = bottomPadding,
@@ -457,6 +478,8 @@ private fun AgentChatScaffold(
 internal fun AgentConversationMessages(
     visibleMessages: List<AgentChatMessageUi>,
     scrollState: LazyListState,
+    scrollToTopRequest: Int = 0,
+    workProcessRequest: Int = 0,
     isStreaming: Boolean,
     bottomInset: Dp,
     keepBottomAnchored: Boolean,
@@ -492,6 +515,7 @@ internal fun AgentConversationMessages(
     } else {
         null
     }
+    val lastWorkProcessKey = timelineEntries.lastOrNull { it is AgentTimelineEntry.WorkProcess }?.key
     // 复制按钮只出现在每轮对话的最终结果上，中间步骤的过渡文本不提供复制入口。
     // 流式进行中当前这一轮尚未收尾，此时的“最后一条正文”只是中间步骤，不标记。
     val finalResultMessageIds = remember(visibleMessages, isStreaming) {
@@ -533,13 +557,63 @@ internal fun AgentConversationMessages(
     val densityScale = LocalDensity.current.density
     val coroutineScope = rememberCoroutineScope()
 
+    // 顶栏标题双击：回到第一条消息。请求计数由外层持有，这里只处理「本次组合之后新增的请求」。
+    var handledScrollToTopRequest by remember { mutableIntStateOf(scrollToTopRequest) }
+    // 回顶期间必须压住「贴底锚点」：此刻列表还在底部，锚点一旦重新评估就会立刻恢复跟底，
+    // 把回顶动画直接拽回尾部——表现为双击没反应，只有先上滑过（锚点已关）才生效。
+    var suppressBottomAnchor by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollToTopRequest) {
+        if (scrollToTopRequest == handledScrollToTopRequest) return@LaunchedEffect
+        handledScrollToTopRequest = scrollToTopRequest
+        AndroidAgentLogger.info("Chat scroll to top (request=$scrollToTopRequest)")
+        suppressBottomAnchor = true
+        onBottomAnchorChanged(false)
+        try {
+            scrollState.animateScrollToItem(0)
+        } finally {
+            suppressBottomAnchor = false
+        }
+    }
+
+    // 顶栏副标题点击：定位到最近一轮工作过程并展开；本轮正在运行时定位到正在运行的节点。
+    var handledWorkProcessRequest by remember { mutableIntStateOf(workProcessRequest) }
+    var workProcessRevealRequest by remember { mutableIntStateOf(0) }
+    LaunchedEffect(workProcessRequest) {
+        if (workProcessRequest == handledWorkProcessRequest) return@LaunchedEffect
+        handledWorkProcessRequest = workProcessRequest
+        val index = timelineEntries.indexOfLast { it is AgentTimelineEntry.WorkProcess }
+        if (index < 0) return@LaunchedEffect
+        val running = (timelineEntries[index] as AgentTimelineEntry.WorkProcess)
+            .messages
+            .any { message -> message.isRunningWorkNode() }
+        AndroidAgentLogger.info("Chat reveal work process (index=$index running=$running)")
+        suppressBottomAnchor = true
+        // 与双击回顶一致：主动去看历史内容后不再把用户拉回尾部。
+        onBottomAnchorChanged(false)
+        try {
+            if (running) {
+                // 卡片可能还没进入组合：先落到它的位置，再让卡片把运行中的节点带进视野。
+                scrollState.scrollToItem(index)
+                withFrameNanos { }
+            } else {
+                scrollState.animateScrollToItem(index)
+            }
+            workProcessRevealRequest += 1
+            // 等展开动画把列表撑开后再放开跟底抑制。
+            delay(WorkProcessRevealSettleMillis)
+        } finally {
+            suppressBottomAnchor = false
+        }
+    }
+
     LaunchedEffect(
         isListMeasured,
         isUserDragging,
         isAtBottom,
         keepBottomAnchored,
+        suppressBottomAnchor,
     ) {
-        if (!isListMeasured) return@LaunchedEffect
+        if (!isListMeasured || suppressBottomAnchor) return@LaunchedEffect
         val next = resolveKeepBottomAnchored(
             current = keepBottomAnchored,
             isUserDragging = isUserDragging,
@@ -610,10 +684,8 @@ internal fun AgentConversationMessages(
         bottomItemIndex,
         keepBottomAnchored,
         isUserDragging,
-        isStreaming,
     ) {
         if (shouldRequestInitialBottom(
-                isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
             )
@@ -808,6 +880,7 @@ internal fun AgentConversationMessages(
                         AgentWorkProcess(
                             id = entry.key,
                             active = entry.key == activeWorkProcessKey,
+                            revealRequest = if (entry.key == lastWorkProcessKey) workProcessRevealRequest else 0,
                             messages = entry.messages,
                             assistantOverlay = assistantOverlay,
                             onOpenBrowser = onOpenBrowser,
@@ -994,6 +1067,13 @@ private fun AgentTimelineEntry.contentType(): Any = when (this) {
     is AgentTimelineEntry.Message -> message::class
 }
 
+/** 工作过程里正在进行的节点：流式思考，或正在跑的工具调用。 */
+private fun AgentChatMessageUi.isRunningWorkNode(): Boolean = when (this) {
+    is ThinkingMessageUi -> isStreaming
+    is ToolActivityMessageUi -> status == ToolActivityStatusUi.Running
+    else -> false
+}
+
 private fun AgentChatMessageUi.isWorkProcessMessage(): Boolean =
     this is ThinkingMessageUi || this is ToolActivityMessageUi || this is ToolSummaryMessageUi
 
@@ -1026,6 +1106,7 @@ internal fun resolveFinalResultMessageIds(
 
 @Composable
 private fun AgentChatBottomBar(
+    conversationId: String?,
     input: String,
     isCompacting: Boolean,
     contextUsage: AgentContextUsageUi,
@@ -1081,7 +1162,13 @@ private fun AgentChatBottomBar(
                 .navigationBarsPadding()
                 .padding(top = 14.dp, start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
-            AgentChatInputBar(
+            val promptRequests by AgentUserPrompt.state.collectAsState()
+            val pendingPrompt = promptRequests.firstOrNull {
+                it.conversationId == null || it.conversationId == conversationId
+            }
+            if (pendingPrompt != null) {
+                AgentUserPromptCardContent(pendingPrompt, Modifier.fillMaxWidth())
+            } else AgentChatInputBar(
                 input = input,
                 isCompacting = isCompacting,
                 contextUsage = contextUsage,
@@ -1119,6 +1206,9 @@ private fun AgentChatBottomBar(
     }
 }
 
+
+/** 副标题定位后，等展开动画把列表撑开再放开跟底抑制。 */
+private const val WorkProcessRevealSettleMillis = 400L
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f
@@ -1142,11 +1232,14 @@ internal fun resolveBottomFollowEnabled(
     isBottomSettling: Boolean = false,
 ): Boolean = (isStreaming || isBottomSettling) && keepBottomAnchored && !isUserDragging
 
+/**
+ * 打开会话（含冷启动恢复）先贴到最新一条消息；流式输出同理。
+ * 用户主动上滑离开底部后 keepBottomAnchored 为 false，不再强制回到底部。
+ */
 internal fun shouldRequestInitialBottom(
-    isStreaming: Boolean,
     keepBottomAnchored: Boolean,
     isUserDragging: Boolean,
-): Boolean = isStreaming && keepBottomAnchored && !isUserDragging
+): Boolean = keepBottomAnchored && !isUserDragging
 
 @Composable
 private fun EmptyChatState(
