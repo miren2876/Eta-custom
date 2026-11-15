@@ -1403,6 +1403,7 @@
   <string name="memory_compact_profile_full">畫像佔滿了預算，條目未注入</string>
   <string name="memory_compact_now">立即整理</string>
   <string name="memory_task_model_title">整理記憶的模型</string>
+  <string name="memory_task_model_group">記憶整理</string>
   <string name="memory_task_model_follow">跟隨目前模型</string>
   <string name="memory_task_model_follow_with_name">跟隨目前模型（%1$s）</string>
   <string name="memory_task_model_note">閒置整理、容量壓縮、合併檔案都用這個模型。</string>

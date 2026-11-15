@@ -47,15 +47,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.unit.DpSize
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
-import io.github.mangi.eta.ui.components.OptionalModelPickerContent
-import io.github.mangi.eta.ui.model.AgentModelPickerProjector
-import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreference
@@ -113,6 +107,8 @@ import io.github.mangi.eta.ui.components.StatusError
 internal fun AgentMemoryScreen(
     state: AgentMemoryUiState,
     onAction: (AgentMemoryAction) -> Unit,
+    /** 打开「整理记忆的模型」二级设置页。 */
+    onOpenTaskModelSettings: () -> Unit = {},
 ) {
     var showArchiveDialog by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
@@ -165,34 +161,25 @@ internal fun AgentMemoryScreen(
     var showClearProfileDialog by remember { mutableStateOf(false) }
     var showClearWorkingDialog by remember { mutableStateOf(false) }
 
-    // 记忆整理用哪个模型：默认跟随当前模型，也可以单独指定。
-    val memoryScope = rememberCoroutineScope()
+    // 记忆整理用哪个模型：这里只显示当前选择，点进去改。
     val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
-    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsState(initial = null)
     val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
     val memoryTaskModelId by RuntimeConfigRepository.memoryTaskModelIdFlow().collectAsState(initial = null)
-    val pickerState = remember(providers, primaryProviderId, primaryModelId) {
-        AgentModelPickerProjector.project(providers, primaryProviderId, primaryModelId)
-    }
     val resolvedMemoryModel = remember(providers, memoryTaskModelId) {
         providers.enabledModel(memoryTaskModelId)
     }
-    val primaryModelName = pickerState.selectedModel?.displayName
-    val followTitle = stringResource(R.string.memory_task_model_follow)
-    val followSubtitle = primaryModelName?.let {
-        stringResource(R.string.memory_task_model_follow_with_name, it)
-    } ?: followTitle
+    val primaryModel = remember(providers, primaryModelId) { providers.enabledModel(primaryModelId) }
     val memoryModelSummary = when {
         resolvedMemoryModel != null -> "${resolvedMemoryModel.provider.name} / ${resolvedMemoryModel.model.displayName}"
-        !primaryModelName.isNullOrBlank() ->
-            stringResource(R.string.memory_task_model_follow_with_name, primaryModelName)
-        else -> followTitle
+        primaryModel != null -> stringResource(
+            R.string.memory_task_model_follow_with_name,
+            primaryModel.model.displayName,
+        )
+        else -> stringResource(R.string.memory_task_model_follow)
     }
-    var showMemoryModelSheet by remember { mutableStateOf(false) }
 
-    // sheet 必须排在 Scaffold 之后：MiuixScaffold 铺满全屏并画背景，先声明会被整块盖住。
     Box(modifier = Modifier.fillMaxSize()) {
-    MiuixScaffold(
+        MiuixScaffold(
         title = stringResource(R.string.ui_memory_b55ff5),
         onBack = { onAction(AgentMemoryAction.NavigateBack) },
     ) { paddingValues, scrollBehavior, sidePadding ->
@@ -374,7 +361,7 @@ internal fun AgentMemoryScreen(
                         EtaPreference(
                             title = stringResource(R.string.memory_task_model_title),
                             summary = memoryModelSummary,
-                            onClick = { showMemoryModelSheet = true },
+                            onClick = onOpenTaskModelSettings,
                         )
                         EtaPreferenceDivider()
                         SectionHint(text = stringResource(R.string.memory_task_model_note))
@@ -751,24 +738,6 @@ internal fun AgentMemoryScreen(
                 },
             )
         }
-    }
-
-    OverlayBottomSheet(
-        show = showMemoryModelSheet,
-        title = stringResource(R.string.memory_task_model_title),
-        onDismissRequest = { showMemoryModelSheet = false },
-        insideMargin = DpSize(0.dp, 0.dp),
-    ) {
-        OptionalModelPickerContent(
-            pickerState = pickerState,
-            selectedSecondaryModelId = resolvedMemoryModel?.model?.id,
-            followTitle = followTitle,
-            followSubtitle = followSubtitle,
-            onSelectModel = { modelId ->
-                showMemoryModelSheet = false
-                memoryScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(modelId) }
-            },
-        )
     }
 
     }

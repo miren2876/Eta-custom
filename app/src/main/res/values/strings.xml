@@ -1465,6 +1465,7 @@
   <string name="memory_compact_profile_full">The profile fills the whole budget; no entries injected</string>
   <string name="memory_compact_now">Compact now</string>
   <string name="memory_task_model_title">Model for memory upkeep</string>
+  <string name="memory_task_model_group">Memory upkeep</string>
   <string name="memory_task_model_follow">Follow the current model</string>
   <string name="memory_task_model_follow_with_name">Follow the current model (%1$s)</string>
   <string name="memory_task_model_note">Idle review, capacity compaction and archive merging all use this model.</string>
