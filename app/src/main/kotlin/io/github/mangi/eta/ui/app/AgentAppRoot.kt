@@ -411,6 +411,9 @@ fun AgentAppRoot(
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPin(conversation.id)
             },
+            onConversationToggleArchive = { conversation ->
+                agentState.setConversationArchived(conversation.id, !conversation.isArchived)
+            },
             onConversationRename = { conversation ->
                 conversationRenameTarget = conversation
             },
@@ -433,7 +436,6 @@ fun AgentAppRoot(
             onOpenSettings = { pushRoute(AppRoute.Settings) },
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
             onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
-            onSelectArchive = { showing -> agentState.selectArchiveView(showing) },
             onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
             onCreateFolder = { name -> agentState.createFolder(name) },
             onRenameFolder = { folderId, name -> agentState.renameFolder(folderId, name) },
