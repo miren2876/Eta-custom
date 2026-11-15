@@ -52,6 +52,17 @@ import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import com.itos.coui.dialog.CouiDialogAction
+import com.itos.coui.dialog.CouiDialogPlacement
+import com.itos.coui.dialog.Dialog
+import com.itos.coui.menu.rememberCouiWindowBackdrop
+import com.itos.coui.theme.CouiTheme
+import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.OptionalModelPickerContent
+import io.github.mangi.eta.ui.components.coui.rememberCouiDialogMaterial
+import io.github.mangi.eta.ui.model.AgentModelPickerProjector
+import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreference
@@ -163,6 +174,7 @@ internal fun AgentMemoryScreen(
 
     // 记忆整理用哪个模型：这里只显示当前选择，点进去改。
     val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
+    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsState(initial = null)
     val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
     val memoryTaskModelId by RuntimeConfigRepository.memoryTaskModelIdFlow().collectAsState(initial = null)
     val resolvedMemoryModel = remember(providers, memoryTaskModelId) {
@@ -171,13 +183,14 @@ internal fun AgentMemoryScreen(
     val primaryModel = remember(providers, primaryModelId) { providers.enabledModel(primaryModelId) }
     var showMemoryModelDialog by remember { mutableStateOf(false) }
     val modelScope = rememberCoroutineScope()
-    val modelChoices = remember(providers) {
-        providers.filter { provider -> provider.isEnabled }
-            .flatMap { provider ->
-                provider.models.filter { model -> model.isEnabled }
-                    .map { model -> provider to model }
-            }
+    val pickerState = remember(providers, primaryProviderId, primaryModelId) {
+        AgentModelPickerProjector.project(providers, primaryProviderId, primaryModelId)
     }
+    val primaryModelName = pickerState.selectedModel?.displayName
+    val followTitle = stringResource(R.string.memory_task_model_follow)
+    val followSubtitle = primaryModelName?.let {
+        stringResource(R.string.memory_task_model_follow_with_name, it)
+    } ?: followTitle
     val memoryModelSummary = when {
         resolvedMemoryModel != null -> "${resolvedMemoryModel.provider.name} / ${resolvedMemoryModel.model.displayName}"
         primaryModel != null -> stringResource(
@@ -751,57 +764,18 @@ internal fun AgentMemoryScreen(
 
     }
 
-    if (showMemoryModelDialog) {
-        EtaWindowDialog(
-            show = true,
-            title = stringResource(R.string.memory_task_model_title),
-            onDismissRequest = { showMemoryModelDialog = false },
-        ) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                EtaPreference(
-                    title = stringResource(R.string.memory_task_model_follow),
-                    summary = primaryModel?.model?.displayName,
-                    endActions = {
-                        if (memoryTaskModelId == null) {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = null,
-                                tint = MiuixTheme.colorScheme.primary,
-                            )
-                        }
-                    },
-                    onClick = {
-                        showMemoryModelDialog = false
-                        modelScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(null) }
-                    },
-                )
-                modelChoices.forEach { (provider, model) ->
-                    EtaPreferenceDivider()
-                    EtaPreference(
-                        title = model.displayName,
-                        summary = provider.name,
-                        endActions = {
-                            if (memoryTaskModelId == model.id) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    tint = MiuixTheme.colorScheme.primary,
-                                )
-                            }
-                        },
-                        onClick = {
-                            showMemoryModelDialog = false
-                            modelScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(model.id) }
-                        },
-                    )
-                }
-            }
-        }
-    }
+    MemoryTaskModelSheet(
+        show = showMemoryModelDialog,
+        onDismiss = { showMemoryModelDialog = false },
+        pickerState = pickerState,
+        selectedModelId = resolvedMemoryModel?.model?.id,
+        followTitle = followTitle,
+        followSubtitle = followSubtitle,
+        onSelectModel = { modelId ->
+            showMemoryModelDialog = false
+            modelScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(modelId) }
+        },
+    )
 
     if (showArchiveDialog) {
         EtaWindowDialog(
@@ -1542,5 +1516,93 @@ internal fun MemoryPagerBar(
             enabled = page < pageCount - 1,
             plain = true,
         )
+    }
+}
+
+/**
+ * 「整理记忆的模型」选择器：与「自动生成对话标题」页完全同构——
+ * COUI 用 CouiScaffold 的底部 Dialog，MIUIX 用底部 OverlayBottomSheet 的外观，
+ * 内容都是 [OptionalModelPickerContent]。
+ *
+ * MIUIX 这里用窗口级 Dialog 承载：记忆页的 Scaffold 铺满全屏，同层覆盖物会被盖住。
+ */
+@Composable
+private fun MemoryTaskModelSheet(
+    show: Boolean,
+    onDismiss: () -> Unit,
+    pickerState: AgentModelPickerUiState,
+    selectedModelId: String?,
+    followTitle: String,
+    followSubtitle: String,
+    onSelectModel: (String?) -> Unit,
+) {
+    if (!show) return
+    val title = stringResource(R.string.memory_task_model_title)
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            val dark = CouiTheme.isDark
+            Dialog(
+                visible = true,
+                onDismissRequest = onDismiss,
+                dark = dark,
+                title = title,
+                confirmAction = CouiDialogAction(
+                    text = stringResource(R.string.action_close),
+                    onClick = onDismiss,
+                ),
+                placement = CouiDialogPlacement.Bottom,
+                material = rememberCouiDialogMaterial(dark),
+                backdrop = rememberCouiWindowBackdrop(),
+            ) {
+                OptionalModelPickerContent(
+                    pickerState = pickerState,
+                    selectedSecondaryModelId = selectedModelId,
+                    followTitle = followTitle,
+                    followSubtitle = followSubtitle,
+                    onSelectModel = onSelectModel,
+                )
+            }
+        }
+
+        AppearanceUiStyle.MIUIX -> {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = onDismiss,
+                properties = androidx.compose.ui.window.DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false,
+                ),
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f))
+                            .clickable(interactionSource = null, indication = null, onClick = onDismiss),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                            .background(MiuixTheme.colorScheme.surface)
+                            .navigationBarsPadding(),
+                    ) {
+                        Text(
+                            text = title,
+                            style = MiuixTheme.textStyles.title3,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 20.dp).padding(top = 18.dp, bottom = 8.dp),
+                        )
+                        OptionalModelPickerContent(
+                            pickerState = pickerState,
+                            selectedSecondaryModelId = selectedModelId,
+                            followTitle = followTitle,
+                            followSubtitle = followSubtitle,
+                            onSelectModel = onSelectModel,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
