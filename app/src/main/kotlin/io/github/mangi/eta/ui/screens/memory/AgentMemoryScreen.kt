@@ -190,24 +190,8 @@ internal fun AgentMemoryScreen(
     }
     var showMemoryModelSheet by remember { mutableStateOf(false) }
 
-    OverlayBottomSheet(
-        show = showMemoryModelSheet,
-        title = stringResource(R.string.memory_task_model_title),
-        onDismissRequest = { showMemoryModelSheet = false },
-        insideMargin = DpSize(0.dp, 0.dp),
-    ) {
-        OptionalModelPickerContent(
-            pickerState = pickerState,
-            selectedSecondaryModelId = resolvedMemoryModel?.model?.id,
-            followTitle = followTitle,
-            followSubtitle = followSubtitle,
-            onSelectModel = { modelId ->
-                showMemoryModelSheet = false
-                memoryScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(modelId) }
-            },
-        )
-    }
-
+    // sheet 必须排在 Scaffold 之后：MiuixScaffold 铺满全屏并画背景，先声明会被整块盖住。
+    Box(modifier = Modifier.fillMaxSize()) {
     MiuixScaffold(
         title = stringResource(R.string.ui_memory_b55ff5),
         onBack = { onAction(AgentMemoryAction.NavigateBack) },
@@ -767,6 +751,26 @@ internal fun AgentMemoryScreen(
                 },
             )
         }
+    }
+
+    OverlayBottomSheet(
+        show = showMemoryModelSheet,
+        title = stringResource(R.string.memory_task_model_title),
+        onDismissRequest = { showMemoryModelSheet = false },
+        insideMargin = DpSize(0.dp, 0.dp),
+    ) {
+        OptionalModelPickerContent(
+            pickerState = pickerState,
+            selectedSecondaryModelId = resolvedMemoryModel?.model?.id,
+            followTitle = followTitle,
+            followSubtitle = followSubtitle,
+            onSelectModel = { modelId ->
+                showMemoryModelSheet = false
+                memoryScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(modelId) }
+            },
+        )
+    }
+
     }
 
     if (showArchiveDialog) {
