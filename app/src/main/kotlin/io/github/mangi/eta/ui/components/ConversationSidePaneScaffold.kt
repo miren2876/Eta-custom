@@ -92,6 +92,8 @@ fun ConversationSidePaneScaffold(
     onSelectArchive: (Boolean) -> Unit = {},
     onOpenManageChats: () -> Unit = {},
     onCreateFolder: (String) -> Unit = {},
+    onRenameFolder: (String, String) -> Unit = { _, _ -> },
+    onDeleteFolder: (String) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val sceneLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
@@ -252,6 +254,8 @@ fun ConversationSidePaneScaffold(
                         onSelectArchive = onSelectArchive,
                         onOpenManageChats = onOpenManageChats,
                         onCreateFolder = onCreateFolder,
+                        onRenameFolder = onRenameFolder,
+                        onDeleteFolder = onDeleteFolder,
                         modifier = Modifier
                             .focusProperties { onEnter = { if (!isRevealed) cancelFocusChange() } }
                             .focusGroup()

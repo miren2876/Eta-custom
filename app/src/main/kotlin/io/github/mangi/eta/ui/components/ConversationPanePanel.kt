@@ -144,6 +144,8 @@ internal fun ConversationPanePanel(
     onSelectArchive: (Boolean) -> Unit = {},
     onOpenManageChats: () -> Unit = {},
     onCreateFolder: (String) -> Unit = {},
+    onRenameFolder: (String, String) -> Unit = { _, _ -> },
+    onDeleteFolder: (String) -> Unit = {},
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
@@ -217,6 +219,8 @@ internal fun ConversationPanePanel(
                                         onSelectArchive = onSelectArchive,
                                         onOpenManageChats = onOpenManageChats,
                                         onCreateFolder = onCreateFolder,
+                                        onRenameFolder = onRenameFolder,
+                                        onDeleteFolder = onDeleteFolder,
                                     )
                                 }
                             }
@@ -311,8 +315,11 @@ private fun PaneGroupBar(
     onSelectArchive: (Boolean) -> Unit,
     onOpenManageChats: () -> Unit,
     onCreateFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
 ) {
     var creatingFolder by remember { mutableStateOf(false) }
+    var folderAction by remember { mutableStateOf<FolderAction?>(null) }
     val manageLabel = stringResource(R.string.drawer_manage_chats)
     Column(
         modifier = Modifier
@@ -337,6 +344,7 @@ private fun PaneGroupBar(
                     label = folder.name,
                     selected = !showingArchived && selectedFolderId == folder.id,
                     onClick = { onSelectFolder(folder.id) },
+                    onLongClick = { folderAction = FolderAction.Menu(folder) },
                 )
             }
             item(key = "group-new") {
@@ -397,6 +405,123 @@ private fun PaneGroupBar(
             }
         }
     }
+
+    folderAction?.let { action ->
+        when (action) {
+            is FolderAction.Menu -> EtaWindowDialog(
+                show = true,
+                title = action.folder.name,
+                onDismissRequest = { folderAction = null },
+            ) {
+                Column {
+                    PaneFolderMenuRow(stringResource(R.string.action_rename)) {
+                        folderAction = FolderAction.Rename(action.folder)
+                    }
+                    PaneFolderMenuRow(
+                        label = stringResource(R.string.action_delete),
+                        destructive = true,
+                    ) {
+                        folderAction = FolderAction.Delete(action.folder)
+                    }
+                }
+            }
+
+            is FolderAction.Rename -> {
+                var newName by remember(action.folder.id) { mutableStateOf(action.folder.name) }
+                EtaWindowDialog(
+                    show = true,
+                    title = stringResource(R.string.folder_rename_title),
+                    onDismissRequest = { folderAction = null },
+                ) {
+                    Column {
+                        TextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = stringResource(R.string.folder_name_label),
+                            singleLine = true,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            EtaTextButton(
+                                text = stringResource(R.string.action_cancel),
+                                onClick = { folderAction = null },
+                            )
+                            EtaTextButton(
+                                text = stringResource(R.string.action_save),
+                                enabled = newName.isNotBlank(),
+                                onClick = {
+                                    onRenameFolder(action.folder.id, newName.trim())
+                                    folderAction = null
+                                },
+                                colors = ButtonDefaults.textButtonColorsPrimary(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            is FolderAction.Delete -> EtaWindowDialog(
+                show = true,
+                title = stringResource(R.string.folder_delete_title),
+                summary = stringResource(R.string.folder_delete_summary, action.folder.name),
+                onDismissRequest = { folderAction = null },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    EtaTextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = { folderAction = null },
+                    )
+                    EtaTextButton(
+                        text = stringResource(R.string.action_delete),
+                        onClick = {
+                            onDeleteFolder(action.folder.id)
+                            folderAction = null
+                        },
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 文件夹长按菜单里的一行。 */
+private sealed interface FolderAction {
+    data class Menu(val folder: ConversationFolderUi) : FolderAction
+    data class Rename(val folder: ConversationFolderUi) : FolderAction
+    data class Delete(val folder: ConversationFolderUi) : FolderAction
+}
+
+@Composable
+private fun PaneFolderMenuRow(
+    label: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.body1,
+            color = if (destructive) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -404,6 +529,7 @@ private fun PaneGroupChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val colors = MiuixTheme.colorScheme
     val accent = colors.primary
@@ -418,7 +544,18 @@ private fun PaneGroupChip(
                 color = if (selected) accent.copy(alpha = 0.5f) else colors.outline.copy(alpha = 0.25f),
                 shape = shape,
             )
-            .clickable(role = Role.Button, onClick = onClick)
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        role = Role.Button,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                        onLongClickLabel = label,
+                    )
+                } else {
+                    Modifier.clickable(role = Role.Button, onClick = onClick)
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
