@@ -44,6 +44,25 @@ internal object RuntimeConfigRepository {
         SettingsDataStore.setSubagentSettings(settings)
     }
 
+    fun memoryTaskModelIdFlow() = SettingsDataStore.memoryTaskModelIdFlow()
+
+    suspend fun setMemoryTaskModelId(modelId: String?) = SettingsDataStore.setMemoryTaskModelId(modelId)
+
+    /**
+     * 记忆整理任务用的模型：设置里单独指定就用它（模型被删或禁用时回落），否则跟随当前模型。
+     * 覆盖空闲审查、容量压缩、合并档案、压缩工作记忆这几条一次性调用。
+     */
+    suspend fun memoryTaskConfig(): AgentModelClient.ModelConfig? {
+        val preferred = SettingsDataStore.memoryTaskModelId()
+        if (preferred != null) {
+            ProviderRepository.ensureBuiltInsMerged()
+            ProviderRepository.allProviders().enabledModel(preferred)?.let { (provider, model) ->
+                return buildRuntimeConfig(provider, model)
+            }
+        }
+        return currentRuntimeConfig()
+    }
+
     fun conversationTitleSettingsFlow() = SettingsDataStore.conversationTitleSettingsFlow()
 
     suspend fun setConversationTitleSettings(settings: ConversationTitleSettings) {

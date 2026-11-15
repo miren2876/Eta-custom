@@ -1464,6 +1464,10 @@
   <string name="memory_compact_skipped">%1$d entries are not injected because of budget</string>
   <string name="memory_compact_profile_full">The profile fills the whole budget; no entries injected</string>
   <string name="memory_compact_now">Compact now</string>
+  <string name="memory_task_model_title">Model for memory upkeep</string>
+  <string name="memory_task_model_follow">Follow the current model</string>
+  <string name="memory_task_model_follow_with_name">Follow the current model (%1$s)</string>
+  <string name="memory_task_model_note">Idle review, capacity compaction and archive merging all use this model.</string>
   <string name="memory_compact_done_title">Memory compacted</string>
   <string name="memory_compact_chip_done">Compacted</string>
   <string name="memory_compact_pending_title">Memory needs your decision</string>

@@ -35,6 +35,8 @@ internal object SettingsDataStore {
     private val WEB_TOOLS_SETTINGS = stringPreferencesKey("web_tools_settings_v1")
     private val SUBAGENT_SETTINGS = stringPreferencesKey("subagent_settings_v1")
     private val CONVERSATION_TITLE_SETTINGS = stringPreferencesKey("conversation_title_settings_v1")
+    /** 记忆整理（空闲审查 / 压缩 / 合并档案）单独指定的模型；空表示跟随当前模型。 */
+    private val MEMORY_TASK_MODEL_ID = stringPreferencesKey("memory_task_model_id_v1")
     private val ASSISTANT_OVERLAY_SETTINGS = stringPreferencesKey("assistant_overlay_settings_v1")
     private val speechJson = Json {
         ignoreUnknownKeys = true
@@ -111,6 +113,22 @@ internal object SettingsDataStore {
     }
 
     suspend fun conversationTitleSettings(): ConversationTitleSettings = conversationTitleSettingsFlow().first()
+
+    fun memoryTaskModelIdFlow(): Flow<String?> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs -> prefs[MEMORY_TASK_MODEL_ID]?.takeIf(String::isNotBlank) }
+    }
+
+    suspend fun memoryTaskModelId(): String? = memoryTaskModelIdFlow().first()
+
+    suspend fun setMemoryTaskModelId(modelId: String?) {
+        ensureInitialized()
+        dataStore.edit { prefs -> prefs.putOrRemove(MEMORY_TASK_MODEL_ID, modelId?.takeIf(String::isNotBlank)) }
+    }
 
     suspend fun setConversationTitleSettings(settings: ConversationTitleSettings) {
         ensureInitialized()

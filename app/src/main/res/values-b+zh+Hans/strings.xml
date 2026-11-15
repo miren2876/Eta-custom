@@ -1445,6 +1445,10 @@
   <string name="memory_compact_skipped">有 %1$d 条条目因预算不足未注入</string>
   <string name="memory_compact_profile_full">画像占满了预算，条目未注入</string>
   <string name="memory_compact_now">立即整理</string>
+  <string name="memory_task_model_title">整理记忆的模型</string>
+  <string name="memory_task_model_follow">跟随当前模型</string>
+  <string name="memory_task_model_follow_with_name">跟随当前模型（%1$s）</string>
+  <string name="memory_task_model_note">空闲整理、容量压缩、合并档案都用这个模型。</string>
   <string name="memory_compact_done_title">记忆已压缩</string>
   <string name="memory_compact_chip_done">已压缩</string>
   <string name="memory_compact_pending_title">记忆需要你决定</string>

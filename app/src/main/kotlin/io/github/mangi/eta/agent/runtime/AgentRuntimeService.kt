@@ -988,7 +988,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             traceIdleReview("整理跳过：记忆压缩正在进行")
             return
         }
-        val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
+        val config = runCatching { runBlocking { RuntimeConfigRepository.memoryTaskConfig() } }
             .getOrNull()
         if (config == null) {
             AndroidAgentLogger.warn("Memory idle review: runtime config unavailable")
@@ -1016,7 +1016,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     /** 记忆压缩 run：与空闲审查同样的工具裁剪，但写入策略是 COMPACT（允许删条目、重写画像）。 */
     private fun startMemoryCompactionRun(prompt: String): Boolean {
-        val config = runCatching { runBlocking { RuntimeConfigRepository.currentRuntimeConfig() } }
+        val config = runCatching { runBlocking { RuntimeConfigRepository.memoryTaskConfig() } }
             .getOrNull()
         if (config == null) {
             AndroidAgentLogger.warn("Memory compaction: runtime config unavailable")

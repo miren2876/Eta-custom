@@ -33,7 +33,7 @@ internal data class SplitPart(val name: String, val body: String)
  */
 internal class AgentMemoryModelTasks(
     private val loadConfig: suspend () -> AgentModelClient.ModelConfig? =
-        RuntimeConfigRepository::currentRuntimeConfig,
+        RuntimeConfigRepository::memoryTaskConfig,
     private val providerFor: (AgentModelClient.ModelConfig) -> AgentProviderClient =
         ProviderClientFactory::getClient,
 ) {
