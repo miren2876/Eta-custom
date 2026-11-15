@@ -37,6 +37,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -107,8 +109,6 @@ import io.github.mangi.eta.ui.components.StatusError
 internal fun AgentMemoryScreen(
     state: AgentMemoryUiState,
     onAction: (AgentMemoryAction) -> Unit,
-    /** 打开「整理记忆的模型」二级设置页。 */
-    onOpenTaskModelSettings: () -> Unit = {},
 ) {
     var showArchiveDialog by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
@@ -169,6 +169,15 @@ internal fun AgentMemoryScreen(
         providers.enabledModel(memoryTaskModelId)
     }
     val primaryModel = remember(providers, primaryModelId) { providers.enabledModel(primaryModelId) }
+    var showMemoryModelDialog by remember { mutableStateOf(false) }
+    val modelScope = rememberCoroutineScope()
+    val modelChoices = remember(providers) {
+        providers.filter { provider -> provider.isEnabled }
+            .flatMap { provider ->
+                provider.models.filter { model -> model.isEnabled }
+                    .map { model -> provider to model }
+            }
+    }
     val memoryModelSummary = when {
         resolvedMemoryModel != null -> "${resolvedMemoryModel.provider.name} / ${resolvedMemoryModel.model.displayName}"
         primaryModel != null -> stringResource(
@@ -361,7 +370,7 @@ internal fun AgentMemoryScreen(
                         EtaPreference(
                             title = stringResource(R.string.memory_task_model_title),
                             summary = memoryModelSummary,
-                            onClick = onOpenTaskModelSettings,
+                            onClick = { showMemoryModelDialog = true },
                         )
                         EtaPreferenceDivider()
                         SectionHint(text = stringResource(R.string.memory_task_model_note))
@@ -740,6 +749,58 @@ internal fun AgentMemoryScreen(
         }
     }
 
+    }
+
+    if (showMemoryModelDialog) {
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.memory_task_model_title),
+            onDismissRequest = { showMemoryModelDialog = false },
+        ) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                EtaPreference(
+                    title = stringResource(R.string.memory_task_model_follow),
+                    summary = primaryModel?.model?.displayName,
+                    endActions = {
+                        if (memoryTaskModelId == null) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = MiuixTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                    onClick = {
+                        showMemoryModelDialog = false
+                        modelScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(null) }
+                    },
+                )
+                modelChoices.forEach { (provider, model) ->
+                    EtaPreferenceDivider()
+                    EtaPreference(
+                        title = model.displayName,
+                        summary = provider.name,
+                        endActions = {
+                            if (memoryTaskModelId == model.id) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = MiuixTheme.colorScheme.primary,
+                                )
+                            }
+                        },
+                        onClick = {
+                            showMemoryModelDialog = false
+                            modelScope.launch { RuntimeConfigRepository.setMemoryTaskModelId(model.id) }
+                        },
+                    )
+                }
+            }
+        }
     }
 
     if (showArchiveDialog) {

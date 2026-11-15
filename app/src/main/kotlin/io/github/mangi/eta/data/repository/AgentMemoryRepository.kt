@@ -122,8 +122,13 @@ internal data class AgentMemoryCoreUsage(
     /** 工作记忆文件已经超过写入上限：新增条目会被拒绝，必须靠压缩解决。 */
     val workingOverLimit: Boolean get() = workingBytes > AgentMemoryStore.WORKING_MAX_BYTES
 
-    /** 需要压缩整理：条目被挤掉、已用超过预算 90%，或工作记忆文件自己撑爆了。 */
-    val needsCompaction: Boolean get() = skippedCount > 0 || ratio >= 0.9f || workingOverLimit
+    /** 工作记忆文件用到 90% 以上：再写几条就会被拒，提前整理。 */
+    val workingNearLimit: Boolean
+        get() = workingBytes > AgentMemoryStore.WORKING_MAX_BYTES * 9 / 10
+
+    /** 需要压缩整理：条目被挤掉、已用超过预算 90%，或工作记忆文件快满/已经满了。 */
+    val needsCompaction: Boolean
+        get() = skippedCount > 0 || ratio >= 0.9f || workingNearLimit
 }
 
 /**
