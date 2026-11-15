@@ -90,6 +90,10 @@ import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.components.EtaTextButton
+import io.github.mangi.eta.ui.components.EtaWindowDialog
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
@@ -139,6 +143,7 @@ internal fun ConversationPanePanel(
     onSelectFolder: (String?) -> Unit = {},
     onSelectArchive: (Boolean) -> Unit = {},
     onOpenManageChats: () -> Unit = {},
+    onCreateFolder: (String) -> Unit = {},
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
@@ -211,6 +216,7 @@ internal fun ConversationPanePanel(
                                         onSelectFolder = onSelectFolder,
                                         onSelectArchive = onSelectArchive,
                                         onOpenManageChats = onOpenManageChats,
+                                        onCreateFolder = onCreateFolder,
                                     )
                                 }
                             }
@@ -304,38 +310,91 @@ private fun PaneGroupBar(
     onSelectFolder: (String?) -> Unit,
     onSelectArchive: (Boolean) -> Unit,
     onOpenManageChats: () -> Unit,
+    onCreateFolder: (String) -> Unit,
 ) {
+    var creatingFolder by remember { mutableStateOf(false) }
     val manageLabel = stringResource(R.string.drawer_manage_chats)
-    LazyRow(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(top = 12.dp, bottom = 4.dp),
     ) {
-        item(key = "group-unfiled") {
-            PaneGroupChip(
-                label = stringResource(R.string.drawer_chats_chip),
-                selected = !showingArchived && selectedFolderId == null,
-                onClick = { onSelectFolder(null) },
-            )
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item(key = "group-unfiled") {
+                PaneGroupChip(
+                    label = stringResource(R.string.drawer_chats_chip),
+                    selected = !showingArchived && selectedFolderId == null,
+                    onClick = { onSelectFolder(null) },
+                )
+            }
+            items(folders, key = { it.id }) { folder ->
+                PaneGroupChip(
+                    label = folder.name,
+                    selected = !showingArchived && selectedFolderId == folder.id,
+                    onClick = { onSelectFolder(folder.id) },
+                )
+            }
+            item(key = "group-new") {
+                PaneGroupChip(
+                    label = "＋",
+                    selected = false,
+                    onClick = { creatingFolder = true },
+                )
+            }
+            item(key = "group-archived") {
+                PaneGroupChip(
+                    label = stringResource(R.string.drawer_archived_chip),
+                    selected = showingArchived,
+                    onClick = { onSelectArchive(!showingArchived) },
+                )
+            }
+            item(key = "group-manage") {
+                PaneGroupChip(label = manageLabel, selected = false, onClick = onOpenManageChats)
+            }
         }
-        items(folders, key = { it.id }) { folder ->
-            PaneGroupChip(
-                label = folder.name,
-                selected = !showingArchived && selectedFolderId == folder.id,
-                onClick = { onSelectFolder(folder.id) },
-            )
-        }
-        item(key = "group-archived") {
-            PaneGroupChip(
-                label = stringResource(R.string.drawer_archived_chip),
-                selected = showingArchived,
-                onClick = { onSelectArchive(!showingArchived) },
-            )
-        }
-        item(key = "group-manage") {
-            PaneGroupChip(label = manageLabel, selected = false, onClick = onOpenManageChats)
+    }
+
+    if (creatingFolder) {
+        var folderName by remember { mutableStateOf("") }
+        EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.folder_new),
+            onDismissRequest = { creatingFolder = false },
+        ) {
+            Column {
+                TextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = stringResource(R.string.folder_name_label),
+                    singleLine = true,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    EtaTextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = { creatingFolder = false },
+                    )
+                    EtaTextButton(
+                        text = stringResource(R.string.action_save),
+                        enabled = folderName.isNotBlank(),
+                        onClick = {
+                            onCreateFolder(folderName.trim())
+                            creatingFolder = false
+                        },
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+            }
         }
     }
 }

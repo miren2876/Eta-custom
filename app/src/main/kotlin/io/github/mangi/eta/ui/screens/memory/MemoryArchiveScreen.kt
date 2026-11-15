@@ -35,7 +35,6 @@ import io.github.mangi.eta.data.repository.AgentMemoryScoring
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
-import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.EtaTextButton
 import io.github.mangi.eta.ui.components.EtaWindowDialog
@@ -172,11 +171,10 @@ internal fun MemoryArchiveScreen(
                 ArchiveActionRow(
                     title = stringResource(R.string.memory_archive_action_tidy),
                     summary = stringResource(R.string.memory_archive_action_tidy_summary),
-                    isFirst = true,
                     enabled = !state.isTidying && state.fileDraft.isNotBlank(),
                     onClick = { onAction(AgentMemoryAction.TidyFile) },
                 )
-                EtaPreferenceDivider(hasLeading = true)
+                EtaPreferenceDivider(hasLeading = false)
                 ArchiveActionRow(
                     title = stringResource(R.string.memory_archive_action_split),
                     summary = if (state.isSplitting) {
@@ -187,18 +185,17 @@ internal fun MemoryArchiveScreen(
                     enabled = !state.isSplitting && state.fileDraft.isNotBlank(),
                     onClick = { onAction(AgentMemoryAction.SplitFile(name)) },
                 )
-                EtaPreferenceDivider(hasLeading = true)
+                EtaPreferenceDivider(hasLeading = false)
                 ArchiveActionRow(
                     title = stringResource(R.string.memory_archive_action_merge),
                     summary = stringResource(R.string.memory_archive_action_merge_summary),
                     enabled = others.isNotEmpty() && !state.isMerging,
                     onClick = { showMerge = true },
                 )
-                EtaPreferenceDivider(hasLeading = true)
+                EtaPreferenceDivider(hasLeading = false)
                 ArchiveActionRow(
                     title = stringResource(R.string.memory_archive_action_archive),
                     summary = stringResource(R.string.memory_archive_action_archive_summary),
-                    isLast = true,
                     enabled = !state.isArchiving,
                     destructive = true,
                     onClick = { showArchiveConfirm = true },
@@ -398,49 +395,45 @@ private fun TidyReviewDialog(
 private fun ArchiveActionRow(
     title: String,
     summary: String,
-    isFirst: Boolean = false,
-    isLast: Boolean = false,
     enabled: Boolean = true,
     destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
-    EtaPreferenceGroupItem(isFirst = isFirst, isLast = isLast, hasLeadingIcon = true) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = when {
-                        !enabled -> MiuixTheme.colorScheme.onSurfaceVariantSummary
-                        destructive -> MiuixTheme.colorScheme.error
-                        else -> MiuixTheme.colorScheme.onSurface
-                    },
-                    style = MiuixTheme.textStyles.body1,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = summary,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    style = MiuixTheme.textStyles.footnote1,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = when {
+                    !enabled -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    destructive -> MiuixTheme.colorScheme.error
+                    else -> MiuixTheme.colorScheme.onSurface
+                },
+                style = MiuixTheme.textStyles.body1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = summary,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
     }
 }
 

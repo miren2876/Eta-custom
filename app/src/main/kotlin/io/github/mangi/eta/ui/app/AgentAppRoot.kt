@@ -435,6 +435,7 @@ fun AgentAppRoot(
             onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
             onSelectArchive = { showing -> agentState.selectArchiveView(showing) },
             onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
+            onCreateFolder = { name -> agentState.createFolder(name) },
             homeTitle = if (isHome) agentState.currentConversationTitle else null,
             homeCharacter = if (isHome) agentState.homeState.roleplayChatUi() else null,
             homeModelPickerState = if (isHome) agentState.modelPickerState else null,

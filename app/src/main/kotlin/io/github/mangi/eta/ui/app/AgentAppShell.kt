@@ -135,6 +135,7 @@ internal fun AgentAppShell(
     onSelectFolder: (String?) -> Unit = {},
     onSelectArchive: (Boolean) -> Unit = {},
     onOpenManageChats: () -> Unit = {},
+    onCreateFolder: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     homeTitle: String? = null,
     homeCharacter: RoleplayChatUi? = null,
@@ -309,6 +310,7 @@ internal fun AgentAppShell(
                 onSelectFolder = onSelectFolder,
                 onSelectArchive = onSelectArchive,
                 onOpenManageChats = onOpenManageChats,
+                onCreateFolder = onCreateFolder,
                 activeModelLabel = homeModelPickerState?.selectedModel?.displayName,
                 hasPermissionAttention = hasPermissionAttention,
             ) {
