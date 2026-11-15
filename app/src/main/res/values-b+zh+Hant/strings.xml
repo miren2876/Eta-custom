@@ -1663,7 +1663,9 @@
   <string name="top_bar_status_idle">%1$d 則訊息 · %2$s</string>
   <string name="speech_auto_read_on">自動朗讀已開啟，點按關閉</string>
   <string name="speech_auto_read_off">自動朗讀已關閉，點按開啟</string>
-        <string name="memory_tidy_now">立即整理</string>
-  <string name="memory_tidy_now_summary">用目前模型把記憶檔案、畫像與條目壓縮整理一遍</string>
-  <string name="memory_archive_files_summary">共 %1$d 個檔案</string>
+        <string name="folder_new">新增資料夾</string>
+  <string name="folder_rename_title">重新命名資料夾</string>
+  <string name="folder_name_label">資料夾名稱</string>
+  <string name="folder_delete_title">刪除資料夾</string>
+  <string name="folder_delete_summary">「%1$s」裡的對話會回到「聊天」。</string>
 </resources>

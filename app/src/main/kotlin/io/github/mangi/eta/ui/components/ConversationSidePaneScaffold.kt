@@ -88,6 +88,9 @@ fun ConversationSidePaneScaffold(
     modifier: Modifier = Modifier,
     activeModelLabel: String? = null,
     hasPermissionAttention: Boolean = false,
+    onSelectFolder: (String?) -> Unit = {},
+    onSelectArchive: (Boolean) -> Unit = {},
+    onOpenManageChats: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val sceneLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
@@ -244,6 +247,9 @@ fun ConversationSidePaneScaffold(
                         onOpenSkills = onOpenSkills,
                         onOpenCharacters = onOpenCharacters,
                         onOpenPermissions = onOpenPermissions,
+                        onSelectFolder = onSelectFolder,
+                        onSelectArchive = onSelectArchive,
+                        onOpenManageChats = onOpenManageChats,
                         modifier = Modifier
                             .focusProperties { onEnter = { if (!isRevealed) cancelFocusChange() } }
                             .focusGroup()

@@ -432,6 +432,9 @@ fun AgentAppRoot(
             onOpenPermissions = { pushRoute(AppRoute.Permissions) },
             onOpenSettings = { pushRoute(AppRoute.Settings) },
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
+            onSelectFolder = { folderId -> agentState.selectFolder(folderId) },
+            onSelectArchive = { showing -> agentState.selectArchiveView(showing) },
+            onOpenManageChats = { pushRoute(AppRoute.ManageChats) },
             homeTitle = if (isHome) agentState.currentConversationTitle else null,
             homeCharacter = if (isHome) agentState.homeState.roleplayChatUi() else null,
             homeModelPickerState = if (isHome) agentState.modelPickerState else null,
@@ -561,6 +564,9 @@ fun AgentAppRoot(
                     onPinSelected = { ids, pinned -> agentState.pinConversations(ids, pinned) },
                     onMoveSelected = { ids, folderId -> agentState.moveConversationsToFolder(ids, folderId) },
                     onDeleteSelected = { ids -> agentState.deleteConversations(ids) },
+                    onCreateFolder = { name -> agentState.createFolder(name) },
+                    onRenameFolder = { folderId, name -> agentState.renameFolder(folderId, name) },
+                    onDeleteFolder = { folderId -> agentState.deleteFolder(folderId) },
                 )
             }
             entry<AppRoute.Terminal>(swipeDismiss = swipeDismiss) {
@@ -857,8 +863,6 @@ fun AgentAppRoot(
                             AgentMemoryAction.Save -> memory.saveMemory()
                             AgentMemoryAction.Clear -> memory.clearMemory()
                             AgentMemoryAction.DismissNotice -> memory.dismissMemoryNotice()
-                            AgentMemoryAction.CompactNow ->
-                                io.github.mangi.eta.agent.runtime.AgentMemoryCompactor.requestAsync("manual", manual = true)
                             is AgentMemoryAction.ArchiveSections -> memory.archiveSections(action.titles)
                             AgentMemoryAction.RestoreArchive -> memory.restoreArchive()
                             is AgentMemoryAction.UnarchiveSections -> memory.unarchiveSections(action.titles)

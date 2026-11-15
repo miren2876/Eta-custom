@@ -1,9 +1,6 @@
 package io.github.mangi.eta.ui.screens.memory
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
@@ -34,21 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.sp
-import io.github.mangi.eta.ui.markdown.LazyStaticMarkdown
-import io.github.mangi.eta.ui.markdown.MarkdownTone
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import io.github.mangi.eta.data.repository.AgentMemoryScoring
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
@@ -103,7 +85,7 @@ internal fun MemoryArchiveScreen(
                         text = buildString {
                             append(stringResource(R.string.memory_file_lines, file?.lineCount ?: 0))
                             append(" · ")
-                            append(archiveFormatBytes(file?.byteSize ?: 0))
+                            append(formatBytes(file?.byteSize ?: 0))
                             append(" · ")
                             append(
                                 if ((file?.hitCount ?: 0) > 0) {
@@ -138,30 +120,30 @@ internal fun MemoryArchiveScreen(
         item(key = "body-title") { EtaPreferenceGroupTitle(stringResource(R.string.memory_archive_body_title)) }
         item(key = "body") {
             EtaPreferenceGroup {
-                Box(modifier = Modifier.fillMaxWidth().height(ArchiveDocumentBodyHeight)) {
+                Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
                     if (editing) {
-                        ArchiveDocumentEditor(
+                        MemoryEditor(
                             value = state.fileDraft,
                             enabled = !state.isSavingFile && !state.isTidying,
                             placeholder = name,
                             onValueChange = { onAction(AgentMemoryAction.FileDraftChanged(it)) },
                         )
                         Row(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                            ArchiveBodyAction(
+                            MemoryBodyAction(
                                 text = stringResource(R.string.memory_mode_preview),
                                 enabled = true,
                                 onClick = { editing = false },
                             )
                         }
                     } else {
-                        ArchiveDocumentPreview(
+                        MemoryPreview(
                             content = state.fileDraft,
                             placeholder = name,
                             onStartEditing = { if (!state.isSavingFile) editing = true },
                         )
                     }
                 }
-                ArchiveSaveBar(
+                MemorySaveBar(
                     visible = changed || state.isSavingFile,
                     overLimit = false,
                     saving = state.isSavingFile,
@@ -364,9 +346,9 @@ private fun TidyReviewDialog(
         summary = stringResource(
             R.string.memory_archive_tidy_summary,
             preview.beforeLines,
-            archiveFormatBytes(preview.beforeBytes),
+            formatBytes(preview.beforeBytes),
             preview.afterLines,
-            archiveFormatBytes(preview.afterBytes),
+            formatBytes(preview.afterBytes),
         ),
         onDismissRequest = onCancel,
     ) {
@@ -391,7 +373,7 @@ private fun TidyReviewDialog(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(ArchiveDocumentBodyHeight)
+                    .height(MemoryDocumentBodyHeight)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
@@ -515,7 +497,7 @@ private fun SplitReviewDialog(
         onDismissRequest = onCancel,
     ) {
         Column {
-            Box(modifier = Modifier.fillMaxWidth().height(ArchiveDocumentBodyHeight)) {
+            Box(modifier = Modifier.fillMaxWidth().height(MemoryDocumentBodyHeight)) {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     parts.forEachIndexed { index, part ->
                         Row(
@@ -584,139 +566,6 @@ private fun SplitReviewDialog(
                 confirmEnabled = enabledCount > 0 && !saving,
                 onCancel = onCancel,
                 onConfirm = onConfirm,
-            )
-        }
-    }
-}
-
-/** 文档正文区在列表里固定高度，预览与编辑都在这块区域内滚动。 */
-private val ArchiveDocumentBodyHeight = 260.dp
-
-private fun archiveFormatBytes(bytes: Int): String = when {
-    bytes < 1_024 -> "$bytes B"
-    bytes < 1_024 * 1_024 -> "%.1f KiB".format(bytes / 1_024.0)
-    else -> "%.2f MiB".format(bytes / (1_024.0 * 1_024.0))
-}
-
-/** 正文区右上角的小动作：回到预览、清空。 */
-@Composable
-private fun ArchiveBodyAction(text: String, enabled: Boolean, onClick: () -> Unit) {
-    Text(
-        text = text,
-        style = MiuixTheme.textStyles.footnote1,
-        color = if (enabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledOnSurface,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    )
-}
-
-/** 预览态：Markdown 渲染，双击切到编辑（单击留给后续可能的展开等操作）。 */
-@Composable
-private fun ArchiveDocumentPreview(content: String, placeholder: String, onStartEditing: () -> Unit) {
-    if (content.isBlank()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(onClick = onStartEditing)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-        ) {
-            Text(
-                text = placeholder,
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        return
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(onStartEditing) {
-                detectTapGestures(onDoubleTap = { onStartEditing() })
-            },
-    ) {
-        LazyStaticMarkdown(
-            content = content,
-            tone = MarkdownTone.Answer,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        )
-    }
-}
-
-/** 编辑态：无边框整页编辑，与卡片同色；点到空白处也能把光标落进正文。 */
-@Composable
-private fun ArchiveDocumentEditor(
-    value: String,
-    enabled: Boolean,
-    placeholder: String,
-    onValueChange: (String) -> Unit,
-) {
-    val colors = MiuixTheme.colorScheme
-    val focusRequester = remember { FocusRequester() }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(interactionSource = null, indication = null) { focusRequester.requestFocus() }
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        if (value.isEmpty()) {
-            Text(
-                text = placeholder,
-                style = MiuixTheme.textStyles.body2.copy(lineHeight = 22.sp),
-                color = colors.onSurfaceVariantSummary,
-            )
-        }
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            textStyle = MiuixTheme.textStyles.body2.copy(lineHeight = 22.sp, color = colors.onSurface),
-            cursorBrush = SolidColor(colors.primary),
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester),
-        )
-    }
-}
-
-/** 有未保存修改或超限时才出现：左侧说明状态，右侧放弃与保存。 */
-@Composable
-private fun ArchiveSaveBar(
-    visible: Boolean,
-    overLimit: Boolean,
-    saving: Boolean,
-    canSave: Boolean,
-    onDiscard: () -> Unit,
-    onSave: () -> Unit,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            EtaTextButton(
-                text = stringResource(R.string.memory_discard),
-                enabled = !saving,
-                onClick = onDiscard,
-            )
-            EtaTextButton(
-                text = stringResource(if (saving) R.string.memory_saving else R.string.memory_save),
-                enabled = canSave,
-                onClick = onSave,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
             )
         }
     }

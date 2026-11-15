@@ -1776,7 +1776,9 @@
   <string name="tasks_kill_selected">结束所选</string>
   <string name="tasks_done">完成</string>
   <string name="tasks_kill_selected_confirm">将结束 %1$d 个进程：%2$s</string>
-  <string name="memory_tidy_now">立即整理</string>
-  <string name="memory_tidy_now_summary">用当前模型把记忆档案、画像与条目压缩整理一遍</string>
-  <string name="memory_archive_files_summary">共 %1$d 个档案</string>
+  <string name="folder_new">新建文件夹</string>
+  <string name="folder_rename_title">重命名文件夹</string>
+  <string name="folder_name_label">文件夹名称</string>
+  <string name="folder_delete_title">删除文件夹</string>
+  <string name="folder_delete_summary">「%1$s」里的对话会回到「聊天」。</string>
 </resources>

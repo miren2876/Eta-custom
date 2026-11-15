@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.EtaTextButton
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.TextField
 import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.model.ConversationFolderUi
@@ -112,10 +114,14 @@ internal fun ManageChatsScreen(
     onPinSelected: (Set<String>, Boolean) -> Unit,
     onMoveSelected: (Set<String>, String?) -> Unit,
     onDeleteSelected: (Set<String>) -> Unit,
+    onCreateFolder: (String) -> Unit = {},
+    onRenameFolder: (String, String) -> Unit = { _, _ -> },
+    onDeleteFolder: (String) -> Unit = {},
 ) {
     var selection by remember { mutableStateOf(emptySet<String>()) }
     var moveTargets by remember { mutableStateOf<Set<String>?>(null) }
     var folderFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderEdit by remember { mutableStateOf<FolderEdit?>(null) }
     var archiveFilterName by rememberSaveable { mutableStateOf(ManageArchiveFilter.All.name) }
     val archiveFilter = ManageArchiveFilter.valueOf(archiveFilterName)
     val haptics = LocalHapticFeedback.current
@@ -149,6 +155,8 @@ internal fun ManageChatsScreen(
                     archiveFilter = archiveFilter,
                     onFolderFilter = { folderFilter = it },
                     onArchiveFilter = { archiveFilterName = it.name },
+                    onCreateFolder = { folderEdit = FolderEdit.Create },
+                    onFolderLongPress = { folder -> folderEdit = FolderEdit.Rename(folder) },
                 )
             }
             if (visible.isEmpty()) {
@@ -220,6 +228,17 @@ internal fun ManageChatsScreen(
         }
     }
 
+    folderEdit?.let { edit ->
+        FolderEditDialog(
+            edit = edit,
+            onDismiss = { folderEdit = null },
+            onCreate = { name -> onCreateFolder(name); folderEdit = null },
+            onRename = { folder, name -> onRenameFolder(folder.id, name); folderEdit = null },
+            onDelete = { folder -> onDeleteFolder(folder.id); folderEdit = null },
+            onRequestDelete = { folder -> folderEdit = FolderEdit.Delete(folder) },
+        )
+    }
+
     moveTargets?.let { targets ->
         ManageFolderPicker(
             folders = folders,
@@ -241,6 +260,8 @@ private fun ManageFilterBar(
     archiveFilter: ManageArchiveFilter,
     onFolderFilter: (String?) -> Unit,
     onArchiveFilter: (ManageArchiveFilter) -> Unit,
+    onCreateFolder: () -> Unit,
+    onFolderLongPress: (ConversationFolderUi) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -271,6 +292,14 @@ private fun ManageFilterBar(
                     label = folder.name,
                     selected = folderFilter == folder.id,
                     onClick = { onFolderFilter(folder.id) },
+                    onLongClick = { onFolderLongPress(folder) },
+                )
+            }
+            item(key = "folder-new") {
+                ManageFilterChip(
+                    label = stringResource(R.string.folder_new),
+                    selected = false,
+                    onClick = onCreateFolder,
                 )
             }
         }
@@ -292,8 +321,14 @@ private fun ManageFilterBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ManageFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun ManageFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
     Text(
         text = label,
         color = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
@@ -306,9 +341,103 @@ private fun ManageFilterChip(label: String, selected: Boolean, onClick: () -> Un
             .background(
                 if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainerHighest,
             )
-            .clickable(onClick = onClick)
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                } else {
+                    Modifier.clickable(onClick = onClick)
+                },
+            )
             .padding(horizontal = 14.dp, vertical = 7.dp),
     )
+}
+
+/** 文件夹新建 / 重命名 / 删除的弹窗目标。 */
+private sealed interface FolderEdit {
+    data object Create : FolderEdit
+    data class Rename(val folder: ConversationFolderUi) : FolderEdit
+    data class Delete(val folder: ConversationFolderUi) : FolderEdit
+}
+
+@Composable
+private fun FolderEditDialog(
+    edit: FolderEdit,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+    onRename: (ConversationFolderUi, String) -> Unit,
+    onDelete: (ConversationFolderUi) -> Unit,
+    onRequestDelete: (ConversationFolderUi) -> Unit,
+) {
+    var name by remember(edit) {
+        mutableStateOf((edit as? FolderEdit.Rename)?.folder?.name.orEmpty())
+    }
+    when (edit) {
+        FolderEdit.Create, is FolderEdit.Rename -> EtaWindowDialog(
+            show = true,
+            title = stringResource(
+                if (edit is FolderEdit.Rename) R.string.folder_rename_title else R.string.folder_new,
+            ),
+            onDismissRequest = onDismiss,
+        ) {
+            Column {
+                TextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = stringResource(R.string.folder_name_label),
+                    singleLine = true,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    val renaming = edit as? FolderEdit.Rename
+                    if (renaming != null) {
+                        EtaTextButton(
+                            text = stringResource(R.string.action_delete),
+                            onClick = { onRequestDelete(renaming.folder) },
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    EtaTextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = onDismiss,
+                    )
+                    EtaTextButton(
+                        text = stringResource(R.string.action_save),
+                        enabled = name.isNotBlank(),
+                        onClick = {
+                            val trimmed = name.trim()
+                            when (edit) {
+                                FolderEdit.Create -> onCreate(trimmed)
+                                is FolderEdit.Rename -> onRename(edit.folder, trimmed)
+                                is FolderEdit.Delete -> Unit
+                            }
+                        },
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+            }
+        }
+        is FolderEdit.Delete -> EtaWindowDialog(
+            show = true,
+            title = stringResource(R.string.folder_delete_title),
+            summary = stringResource(R.string.folder_delete_summary, edit.folder.name),
+            onDismissRequest = onDismiss,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                EtaTextButton(text = stringResource(R.string.action_cancel), onClick = onDismiss)
+                EtaTextButton(
+                    text = stringResource(R.string.action_delete),
+                    onClick = { onDelete(edit.folder) },
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
 }
 
 /** 多选时的底部操作栏：归档/取消归档、置顶/取消置顶、移动、删除。 */

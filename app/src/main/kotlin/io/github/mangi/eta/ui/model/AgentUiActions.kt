@@ -74,9 +74,6 @@ sealed interface AgentMemoryAction {
     data object Clear : AgentMemoryAction
     data object DismissNotice : AgentMemoryAction
 
-    /** 手动整理：立刻跑一次记忆压缩整理（不等容量阈值与空闲窗口）。 */
-    data object CompactNow : AgentMemoryAction
-
     /** 把选中的冷章节移入 memory/archive/（一档一文件）。 */
     data class ArchiveSections(val titles: List<String>) : AgentMemoryAction
 

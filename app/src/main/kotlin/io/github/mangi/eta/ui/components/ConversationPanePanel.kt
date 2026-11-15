@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -86,6 +87,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiIcon
+import io.github.mangi.eta.ui.model.ConversationFolderUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import top.yukonga.miuix.kmp.basic.Card
@@ -134,6 +136,9 @@ internal fun ConversationPanePanel(
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     modifier: Modifier = Modifier,
+    onSelectFolder: (String?) -> Unit = {},
+    onSelectArchive: (Boolean) -> Unit = {},
+    onOpenManageChats: () -> Unit = {},
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
@@ -193,6 +198,19 @@ internal fun ConversationPanePanel(
                                         onOpenCharacters = onOpenCharacters,
                                         onOpenTools = onOpenTools,
                                         onOpenSkills = onOpenSkills,
+                                    )
+                                }
+                            }
+
+                            if (!isSearching) {
+                                item(key = "pane_group_bar") {
+                                    PaneGroupBar(
+                                        folders = state.folders,
+                                        selectedFolderId = state.selectedFolderId,
+                                        showingArchived = state.showingArchived,
+                                        onSelectFolder = onSelectFolder,
+                                        onSelectArchive = onSelectArchive,
+                                        onOpenManageChats = onOpenManageChats,
                                     )
                                 }
                             }
@@ -271,6 +289,88 @@ internal fun ConversationPanePanel(
                     .background(conversationPaneEdgeBorderColor()),
             )
         }
+    }
+}
+
+/**
+ * 会话分组切换条：聊天（未归类）/ 各文件夹 / 已归档，末尾是管理聊天。
+ * 文件夹的增删改统一放在「管理聊天」页，侧栏只负责切换。
+ */
+@Composable
+private fun PaneGroupBar(
+    folders: List<ConversationFolderUi>,
+    selectedFolderId: String?,
+    showingArchived: Boolean,
+    onSelectFolder: (String?) -> Unit,
+    onSelectArchive: (Boolean) -> Unit,
+    onOpenManageChats: () -> Unit,
+) {
+    val manageLabel = stringResource(R.string.drawer_manage_chats)
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(key = "group-unfiled") {
+            PaneGroupChip(
+                label = stringResource(R.string.drawer_chats_chip),
+                selected = !showingArchived && selectedFolderId == null,
+                onClick = { onSelectFolder(null) },
+            )
+        }
+        items(folders, key = { it.id }) { folder ->
+            PaneGroupChip(
+                label = folder.name,
+                selected = !showingArchived && selectedFolderId == folder.id,
+                onClick = { onSelectFolder(folder.id) },
+            )
+        }
+        item(key = "group-archived") {
+            PaneGroupChip(
+                label = stringResource(R.string.drawer_archived_chip),
+                selected = showingArchived,
+                onClick = { onSelectArchive(!showingArchived) },
+            )
+        }
+        item(key = "group-manage") {
+            PaneGroupChip(label = manageLabel, selected = false, onClick = onOpenManageChats)
+        }
+    }
+}
+
+@Composable
+private fun PaneGroupChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val accent = colors.primary
+    val shape = remember { RoundedCornerShape(50) }
+    Row(
+        modifier = Modifier
+            .heightIn(min = 30.dp)
+            .clip(shape)
+            .background(if (selected) accent.copy(alpha = 0.14f) else conversationPaneCardColor(), shape)
+            .border(
+                width = 0.5.dp,
+                color = if (selected) accent.copy(alpha = 0.5f) else colors.outline.copy(alpha = 0.25f),
+                shape = shape,
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.footnote1,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) accent else colors.onSurfaceVariantSummary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
