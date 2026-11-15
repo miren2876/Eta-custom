@@ -125,9 +125,9 @@ internal object AgentConversationStore {
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     modelId = state.modelId,
-                                    // 置顶与文件夹归属由 saveOrganization 单独维护，增量写元数据时保留原值。
+                                    // 文件夹归属由 saveOrganization 单独维护，增量写元数据时保留原值。
                                     folderId = stored[id]?.folderId.orEmpty(),
-                                    isPinned = stored[id]?.isPinned == true,
+                                    isPinned = state.isPinned,
                                 )
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))

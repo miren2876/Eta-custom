@@ -134,8 +134,8 @@ class AgentTraceFormatterTest {
             ),
             RedactionCase(
                 toolName = "memory_write",
-                argumentsJson = """{"target":"entry","mode":"append","revision":"secret-revision","content":"private memory"}""",
-                expectedParts = listOf("追加条目", "行", "字节"),
+                argumentsJson = """{"mode":"append","revision":"secret-revision","content":"private memory"}""",
+                expectedParts = listOf("追加记忆"),
                 sensitiveParts = listOf("secret-revision", "private memory"),
             ),
         )
