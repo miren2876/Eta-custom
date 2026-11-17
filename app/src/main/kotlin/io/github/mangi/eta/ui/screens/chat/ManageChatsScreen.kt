@@ -563,7 +563,7 @@ private fun ManageSelectionAction(
 
 /** 批量移动时选目标文件夹；第一项是「聊天」= 移出文件夹。 */
 @Composable
-private fun ManageFolderPicker(
+internal fun ManageFolderPicker(
     folders: List<ConversationFolderUi>,
     onDismiss: () -> Unit,
     onPick: (String?) -> Unit,

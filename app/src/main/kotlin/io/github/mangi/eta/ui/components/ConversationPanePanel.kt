@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.Inventory
@@ -132,6 +133,7 @@ internal fun ConversationPanePanel(
     onConversationSelected: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationToggleArchive: (ConversationSummaryUi) -> Unit,
+    onConversationMoveToFolder: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
@@ -248,6 +250,7 @@ internal fun ConversationPanePanel(
                                             onClick = { onConversationSelected(conversation.id) },
                                             onTogglePin = { onConversationTogglePin(conversation) },
                                             onToggleArchive = { onConversationToggleArchive(conversation) },
+                                            onMoveToFolder = { onConversationMoveToFolder(conversation) },
                                             onRename = { onConversationRename(conversation) },
                                             onExport = { onConversationExport(conversation) },
                                             onDelete = { onConversationDelete(conversation) },
@@ -858,6 +861,7 @@ private fun ConversationHistoryRow(
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
     onToggleArchive: () -> Unit,
+    onMoveToFolder: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
@@ -1069,6 +1073,7 @@ private fun ConversationHistoryRow(
             },
         )
         val renameText = stringResource(R.string.action_rename)
+        val moveText = stringResource(R.string.action_move_to_folder)
         val archiveText = stringResource(
             if (conversation.isArchived) {
                 R.string.action_unarchive_conversation
@@ -1086,9 +1091,10 @@ private fun ConversationHistoryRow(
                         CouiMenuItem(value = 0, text = pinText, icon = Icons.Outlined.PushPin),
                         CouiMenuItem(value = 1, text = renameText, icon = Icons.Outlined.Edit),
                         CouiMenuItem(value = 2, text = archiveText, icon = Icons.Rounded.Inventory),
-                        CouiMenuItem(value = 3, text = exportText, icon = Icons.Outlined.Download),
+                        CouiMenuItem(value = 3, text = moveText, icon = Icons.Outlined.Folder),
+                        CouiMenuItem(value = 4, text = exportText, icon = Icons.Outlined.Download),
                         CouiMenuItem(
-                            value = 4,
+                            value = 5,
                             text = deleteText,
                             icon = Icons.Outlined.Delete,
                             iconTint = destructiveColor,
@@ -1106,8 +1112,9 @@ private fun ConversationHistoryRow(
                             0 -> onTogglePin()
                             1 -> onRename()
                             2 -> onToggleArchive()
-                            3 -> onExport()
-                            4 -> onDelete()
+                            3 -> onMoveToFolder()
+                            4 -> onExport()
+                            5 -> onDelete()
                         }
                     },
                     anchor = anchor,
@@ -1156,6 +1163,18 @@ private fun ConversationHistoryRow(
                             },
                         )
                     }
+                    val moveItem = remember(moveText) {
+                        DropdownItem(
+                            text = moveText,
+                            icon = { modifier ->
+                                Icon(
+                                    imageVector = Icons.Outlined.Folder,
+                                    contentDescription = null,
+                                    modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                                )
+                            },
+                        )
+                    }
                     val exportItem = remember(exportText) {
                         DropdownItem(
                             text = exportText,
@@ -1189,7 +1208,7 @@ private fun ConversationHistoryRow(
                     ListPopupColumn {
                         DropdownImpl(
                             item = pinItem,
-                            optionSize = 5,
+                            optionSize = 6,
                             isSelected = false,
                             index = 0,
                             onSelectedIndexChange = {
@@ -1199,7 +1218,7 @@ private fun ConversationHistoryRow(
                         )
                         DropdownImpl(
                             item = renameItem,
-                            optionSize = 5,
+                            optionSize = 6,
                             isSelected = false,
                             index = 1,
                             onSelectedIndexChange = {
@@ -1209,7 +1228,7 @@ private fun ConversationHistoryRow(
                         )
                         DropdownImpl(
                             item = archiveItem,
-                            optionSize = 5,
+                            optionSize = 6,
                             isSelected = false,
                             index = 2,
                             onSelectedIndexChange = {
@@ -1218,10 +1237,20 @@ private fun ConversationHistoryRow(
                             },
                         )
                         DropdownImpl(
-                            item = exportItem,
-                            optionSize = 5,
+                            item = moveItem,
+                            optionSize = 6,
                             isSelected = false,
                             index = 3,
+                            onSelectedIndexChange = {
+                                showActionMenu = false
+                                onMoveToFolder()
+                            },
+                        )
+                        DropdownImpl(
+                            item = exportItem,
+                            optionSize = 6,
+                            isSelected = false,
+                            index = 4,
                             onSelectedIndexChange = {
                                 showActionMenu = false
                                 onExport()
@@ -1229,9 +1258,9 @@ private fun ConversationHistoryRow(
                         )
                         DropdownImpl(
                             item = deleteItem,
-                            optionSize = 5,
+                            optionSize = 6,
                             isSelected = false,
-                            index = 4,
+                            index = 5,
                             dropdownColors = deleteColors,
                             onSelectedIndexChange = {
                                 showActionMenu = false

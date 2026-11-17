@@ -1198,6 +1198,10 @@ internal class AgentAppState(
             runStore.activeRunId(conversationId) != null || conversationId in pendingConversationDeletes) return
         val selectionVersion = conversationSelectionVersion
         val branchId = newConversationId()
+        // 分支默认留在来源会话所在的文件夹里。
+        conversationFolderIds[conversationId]?.takeIf { it.isNotBlank() }?.let { folderId ->
+            conversationFolderIds = conversationFolderIds + (branchId to folderId)
+        }
         val baseTitle = appContext.getString(R.string.conversation_branch_title,
             conversationTitles[conversationId].orEmpty().ifBlank { appContext.getString(R.string.conversation_unnamed) })
         val taken = conversationTitles.values.toSet()

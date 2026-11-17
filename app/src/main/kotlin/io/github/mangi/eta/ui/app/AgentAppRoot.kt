@@ -91,6 +91,7 @@ import io.github.mangi.eta.ui.screens.browser.AgentBrowserActivity
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserScreen
 import io.github.mangi.eta.ui.screens.chat.ManageChatsScreen
+import io.github.mangi.eta.ui.screens.chat.ManageFolderPicker
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
@@ -233,6 +234,7 @@ fun AgentAppRoot(
     LaunchedEffect(conversationPaneOpen) { onConversationPaneChanged(conversationPaneOpen) }
     var conversationRenameTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationDeleteTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
+    var conversationMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var messageDeleteTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var messageRegenerateTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
@@ -414,6 +416,7 @@ fun AgentAppRoot(
             onConversationToggleArchive = { conversation ->
                 agentState.setConversationArchived(conversation.id, !conversation.isArchived)
             },
+            onConversationMoveToFolder = { conversation -> conversationMoveTarget = conversation },
             onConversationRename = { conversation ->
                 conversationRenameTarget = conversation
             },
@@ -1072,6 +1075,17 @@ fun AgentAppRoot(
                 }
             }
         }
+    }
+
+    conversationMoveTarget?.let { conversation ->
+        ManageFolderPicker(
+            folders = agentState.conversationPaneState.folders,
+            onDismiss = { conversationMoveTarget = null },
+            onPick = { folderId ->
+                agentState.moveConversationToFolder(conversation.id, folderId)
+                conversationMoveTarget = null
+            },
+        )
     }
 
     conversationDeleteTarget?.let { conversation ->
